@@ -8,12 +8,12 @@
 import UIKit
 import AlphaWalletFoundation
 
-protocol ModalViewControllerDelegate: class {
+protocol ModalViewControllerDelegate: AnyObject {
     func didDismiss(_ controller: ModalViewController)
     func didClose(_ controller: ModalViewController)
 }
 
-class ModalViewController: UINavigationController {
+class ModalViewController: NavigationController {
 
     private let viewController: _ModalViewController = {
         let viewController = _ModalViewController()
@@ -90,7 +90,7 @@ private class _ModalViewController: UIViewController {
 
     private lazy var scrollableContainerView: ScrollableStackView = {
         let view = ScrollableStackView()
-        UIKitFactory.decorateAsDefaultView(view)
+        view.backgroundColor = Configuration.Color.Semantic.headerViewBackground
         return view
     }()
 
@@ -112,7 +112,7 @@ private class _ModalViewController: UIViewController {
     private lazy var containerView: UIView = {
         let view = UIView()
         view.translatesAutoresizingMaskIntoConstraints = false
-        UIKitFactory.decorateAsDefaultView(view)
+        view.backgroundColor = Configuration.Color.Semantic.headerViewBackground
         view.cornerRadius = 12
 
         let subview = [

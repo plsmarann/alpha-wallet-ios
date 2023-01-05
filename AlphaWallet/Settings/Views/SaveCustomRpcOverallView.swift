@@ -21,7 +21,8 @@ class SaveCustomRpcOverallView: UIView {
         }
         let segmentedControl = ScrollableSegmentedControl(cells: cells, configuration: controlConfiguration)
         segmentedControl.translatesAutoresizingMaskIntoConstraints = false
-        segmentedControl.heightAnchor.constraint(equalToConstant: 50.0).isActive = true
+        segmentedControl.heightAnchor.constraint(equalToConstant: DataEntry.Metric.TabBar.height).isActive = true
+        segmentedControl.backgroundColor = cellConfiguration.backgroundColor
         return segmentedControl
     }()
 

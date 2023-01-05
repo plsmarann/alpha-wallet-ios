@@ -19,6 +19,8 @@ class SendCoordinator: Coordinator {
     private let analytics: AnalyticsLogger
     private let domainResolutionService: DomainResolutionServiceType
     private var transactionConfirmationResult: ConfirmResult? = .none
+    private let importToken: ImportToken
+    private let networkService: NetworkService
 
     let navigationController: UINavigationController
     var coordinators: [Coordinator] = []
@@ -28,16 +30,19 @@ class SendCoordinator: Coordinator {
 
     weak var delegate: SendCoordinatorDelegate?
 
-    init(
-            transactionType: TransactionType,
-            navigationController: UINavigationController,
-            session: WalletSession,
-            keystore: Keystore,
-            tokensService: TokenProvidable & TokenAddable & TokenViewModelState & TokenBalanceRefreshable,
-            assetDefinitionStore: AssetDefinitionStore,
-            analytics: AnalyticsLogger,
-            domainResolutionService: DomainResolutionServiceType
-    ) {
+    init(transactionType: TransactionType,
+         navigationController: UINavigationController,
+         session: WalletSession,
+         keystore: Keystore,
+         tokensService: TokenProvidable & TokenAddable & TokenViewModelState & TokenBalanceRefreshable,
+         assetDefinitionStore: AssetDefinitionStore,
+         analytics: AnalyticsLogger,
+         domainResolutionService: DomainResolutionServiceType,
+         importToken: ImportToken,
+         networkService: NetworkService) {
+        
+        self.networkService = networkService
+        self.importToken = importToken
         self.transactionType = transactionType
         self.navigationController = navigationController
         self.session = session
@@ -49,35 +54,23 @@ class SendCoordinator: Coordinator {
     }
 
     func start() {
-        sendViewController.configure(viewModel: .init(transactionType: sendViewController.transactionType, session: session, service: tokensService))
-
         navigationController.pushViewController(sendViewController, animated: true)
     }
     
     private func makeSendViewController() -> SendViewController {
-        let controller = SendViewController(
-            session: session,
-            service: tokensService,
+        let viewModel = SendViewModel(
             transactionType: transactionType,
-            domainResolutionService: domainResolutionService
-        )
+            session: session,
+            tokensService: tokensService,
+            importToken: importToken)
 
-        switch transactionType {
-        case .nativeCryptocurrency(_, let destination, let amount):
-            controller.targetAddressTextField.value = destination?.stringValue ?? ""
-            if let amount = amount {
-                controller.amountTextField.ethCost = EtherNumberFormatter.full.string(from: amount, units: .ether)
-            } else {
-                //do nothing, especially not set it to a default BigInt() / 0
-            }
-        case .erc20Token(_, let destination, let amount):
-            controller.targetAddressTextField.value = destination?.stringValue ?? ""
-            controller.amountTextField.ethCost = amount ?? ""
-        case .erc875Token, .erc875TokenOrder, .erc721Token, .erc721ForTicketToken, .erc1155Token, .dapp, .tokenScript, .claimPaidErc875MagicLink, .prebuilt:
-            break
-        }
+        let controller = SendViewController(
+            viewModel: viewModel,
+            domainResolutionService: domainResolutionService)
+
         controller.delegate = self
         controller.navigationItem.largeTitleDisplayMode = .never
+        controller.hidesBottomBarWhenPushed = true
 
         return controller
     } 
@@ -102,31 +95,35 @@ extension SendCoordinator: SendViewControllerDelegate {
     func openQRCode(in viewController: SendViewController) {
         guard navigationController.ensureHasDeviceAuthorization() else { return }
 
-        let coordinator = ScanQRCodeCoordinator(analytics: analytics, navigationController: navigationController, account: session.account, domainResolutionService: domainResolutionService)
+        let coordinator = ScanQRCodeCoordinator(
+            analytics: analytics,
+            navigationController: navigationController,
+            account: session.account,
+            domainResolutionService: domainResolutionService)
+
         coordinator.delegate = self
         addCoordinator(coordinator)
-        coordinator.start(fromSource: .sendFungibleScreen)
+        coordinator.start(fromSource: .sendFungibleScreen, clipboardString: UIPasteboard.general.stringForQRCode)
     }
 
-    func didPressConfirm(transaction: UnconfirmedTransaction, in viewController: SendViewController, amount: String, shortValue: String?) {
-        do {
-            let configuration: TransactionType.Configuration = .sendFungiblesTransaction(
-                confirmType: .signThenSend,
-                amount: FungiblesTransactionAmount(value: amount, shortValue: shortValue, isAllFunds: viewController.isAllFunds))
+    func didPressConfirm(transaction: UnconfirmedTransaction, in viewController: SendViewController) {
+        let configuration: TransactionType.Configuration = .sendFungiblesTransaction(confirmType: .signThenSend)
 
-            let coordinator = try TransactionConfirmationCoordinator(presentingViewController: navigationController, session: session, transaction: transaction, configuration: configuration, analytics: analytics, domainResolutionService: domainResolutionService, keystore: keystore, assetDefinitionStore: assetDefinitionStore, tokensService: tokensService)
-            addCoordinator(coordinator)
-            coordinator.delegate = self
-            coordinator.start(fromSource: .sendFungible)
-        } catch {
-            UIApplication.shared
-                .presentedViewController(or: navigationController)
-                .displayError(message: error.prettyError)
-        }
-    }
-
-    func lookup(contract: AlphaWallet.Address, in viewController: SendViewController, completion: @escaping (ContractData) -> Void) {
-        ContractDataDetector(address: contract, account: session.account, server: session.server, assetDefinitionStore: assetDefinitionStore, analytics: analytics).fetch(completion: completion)
+        let coordinator = TransactionConfirmationCoordinator(
+            presentingViewController: navigationController,
+            session: session,
+            transaction: transaction,
+            configuration: configuration,
+            analytics: analytics,
+            domainResolutionService: domainResolutionService,
+            keystore: keystore,
+            assetDefinitionStore: assetDefinitionStore,
+            tokensService: tokensService,
+            networkService: networkService)
+        
+        addCoordinator(coordinator)
+        coordinator.delegate = self
+        coordinator.start(fromSource: .sendFungible)
     }
 }
 

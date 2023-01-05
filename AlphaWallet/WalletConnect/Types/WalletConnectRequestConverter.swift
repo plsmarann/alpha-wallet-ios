@@ -13,12 +13,11 @@ import AlphaWalletFoundation
 struct WalletConnectRequestConverter {
 
     func convert(request: AlphaWallet.WalletConnect.Session.Request, requester: DAppRequester) -> Promise<AlphaWallet.WalletConnect.Action.ActionType> {
-        guard let rpcServer: RPCServer = request.server else {
+        guard let server: RPCServer = request.server else {
             return .init(error: WalletConnectRequestConverter.sessionRequestRPCServerMissing)
         }
         infoLog("WalletConnect convert request: \(request.method) url: \(request.description)")
 
-        let token = MultipleChainsTokensDataStore.functional.token(forServer: rpcServer)
         let data: AlphaWallet.WalletConnect.Request
         do {
             data = try AlphaWallet.WalletConnect.Request(request: request)
@@ -31,16 +30,24 @@ struct WalletConnectRequestConverter {
             return .value(.signMessage(message))
         case .signPersonalMessage(_, let message):
             return .value(.signPersonalMessage(message))
-        case .signTransaction(let data):
-            let data = UnconfirmedTransaction(transactionType: .dapp(token, requester), bridge: data)
-            return .value(.signTransaction(data))
+        case .signTransaction(let bridgeTransaction):
+            do {
+                let transaction = try TransactionType.prebuilt(server).buildAnyDappTransaction(bridgeTransaction: bridgeTransaction)
+                return .value(.signTransaction(transaction))
+            } catch {
+                return .init(error: error)
+            }
         case .signTypedMessage(let data):
             return .value(.typedMessage(data))
         case .signTypedData(_, let data):
             return .value(.signTypedMessageV3(data))
-        case .sendTransaction(let data):
-            let data = UnconfirmedTransaction(transactionType: .dapp(token, requester), bridge: data)
-            return .value(.sendTransaction(data))
+        case .sendTransaction(let bridgeTransaction):
+            do {
+                let transaction = try TransactionType.prebuilt(server).buildAnyDappTransaction(bridgeTransaction: bridgeTransaction)
+                return .value(.sendTransaction(transaction))
+            } catch {
+                return .init(error: error)
+            }
         case .sendRawTransaction(let rawValue):
             return .value(.sendRawTransaction(rawValue))
         case .unknown:
@@ -93,7 +100,15 @@ extension AlphaWallet.WalletConnect.Request {
             let parameters = JSONRPC_2_0.Request.Params.positional(values)
 
             self.method = request.method
-            self.payload = JSONRPC_2_0.Request(method: request.method, params: parameters, id: JSONRPC_2_0.IDType.int(request.id))
+
+            let id: JSONRPC_2_0.IDType
+            switch request.id {
+            case .left(let string):
+                id = .string(string)
+            case .right(let int):
+                id = .int(int)
+            }
+            self.payload = JSONRPC_2_0.Request(method: request.method, params: parameters, id: id)
             self.request = request
         }
 

@@ -32,7 +32,7 @@ public final class TransactionNotificationSourceService: NotificationSourceServi
         let predicate = transactionsPredicate(wallet: wallet)
 
         transactionDataStore
-            .transactionsChangeset(forFilter: .predicate(predicate), servers: config.enabledServers)
+            .transactionsChangeset(filter: .predicate(predicate), servers: config.enabledServers)
             .map { changeset -> ServerDictionary<[TransactionInstance]> in
                 switch changeset {
                 case .initial(let transactions):
@@ -92,16 +92,13 @@ public final class TransactionNotificationSourceService: NotificationSourceServi
             config.markScheduledNotification(transaction: each, in: wallet)
         }
 
-        let etherReceivedUsedForBackupPrompt = newIncomingEthTransactions
-                .last
-                .flatMap { BigInt($0.value) }
+        let etherReceived = newIncomingEthTransactions.last.flatMap { BigInt($0.value) }
 
         switch server.serverWithEnhancedSupport {
         //TODO make this work for other mainnets
         case .main:
-            etherReceivedUsedForBackupPrompt
-                .flatMap { delegate?.showCreateBackupAfterReceiveNativeCryptoCurrencyPrompt(in: self, etherReceivedUsedForBackupPrompt: $0) }
-        case .xDai, .candle, .polygon, .binance_smart_chain, .heco, .arbitrum, .klaytnCypress, .klaytnBaobabTestnet, .rinkeby, nil:
+            etherReceived.flatMap { delegate?.showCreateBackup(in: self, etherReceived: $0, wallet: wallet) }
+        case .xDai, .polygon, .binance_smart_chain, .heco, .arbitrum, .klaytnCypress, .klaytnBaobabTestnet, .rinkeby, nil:
             break
         }
     }
@@ -109,10 +106,8 @@ public final class TransactionNotificationSourceService: NotificationSourceServi
     //Etherscan for Ropsten returns the same transaction twice. Normally Realm will take care of this, but since we are showing user a notification, we don't want to show duplicates
     private func filterUniqueTransactions(_ transactions: [TransactionInstance]) -> [TransactionInstance] {
         var results = [TransactionInstance]()
-        for each in transactions {
-            if !results.contains(where: { each.id == $0.id }) {
-                results.append(each)
-            }
+        for each in transactions where !results.contains(where: { each.id == $0.id }) {
+            results.append(each)
         }
         return results
     }

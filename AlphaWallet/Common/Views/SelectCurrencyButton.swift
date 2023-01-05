@@ -15,17 +15,18 @@ class SelectCurrencyButton: UIControl {
         label.translatesAutoresizingMaskIntoConstraints = false
         label.setContentHuggingPriority(.required, for: .horizontal)
         label.setContentCompressionResistancePriority(.required, for: .horizontal)
-        label.font = DataEntry.Font.amountTextField
+        label.font = Configuration.Font.amountTextField
 
         return label
     }()
 
     private let expandImageView: UIImageView = {
-        let imageView = UIImageView(image: R.image.expandMore())
+        let imageView = UIImageView(image: R.image.expandMore()?.withRenderingMode(.alwaysTemplate))
         imageView.translatesAutoresizingMaskIntoConstraints = false
         imageView.setContentHuggingPriority(.required, for: .horizontal)
         imageView.setContentCompressionResistancePriority(.required, for: .horizontal)
         imageView.contentMode = .scaleAspectFit
+        imageView.tintColor = Configuration.Color.Semantic.textViewFailed
 
         return imageView
     }()
@@ -98,9 +99,7 @@ class SelectCurrencyButton: UIControl {
             whenHasTokenView.anchorsConstraint(to: self),
             whenHasNoTokenView.anchorsConstraint(to: self),
             actionButton.anchorsConstraint(to: self),
-            
-            currencyIconImageView.widthAnchor.constraint(equalToConstant: 40),
-            currencyIconImageView.heightAnchor.constraint(equalToConstant: 40)
+            currencyIconImageView.sized(.init(width: 40, height: 40)),
         ] + expandImageView.sized(.init(width: 24, height: 24)))
     }
 
@@ -124,9 +123,10 @@ fileprivate class HasNoTokenView: UIControl {
     }()
 
     private let chevronImageView: UIImageView = {
-        let imageView = UIImageView(image: R.image.chevronDown())
+        let imageView = UIImageView(image: R.image.chevronDown()?.withRenderingMode(.alwaysTemplate))
         imageView.translatesAutoresizingMaskIntoConstraints = false
         imageView.contentMode = .scaleAspectFit
+        imageView.tintColor = Configuration.Color.Semantic.defaultInverseText
 
         return imageView
     }()
@@ -145,7 +145,7 @@ fileprivate class HasNoTokenView: UIControl {
             titleLabel.trailingAnchor.constraint(equalTo: trailingAnchor),
             titleLabel.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 15),
 
-            widthAnchor.constraint(greaterThanOrEqualToConstant: 150),
+            widthAnchor.constraint(greaterThanOrEqualToConstant: ScreenChecker.size(big: 150, medium: 150, small: 140)),
             heightAnchor.constraint(equalToConstant: 40),
 
             chevronImageView.centerYAnchor.constraint(equalTo: centerYAnchor),
@@ -154,11 +154,11 @@ fileprivate class HasNoTokenView: UIControl {
             chevronImageView.heightAnchor.constraint(equalToConstant: 15),
         ])
 
-        backgroundColor = .black
+        backgroundColor = Configuration.Color.Semantic.defaultForegroundText
         cornerRadius = 20
         titleLabel.attributedText = NSAttributedString.init(string: "Select Token", attributes: [
             .font: Fonts.bold(size: 17),
-            .foregroundColor: Colors.appWhite
+            .foregroundColor: Configuration.Color.Semantic.defaultInverseText
         ])
     }
 

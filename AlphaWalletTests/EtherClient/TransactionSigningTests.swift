@@ -9,15 +9,15 @@ class TransactionSigningTests: XCTestCase {
     func testEIP155SignHash() {
         let address = AlphaWallet.Address(uncheckedAgainstNullAddress: "0x3535353535353535353535353535353535353535")!
         let transaction = UnsignedTransaction(
-            value: BigInt("1000000000000000000"),
+            value: BigUInt("1000000000000000000"),
             account: address,
             to: address,
             nonce: 9,
             data: Data(),
-            gasPrice: BigInt("20000000000"),
-            gasLimit: BigInt("21000"),
+            gasPrice: BigUInt("20000000000"),
+            gasLimit: BigUInt("21000"),
             server: .main,
-            transactionType: .nativeCryptocurrency(MultipleChainsTokensDataStore.functional.etherToken(forServer: .main), destination: nil, amount: nil)
+            transactionType: .nativeCryptocurrency(MultipleChainsTokensDataStore.functional.etherToken(forServer: .main), destination: nil, amount: .notSet)
         )
         let signer = EIP155Signer(server: .main)
         do {
@@ -32,15 +32,15 @@ class TransactionSigningTests: XCTestCase {
     func testHomesteadSignHash() {
         let address = AlphaWallet.Address(uncheckedAgainstNullAddress: "0x3535353535353535353535353535353535353535")!
         let transaction = UnsignedTransaction(
-            value: BigInt("1000000000000000000"),
+            value: BigUInt("1000000000000000000"),
             account: address,
             to: address,
             nonce: 9,
             data: Data(),
-            gasPrice: BigInt("20000000000"),
-            gasLimit: BigInt("21000"),
+            gasPrice: BigUInt("20000000000"),
+            gasLimit: BigUInt("21000"),
             server: .main,
-            transactionType: .nativeCryptocurrency(MultipleChainsTokensDataStore.functional.etherToken(forServer: .main), destination: nil, amount: nil)
+            transactionType: .nativeCryptocurrency(MultipleChainsTokensDataStore.functional.etherToken(forServer: .main), destination: nil, amount: .notSet)
         )
         let signer = HomesteadSigner()
         let hash = signer.hash(transaction: transaction)
@@ -51,15 +51,15 @@ class TransactionSigningTests: XCTestCase {
     func testSignTransaction() {
         let account: AlphaWallet.Address = AlphaWallet.Address(uncheckedAgainstNullAddress: "0x3535353535353535353535353535353535353535")!
         let transaction = UnsignedTransaction(
-            value: BigInt("1000000000000000000"),
+            value: BigUInt("1000000000000000000"),
             account: account,
             to: AlphaWallet.Address(uncheckedAgainstNullAddress: "0x3535353535353535353535353535353535353535")!,
             nonce: 9,
             data: Data(),
-            gasPrice: BigInt(20000000000),
-            gasLimit: BigInt(21000),
+            gasPrice: BigUInt(20000000000),
+            gasLimit: BigUInt(21000),
             server: .main,
-            transactionType: .nativeCryptocurrency(MultipleChainsTokensDataStore.functional.etherToken(forServer: .main), destination: nil, amount: nil)
+            transactionType: .nativeCryptocurrency(MultipleChainsTokensDataStore.functional.etherToken(forServer: .main), destination: nil, amount: .notSet)
         )
 
         let signer = EIP155Signer(server: .main)

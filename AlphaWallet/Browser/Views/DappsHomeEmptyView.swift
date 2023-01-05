@@ -4,7 +4,7 @@ import Foundation
 import UIKit
 
 class DappsHomeEmptyView: UIView {
-    private let header = DappsHomeHeaderView()
+    private let header = BrowserHomeHeaderView()
     private let label = UILabel()
 
     init() {
@@ -31,8 +31,8 @@ class DappsHomeEmptyView: UIView {
         fatalError("init(coder:) has not been implemented")
     }
 
-    func configure(viewModel: DappsHomeEmptyViewViewModel) {
-        backgroundColor = viewModel.headerViewViewModel.backgroundColor
+    func configure(viewModel: DappsHomeEmptyViewModel) {
+        backgroundColor = Configuration.Color.Semantic.defaultViewBackground
         header.configure(viewModel: viewModel.headerViewViewModel)
 
         label.font = Fonts.regular(size: 18)

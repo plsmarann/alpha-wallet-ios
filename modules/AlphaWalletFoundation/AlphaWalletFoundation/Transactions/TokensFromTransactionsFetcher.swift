@@ -9,7 +9,7 @@ import Foundation
 import PromiseKit
 
 public protocol TokensFromTransactionsFetcherDelegate: AnyObject {
-    func didExtractTokens(in fetcher: TokensFromTransactionsFetcher, contractsAndServers: [AddressAndRPCServer], tokenUpdates: [TokenUpdate])
+    func didExtractTokens(in fetcher: TokensFromTransactionsFetcher, contractsAndServers: [AddressAndRPCServer], ercTokens: [ErcToken])
 }
 
 public final class TokensFromTransactionsFetcher {
@@ -25,7 +25,7 @@ public final class TokensFromTransactionsFetcher {
 
     func extractNewTokens(from transactions: [TransactionInstance]) {
         guard !transactions.isEmpty else { return }
-        self.filterTransactionsToPullContractsFrom(transactions)
+        filterTransactionsToPullContractsFrom(transactions)
             .done { [weak self] transactionsToPullContractsFrom, contractsAndTokenTypes in
                 guard !transactionsToPullContractsFrom.isEmpty else { return }
                 self?.addTokensFromUpdates(transactionsToPullContractsFrom: transactionsToPullContractsFrom, contractsAndTokenTypes: contractsAndTokenTypes)
@@ -33,10 +33,10 @@ public final class TokensFromTransactionsFetcher {
     }
 
     private func addTokensFromUpdates(transactionsToPullContractsFrom transactions: [TransactionInstance], contractsAndTokenTypes: [AlphaWallet.Address: TokenType]) {
-        let tokenUpdates = TokensFromTransactionsFetcher.functional.tokens(from: transactions, contractsAndTokenTypes: contractsAndTokenTypes)
-        let contractsAndServers = Array(Set(tokenUpdates.map { AddressAndRPCServer(address: $0.address, server: $0.server) }))
+        let ercTokens = TokensFromTransactionsFetcher.functional.ercTokens(from: transactions, contractsAndTokenTypes: contractsAndTokenTypes)
+        let contractsAndServers = Array(Set(ercTokens.map { AddressAndRPCServer(address: $0.contract, server: $0.server) }))
 
-        delegate?.didExtractTokens(in: self, contractsAndServers: contractsAndServers, tokenUpdates: tokenUpdates)
+        delegate?.didExtractTokens(in: self, contractsAndServers: contractsAndServers, ercTokens: ercTokens)
     }
 
     private var contractsToAvoid: [AlphaWallet.Address] {
@@ -65,10 +65,10 @@ public final class TokensFromTransactionsFetcher {
         let tokenTypePromises = contracts.map { session.tokenProvider.getTokenType(for: $0) }
 
         return when(fulfilled: tokenTypePromises)
-            .map(on: session.queue, { tokenTypes in
+            .map { tokenTypes in
                 let contractsToTokenTypes = Dictionary(uniqueKeysWithValues: zip(contracts, tokenTypes))
                 return (transactions: filteredTransactions, contractTypes: contractsToTokenTypes)
-            })
+            }
     }
 }
 
@@ -78,9 +78,9 @@ extension TokensFromTransactionsFetcher {
 
 extension TokensFromTransactionsFetcher.functional {
 
-    static func tokens(from transactions: [TransactionInstance], contractsAndTokenTypes: [AlphaWallet.Address: TokenType]) -> [TokenUpdate] {
-        let tokens: [TokenUpdate] = transactions.flatMap { transaction -> [TokenUpdate] in
-            let tokenUpdates: [TokenUpdate] = transaction.localizedOperations.compactMap { operation in
+    static func ercTokens(from transactions: [TransactionInstance], contractsAndTokenTypes: [AlphaWallet.Address: TokenType]) -> [ErcToken] {
+        let tokens: [ErcToken] = transactions.flatMap { transaction -> [ErcToken] in
+            let tokenUpdates: [ErcToken] = transaction.localizedOperations.compactMap { operation in
                 guard let contract = operation.contractAddress else { return nil }
                 guard let name = operation.name else { return nil }
                 guard let symbol = operation.symbol else { return nil }
@@ -107,14 +107,8 @@ extension TokensFromTransactionsFetcher.functional {
                         tokenType = .erc20
                     }
                 }
-                return TokenUpdate(
-                        address: contract,
-                        server: transaction.server,
-                        name: name,
-                        symbol: symbol,
-                        decimals: operation.decimals,
-                        tokenType: tokenType
-                )
+
+                return .init(contract: contract, server: transaction.server, name: name, symbol: symbol, decimals: operation.decimals, type: tokenType, value: .zero, balance: .balance([]))
             }
             return tokenUpdates
         }

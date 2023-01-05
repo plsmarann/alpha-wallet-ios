@@ -29,6 +29,7 @@ class NewTokenCoordinator: Coordinator {
             }
         }
     }
+    private let wallet: Wallet
     private var addressToAutoDetectServerFor: AlphaWallet.Address?
     private let importToken: ImportToken
     private let config: Config
@@ -40,8 +41,9 @@ class NewTokenCoordinator: Coordinator {
     var coordinators: [Coordinator] = []
     weak var delegate: NewTokenCoordinatorDelegate?
 
-    init(analytics: AnalyticsLogger, navigationController: UINavigationController, config: Config, importToken: ImportToken, initialState: NewTokenInitialState = .empty, domainResolutionService: DomainResolutionServiceType) {
+    init(analytics: AnalyticsLogger, wallet: Wallet, navigationController: UINavigationController, config: Config, importToken: ImportToken, initialState: NewTokenInitialState = .empty, domainResolutionService: DomainResolutionServiceType) {
         self.config = config
+        self.wallet = wallet
         self.analytics = analytics
         self.navigationController = navigationController
         self.importToken = importToken
@@ -72,12 +74,9 @@ extension NewTokenCoordinator: ServersCoordinatorDelegate {
         switch selection {
         case .server(let server):
             serverToAddCustomTokenOn = server
-            coordinator.navigationController.popViewController(animated: true) { [weak self] in
-                guard let strongSelf = self else { return }
-                strongSelf.viewController.server = strongSelf.serverToAddCustomTokenOn
-                strongSelf.viewController.configure()
-                strongSelf.viewController.redetectToken()
-            }
+            viewController.server = serverToAddCustomTokenOn
+            viewController.configure()
+            viewController.redetectToken()
         case .multipleServers:
             break
         }
@@ -85,8 +84,7 @@ extension NewTokenCoordinator: ServersCoordinatorDelegate {
         removeCoordinator(coordinator)
     }
 
-    func didSelectDismiss(in coordinator: ServersCoordinator) {
-        coordinator.navigationController.popViewController(animated: true)
+    func didClose(in coordinator: ServersCoordinator) {
         removeCoordinator(coordinator)
     }
 }
@@ -97,8 +95,8 @@ extension NewTokenCoordinator: NewTokenViewControllerDelegate {
         delegate?.didClose(in: self)
     }
 
-    func didAddToken(token: ERCToken, in viewController: NewTokenViewController) {
-        let token = importToken.importToken(token: token)
+    func didAddToken(ercToken: ErcToken, in viewController: NewTokenViewController) {
+        let token = importToken.importToken(ercToken: ercToken)
 
         delegate?.coordinator(self, didAddToken: token)
         dismiss()
@@ -123,6 +121,7 @@ extension NewTokenCoordinator: NewTokenViewControllerDelegate {
                     serversFailed += 1
                     if serversFailed == servers.count {
                         //So that we can enable the Done button
+                        verboseLog("[TokenType] fallback contract: \(address.eip55String) server: \(each) to token type: erc20")
                         viewController.updateForm(forTokenType: .erc20)
                     }
                 }
@@ -144,15 +143,19 @@ extension NewTokenCoordinator: NewTokenViewControllerDelegate {
                     viewController.updateNameValue(name)
                     viewController.updateSymbolValue(symbol)
                     viewController.updateBalanceValue(balance.rawValue, tokenType: tokenType)
+                    verboseLog("[TokenType] contract: \(address.eip55String) server: \(server) to token type: nonFungibleTokenComplete")
                     seal.fulfill(tokenType)
-                case .fungibleTokenComplete(let name, let symbol, let decimals):
+                case .fungibleTokenComplete(let name, let symbol, let decimals, _, let tokenType):
                     viewController.updateNameValue(name)
                     viewController.updateSymbolValue(symbol)
                     viewController.updateDecimalsValue(decimals)
-                    seal.fulfill(.erc20)
+                    verboseLog("[TokenType] contract: \(address.eip55String) server: \(server) to token type: fungibleTokenComplete")
+                    seal.fulfill(tokenType)
                 case .delegateTokenComplete:
+                    verboseLog("[TokenType] contract: \(address.eip55String) server: \(server) to token type: delegateTokenComplete")
                     seal.reject(NoContractDetailsDetected())
                 case .failed:
+                    verboseLog("[TokenType] contract: \(address.eip55String) server: \(server) failed")
                     seal.reject(NoContractDetailsDetected())
                 }
             }
@@ -166,8 +169,10 @@ extension NewTokenCoordinator: NewTokenViewControllerDelegate {
                 viewController.updateNameValue(name)
             case .symbol(let symbol):
                 viewController.updateSymbolValue(symbol)
-            case .balance(let balance, let tokenType):
-                viewController.updateBalanceValue(balance.rawValue, tokenType: tokenType)
+            case .balance(let nonFungibleBalance, _, let tokenType):
+                if let balance = nonFungibleBalance {
+                    viewController.updateBalanceValue(balance.rawValue, tokenType: tokenType)
+                }
             case .decimals(let decimals):
                 viewController.updateDecimalsValue(decimals)
             case .nonFungibleTokenComplete(_, _, _, let tokenType):
@@ -189,7 +194,7 @@ extension NewTokenCoordinator: NewTokenViewControllerDelegate {
     func openQRCode(in controller: NewTokenViewController) {
         guard let nc = controller.navigationController, nc.ensureHasDeviceAuthorization() else { return }
 
-        let coordinator = ScanQRCodeCoordinator(analytics: analytics, navigationController: navigationController, account: importToken.wallet, domainResolutionService: domainResolutionService)
+        let coordinator = ScanQRCodeCoordinator(analytics: analytics, navigationController: navigationController, account: wallet, domainResolutionService: domainResolutionService)
         coordinator.delegate = self
         addCoordinator(coordinator)
 

@@ -32,8 +32,11 @@
 "transaction.to.label.title" = "宛先";
 "transaction.time.label.title" = "トランザクション時間";
 "transaction.id.label.title" = "トランザクション番号";
+"transaction.id" = "Transaction ID";
 "transaction.blockNumber.label.title" = "ブロック番号";
 "transaction.nonce.label.title" = "Nonce";
+"transaction.amount.label.title" = "Amount";
+"transaction.network.label.title" = "Network";
 "confirmPayment.confirm.button.title" = "確認";
 "confirmPayment.sign.button.title" = "Sign";
 "confirmPayment.reject.button.title" = "Reject";
@@ -47,6 +50,8 @@
 "Copy" = "コピー";
 "Empty" = "空";
 "emptyView.noTokens.label.title" = "まだトークンを受け取っていません!";
+"emptyView.noMessages.label.title" = "There is nothing logged";
+"emptyView.noTransactions.label.title" = "You haven't received any transactions yet!";
 "errorView.description.label.title" = "エラーが発生しました... もう一度試してください。";
 "export.backup.button.title" = "ウォレットをバックアップ";
 "export.controlYourMoney.label.title" = "あなたのお金を制御するのはあなただけなので、このアプリが削除された場合に備え、バックアップ キーストアを保存する必要があります。";
@@ -60,7 +65,8 @@
 "OK" = "OK";
 "Password" = "パスワード";
 "Refresh" = "リフレッシュ";
-"request.addressCopied.title" = "アドレスがコピーされました";
+"copiedToClipboard.title" = "%@ copied";
+"address" = "Address";
 "request.copyWallet.button.title" = "ウォレットのアドレスをコピー";
 "Retry" = "再試行";
 "Send" = "送信";
@@ -80,7 +86,7 @@
 "settings.biometricsEnabled.label.title" = "パスコード/ %@";
 "settings.error.failedToSendEmail" = "メールを送信できませんでした。メール アプリのインストールを確認してください。";
 "settings.network.button.title" = "ネットワーク";
-"settings.enabledNetworks.button.title" = "Enabled Networks";
+"settings.enabledNetworks.button.title" = "Enabled Networks %@";
 "settings.enabledNetworks.mainnet" = "Mainnet";
 "settings.enabledNetworks.testnet" = "Testnet";
 "settings.enabledNetworks.promptEnableTestnet.title" = "What is Testnet?";
@@ -112,6 +118,7 @@
 "settings.contactUs.title" = "Contact Us";
 "settings.changeCurrency.title" = "Change Currency";
 "settings.analitycs.title" = "Analytics";
+"settings.crashReporter.title" = "Crash Reporting";
 "settings.pingInfura.title" = "Ping Infura";
 "settings.pingInfura.successful" = "Infura looks OK";
 "settings.pingInfura.fail" = "Infura Error";
@@ -467,6 +474,7 @@
 "blockchain.Mumbai" = "Mumbai Testnet";
 "blockchain.Optimistic" = "Optimistic Testnet";
 "blockchain.Optimistic.Kovan" = "Optimistic Kovan Testnet";
+"blockchain.Cronos.Mainnet" = "Cronos";
 "blockchain.Cronos.Testnet" = "Cronos Testnet";
 "blockchain.arbitrum" = "Arbitrum";
 "blockchain.arbitrum.rinkeby" = "Arbitrum Rinkeby";
@@ -497,7 +505,7 @@
 "backup.prompt.afterInterval.title" = "Time to back up your Wallet";
 "backup.prompt.afterInterval.description" = "We highly recommend to back up your wallet";
 "backup.prompt.afterHittingThreshold.title" = "Your Wallet is at risk!";
-"backup.prompt.afterHittingThreshold.description" = "You have not backed up your wallet yet. You have %@ USD net. Act now. ";
+"backup.prompt.afterHittingThreshold.description" = "You have not backed up your wallet yet. You have %@ net. Act now. ";
 "onboarding.newWallet.backupWallet.title" = "Back up your Wallet";
 "onboarding.newWallet.backupWallet.description" = "Your funds will be at risk if you do not back up before using your wallet";
 "keystore.accessKey.nonHd.backup" = "Accessing your wallet key to back it up";
@@ -624,7 +632,7 @@
 "transactionConfirmation.Row.title.wallet" = "Wallet Address";
 "transactionConfirmation.Send.Section.Gas.title" = "Gas";
 "transactionConfirmation.Send.Section.Balance.title" = "Balance";
-"transactionConfirmation.Send.Section.Balance.new.title" = "(New: %@ %@)";
+"transactionConfirmation.Send.Section.Balance.new.title" = "(New: %@)";
 "transactionConfirmation.Send.Section.Amount.title" = "Amount";
 "transactionConfirmation.Send.Section.Recipient.title" = "Recipient";
 "transactionConfirmation.Send.Section.TokenId.title" = "Token";
@@ -862,3 +870,5 @@
 "accept.deepLink.field.url.title" = "URL";
 "accept.deepLink.field.note.title" = "Note";
 "accept.walletConnect.field.methods.title" = "Methods";
+"tokenscript.overrides.empty" = "There are no TokenScript overrides";
+"currency.navigationTitle" = "Change Fiat Currency";

@@ -4,19 +4,17 @@ import UIKit
 
 protocol TextFieldDelegate: AnyObject {
     func shouldReturn(in textField: TextField) -> Bool
+    func shouldChangeCharacters(inRange range: NSRange, replacementString string: String, for textField: TextField) -> Bool
     func doneButtonTapped(for textField: TextField)
     func nextButtonTapped(for textField: TextField)
-    func shouldChangeCharacters(inRange range: NSRange, replacementString string: String, for textField: TextField) -> Bool
-    func didBeginEditing(in textField: TextField)
 }
 
 extension TextFieldDelegate {
     func shouldChangeCharacters(inRange range: NSRange, replacementString string: String, for textField: TextField) -> Bool {
         return true
     }
-    func didBeginEditing(in textField: TextField) {
-        return
-    }
+    func doneButtonTapped(for textField: TextField) { }
+    func nextButtonTapped(for textField: TextField) { }
 }
 
 class TextField: UIControl {
@@ -33,9 +31,9 @@ class TextField: UIControl {
         func textFieldBorderColor(whileEditing: Bool = false) -> UIColor {
             switch self {
             case .none:
-                return whileEditing ? DataEntry.Color.textFieldShadowWhileEditing : DataEntry.Color.border
+                return whileEditing ? Configuration.Color.Semantic.textFieldShadowWhileEditing : Configuration.Color.Semantic.border
             case .error:
-                return DataEntry.Color.textFieldError
+                return Configuration.Color.Semantic.textFieldError
             }
         }
 
@@ -53,12 +51,10 @@ class TextField: UIControl {
             case .none:
                 return Configuration.Color.Semantic.defaultForegroundText
             case .error:
-                return DataEntry.Color.textFieldError
+                return Configuration.Color.Semantic.textFieldError
             }
         }
     }
-
-    private var isConfigured = false
 
     var returnKeyType: UIReturnKeyType {
         get { return textField.returnKeyType }
@@ -78,6 +74,9 @@ class TextField: UIControl {
     let label: UILabel = {
         let label = UILabel()
         label.translatesAutoresizingMaskIntoConstraints = false
+        label.font = Configuration.Font.textFieldTitle
+        label.textColor = Configuration.Color.Semantic.label
+        label.textAlignment = .left
 
         return label
     }()
@@ -85,13 +84,24 @@ class TextField: UIControl {
     let statusLabel: UILabel = {
         let label = UILabel()
         label.translatesAutoresizingMaskIntoConstraints = false
-
+        label.setContentHuggingPriority(.required, for: .vertical)
+        label.setContentCompressionResistancePriority(.required, for: .vertical)
+        label.font = Configuration.Font.textFieldStatus
+        label.textColor = Configuration.Color.Semantic.textFieldStatus
+        label.textAlignment = .left
+        
         return label
     }()
 
-    let textField: UITextField = {
+    lazy var textField: UITextField = {
         let textField = _TextField()
         textField.translatesAutoresizingMaskIntoConstraints = false
+        textField.translatesAutoresizingMaskIntoConstraints = false
+        textField.delegate = self
+        textField.leftViewMode = .always
+        textField.rightViewMode = .always
+        textField.textColor = Configuration.Color.Semantic.defaultForegroundText
+        textField.font = Configuration.Font.textField
 
         return textField
     }()
@@ -131,7 +141,7 @@ class TextField: UIControl {
             case .done:
                 textField.inputAccessoryView = UIToolbar.doneToolbarButton(#selector(doneButtonTapped), self)
             case .next:
-                textField.inputAccessoryView = UIToolbar.doneToolbarButton(#selector(nextButtonTapped), self)
+                textField.inputAccessoryView = UIToolbar.nextToolbarButton(#selector(nextButtonTapped), self)
             case .none:
                 textField.inputAccessoryView = nil
             }
@@ -152,66 +162,77 @@ class TextField: UIControl {
        set { (textField as! _TextField).insetX = newValue.width; (textField as! _TextField).insetY = newValue.height; }
     }
 
+    override var isFirstResponder: Bool {
+        return textField.isFirstResponder
+    }
+    
     init(edgeInsets: UIEdgeInsets = DataEntry.Metric.TextField.Default.edgeInsets) {
         super.init(frame: .zero)
 
         translatesAutoresizingMaskIntoConstraints = false
-
-        textField.translatesAutoresizingMaskIntoConstraints = false
-        textField.delegate = self
-        textField.leftViewMode = .always
-        textField.rightViewMode = .always
-
         addSubview(textField)
 
         NSLayoutConstraint.activate([
             textField.anchorsConstraint(to: self, edgeInsets: edgeInsets),
             heightConstraint,
         ])
-    }
 
-    func configureOnce() {
-        guard !isConfigured else { return }
-        isConfigured = true
-
-        cornerRadius = DataEntry.Metric.cornerRadius
-
-        label.font = DataEntry.Font.textFieldTitle
-        label.textColor = DataEntry.Color.label
-        label.textAlignment = .left
-
-        statusLabel.font = DataEntry.Font.textFieldStatus
-        statusLabel.textColor = DataEntry.Color.textFieldStatus
-        statusLabel.textAlignment = .left
-
-        textField.textColor = Configuration.Color.Semantic.defaultForegroundText
-        textField.font = DataEntry.Font.textField
-
+        cornerRadius = DataEntry.Metric.TextField.Default.cornerRadius
         layer.borderWidth = DataEntry.Metric.borderThickness
         backgroundColor = Configuration.Color.Semantic.textFieldBackground
         layer.borderColor = status.textFieldBorderColor(whileEditing: isFirstResponder).cgColor
         status = .none
     }
 
+    func configure(viewModel: TextFieldViewModel) {
+        isUserInteractionEnabled = viewModel.allowEditing
+        value = viewModel.value
+        label.attributedText = viewModel.attributedPlaceholder
+        label.isHidden = viewModel.shouldHidePlaceholder
+        keyboardType = viewModel.keyboardType
+    }
+
+    func defaultLayout(edgeInsets: UIEdgeInsets = .zero) -> UIView {
+        let stackView = [
+            label,
+            .spacer(height: DataEntry.Metric.TextField.Default.spaceFromTitleToTextField),
+            //NOTE: adding shadow inset as edgeInsets might be .zero, and the sized shadow will be clipped
+            [.spacerWidth(DataEntry.Metric.shadowRadius), self, .spacerWidth(DataEntry.Metric.shadowRadius)].asStackView(axis: .horizontal),
+            .spacer(height: DataEntry.Metric.TextField.Default.spaceFromTitleToTextField),
+            statusLabel,
+        ].asStackView(axis: .vertical)
+
+        stackView.translatesAutoresizingMaskIntoConstraints = false
+
+        let view = UIView()
+        view.backgroundColor = Configuration.Color.Semantic.defaultViewBackground
+        view.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(stackView)
+
+        NSLayoutConstraint.activate([
+            stackView.anchorsConstraint(to: view, edgeInsets: edgeInsets),
+        ])
+
+        return view
+    }
+
     required init?(coder aDecoder: NSCoder) {
         return nil
     }
 
-    @objc func doneButtonTapped() {
+    @objc private func doneButtonTapped(_ sender: UIButton) {
         delegate?.doneButtonTapped(for: self)
     }
 
-    @objc func nextButtonTapped() {
+    @objc private func nextButtonTapped(_ sender: UIButton) {
         delegate?.nextButtonTapped(for: self)
     }
 
     @discardableResult override func becomeFirstResponder() -> Bool {
-        super.becomeFirstResponder()
         return textField.becomeFirstResponder()
     }
 
     @discardableResult override func resignFirstResponder() -> Bool {
-        super.resignFirstResponder()
         return textField.resignFirstResponder()
     }
 }
@@ -233,7 +254,6 @@ extension TextField: UITextFieldDelegate {
         backgroundColor = Configuration.Color.Semantic.textFieldBackground
 
         dropShadow(color: borderColor, radius: DataEntry.Metric.shadowRadius)
-        delegate?.didBeginEditing(in: self)
     }
 
     func textFieldShouldReturn(_ textField: UITextField) -> Bool {
@@ -266,20 +286,64 @@ private class _TextField: UITextField {
 extension TextField {
     static var textField: TextField {
         let textField = TextField(edgeInsets: DataEntry.Metric.TextField.Default.edgeInsets)
-        textField.configureOnce()
         textField.cornerRadius = DataEntry.Metric.TextField.Default.cornerRadius
         textField.textInset = DataEntry.Metric.TextField.Default.textInset
+        textField.textField.autocorrectionType = .no
+        textField.textField.autocapitalizationType = .none
+        textField.textField.spellCheckingType = .no
+        textField.returnKeyType = .next
+        
+        return textField
+    }
+
+    static func textField(keyboardType: UIKeyboardType, placeHolder: String, label: String) -> TextField {
+        let textField = TextField.textField
+        textField.keyboardType = keyboardType
+        textField.placeholder = placeHolder
+        textField.label.text = label
 
         return textField
     }
 
     static var roundedTextField: TextField {
         let textField = TextField(edgeInsets: DataEntry.Metric.TextField.Rounded.edgeInsets)
-        textField.configureOnce()
         textField.heightConstraint.constant = DataEntry.Metric.TextField.Rounded.height
         textField.cornerRadius = DataEntry.Metric.TextField.Rounded.cornerRadius
         textField.textInset = DataEntry.Metric.TextField.Rounded.textInset
 
         return textField
+    }
+
+    static var password: TextField {
+        let textField: TextField = .textField
+        textField.textField.autocorrectionType = .no
+        textField.textField.autocapitalizationType = .none
+        textField.returnKeyType = .done
+        textField.inputAccessoryButtonType = .done
+        textField.textField.clearButtonMode = .never
+        textField.textField.rightView = {
+            let button = UIButton(type: .system)
+            button.frame = .init(x: 0, y: 0, width: 30, height: 30)
+            button.setImage(R.image.togglePassword(), for: .normal)
+            button.tintColor = .init(red: 111, green: 111, blue: 111)
+            button.addTarget(textField, action: #selector(toggleMaskPassword), for: .touchUpInside)
+            return button
+        }()
+        textField.textField.rightViewMode = .always
+        textField.isSecureTextEntry = true
+
+        return textField
+    }
+}
+
+fileprivate extension TextField {
+
+    @objc private func toggleMaskPassword(_ sender: UIButton) {
+        isSecureTextEntry.toggle()
+        if isSecureTextEntry {
+            sender.tintColor = Colors.navigationTitleColor
+        } else {
+            sender.tintColor = .init(red: 111, green: 111, blue: 111)
+        }
     }
 }

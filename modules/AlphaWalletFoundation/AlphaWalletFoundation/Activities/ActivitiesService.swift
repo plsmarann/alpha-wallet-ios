@@ -10,7 +10,7 @@ import CoreFoundation
 import Combine
 import CombineExt
 
-public protocol ActivitiesServiceType: class {
+public protocol ActivitiesServiceType: AnyObject {
     var activitiesPublisher: AnyPublisher<[ActivityCollection.MappedToDateActivityOrTransaction], Never> { get }
     var didUpdateActivityPublisher: AnyPublisher<Activity, Never> { get }
 
@@ -19,6 +19,7 @@ public protocol ActivitiesServiceType: class {
     func copy(activitiesFilterStrategy: ActivitiesFilterStrategy, transactionsFilterStrategy: TransactionsFilterStrategy) -> ActivitiesServiceType
 }
 
+// swiftlint:disable type_body_length
 public class ActivitiesService: NSObject, ActivitiesServiceType {
     private typealias ContractsAndCards = [(tokenContract: AlphaWallet.Address, server: RPCServer, card: TokenScriptCard, interpolatedFilter: String)]
     private typealias ActivityTokenObjectTokenHolder = (activity: Activity, tokenObject: Token, tokenHolder: TokenHolder)
@@ -84,7 +85,7 @@ public class ActivitiesService: NSObject, ActivitiesServiceType {
 
     public func start() {
         let transactionsChangeset = transactionDataStore
-            .transactionsChangeset(forFilter: transactionsFilterStrategy, servers: config.enabledServers)
+            .transactionsChangeset(filter: transactionsFilterStrategy, servers: config.enabledServers)
             .mapToVoid()
             .eraseToAnyPublisher()
 
@@ -432,6 +433,7 @@ public class ActivitiesService: NSObject, ActivitiesServiceType {
         activitiesIndexLookup.set(value: newValue)
     }
 }
+// swiftlint:enable type_body_length
 
 fileprivate func == (activity: Activity, operation: LocalizedOperationObjectInstance) -> Bool {
     func isSameFrom() -> Bool {

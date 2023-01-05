@@ -25,8 +25,23 @@ public class GetNextNonce {
         self.analytics = analytics
     }
 
-    public func promise() -> Promise<Int> {
+    public func getNextNonce() -> Promise<Int> {
         let request = EtherServiceRequest(rpcURL: rpcURL, rpcHeaders: rpcHeaders, batch: BatchFactory().create(GetTransactionCountRequest(address: wallet, state: "pending")))
         return APIKitSession.send(request, server: server, analytics: analytics)
+    }
+}
+
+import Combine
+
+public class GetChainId {
+    private let analytics: AnalyticsLogger
+
+    public init(analytics: AnalyticsLogger) {
+        self.analytics = analytics
+    }
+
+    public func getChainId(server: RPCServer) -> AnyPublisher<Int, SessionTaskError> {
+        let request = ChainIdRequest()
+        return APIKitSession.sendPublisher(EtherServiceRequest(server: server, batch: BatchFactory().create(request)), server: server, analytics: analytics)
     }
 }

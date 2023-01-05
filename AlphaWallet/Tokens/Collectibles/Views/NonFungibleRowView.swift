@@ -8,7 +8,7 @@
 import UIKit
 import AlphaWalletFoundation
 
-class NonFungibleRowView: TokenCardViewType {
+class NonFungibleRowView: TokenCardViewRepresentable {
     private let titleLabel = UILabel()
     private let descriptionLabel = UILabel()
 
@@ -40,7 +40,7 @@ class NonFungibleRowView: TokenCardViewType {
     private var gridEdgeInsets: UIEdgeInsets
     private var listEdgeInsets: UIEdgeInsets
 
-    init(layout: GridOrListSelectionState, gridEdgeInsets: UIEdgeInsets = .zero, listEdgeInsets: UIEdgeInsets = .init(top: 0, left: 16, bottom: 0, right: 16)) {
+    init(layout: GridOrListLayout, gridEdgeInsets: UIEdgeInsets = .zero, listEdgeInsets: UIEdgeInsets = .init(top: 0, left: 16, bottom: 0, right: 16)) {
         self.gridEdgeInsets = gridEdgeInsets
         self.listEdgeInsets = listEdgeInsets
         super.init(frame: .zero)
@@ -56,11 +56,12 @@ class NonFungibleRowView: TokenCardViewType {
         ]
 
         clipsToBounds = true
-        borderColor = R.color.mercury()
+        backgroundColor = Configuration.Color.Semantic.defaultViewBackground
+        borderColor = Configuration.Color.Semantic.tableViewSeparator
         configureLayout(layout: layout)
     }
 
-    func configureLayout(layout: GridOrListSelectionState) {
+    func configureLayout(layout: GridOrListLayout) {
         for each in subviews { each.removeFromSuperview() }
         NSLayoutConstraint.deactivate(_constraints)
 
@@ -81,7 +82,7 @@ class NonFungibleRowView: TokenCardViewType {
             _constraints = imageSmallSizeContraints + stackView.anchorsConstraint(to: self, edgeInsets: listEdgeInsets)
         case .grid:
             borderWidth = 1
-            cornerRadius = Metrics.CornerRadius.nftBox
+            cornerRadius = DataEntry.Metric.CornerRadius.nftBox
             col1.alignment = .center
             thumbnailImageView.rounding = .none
 
@@ -107,7 +108,6 @@ class NonFungibleRowView: TokenCardViewType {
 
     func configure(viewModel: NonFungibleRowViewModel) {
         thumbnailImageView.contentBackgroundColor = viewModel.contentBackgroundColor
-        backgroundColor = viewModel.backgroundColor
         thumbnailImageView.subscribable = viewModel.assetImage
         descriptionLabel.attributedText = viewModel.description
         titleLabel.attributedText = viewModel.title

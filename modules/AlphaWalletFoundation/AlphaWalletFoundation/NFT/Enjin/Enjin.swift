@@ -17,40 +17,41 @@ public typealias EnjinAddressesToSemiFungibles = [AlphaWallet.Address: [GetEnjin
 public typealias EnjinTokenIdsToSemiFungibles = [String: GetEnjinTokenQuery.Data.EnjinToken]
 
 public final class Enjin {
-    private lazy var networkProvider = EnjinNetworkProvider(queue: queue)
-    private let queue: DispatchQueue
+    private lazy var networkProvider = EnjinNetworkProvider()
+    private let queue = DispatchQueue(label: "org.alphawallet.swift.enjin")
+    private var inFlightPromises: [String: Promise<EnjinAddressesToSemiFungibles>] = [:]
 
     public typealias EnjinBalances = [GetEnjinBalancesQuery.Data.EnjinBalance]
     public typealias MappedEnjinBalances = [AlphaWallet.Address: EnjinBalances]
 
-    public init(queue: DispatchQueue) {
-        self.queue = queue
-    }
+    public init() { }
 
     public func semiFungible(wallet: Wallet, server: RPCServer) -> Promise<EnjinAddressesToSemiFungibles> {
-        let key: AddressAndRPCServer = .init(address: wallet.address, server: server)
+        firstly {
+            .value(wallet)
+        }.then(on: queue, { [weak self, queue, networkProvider] wallet -> Promise<EnjinAddressesToSemiFungibles> in
+            guard Enjin.isServerSupported(server) else { return .value([:]) }
 
-        guard Enjin.isServerSupported(key.server) else {
-            return .value([:])
-        }
+            let key = "\(wallet.address.eip55String)-\(server.chainID)"
+            if let promise = self?.inFlightPromises[key] {
+                return promise
+            } else {
+                //NOTE: Make sure Apollo get called on main queue, looks like its not threadsafe, (accessing to interceptors on background queue causes bad access)
+                let promise = firstly {
+                    .value(wallet)
+                }.then { wallet in
+                    networkProvider.getEnjinBalances(forOwner: wallet.address, offset: 1)
+                }.then { [networkProvider] balances -> Promise<EnjinAddressesToSemiFungibles> in
+                    let ids = (balances[wallet.address] ?? []).compactMap { $0.token?.id }
+                    return networkProvider.getEnjinTokens(ids: ids, owner: wallet.address)
+                }.ensure(on: queue, {
+                    self?.inFlightPromises[key] = .none
+                })
 
-        return fetchFromRemotePromise(wallet: wallet)
-    }
+                self?.inFlightPromises[key] = promise
 
-    private func fetchFromRemotePromise(wallet: Wallet) -> Promise<EnjinAddressesToSemiFungibles> {
-        return Promise<[AlphaWallet.Address: [GetEnjinBalancesQuery.Data.EnjinBalance]]> { seal in
-            let offset = 1
-            networkProvider.getEnjinBalances(forOwner: wallet.address, offset: offset) { result in
-                switch result {
-                case .success(let result):
-                    seal.fulfill(result.balances)
-                case .failure(let error):
-                    seal.reject(error)
-                }
+                return promise
             }
-        }.then(on: queue, { [networkProvider] balances -> Promise<EnjinAddressesToSemiFungibles> in
-            let ids = (balances[wallet.address] ?? []).compactMap { $0.token?.id }
-            return networkProvider.getEnjinTokens(ids: ids, owner: wallet.address)
         })
     }
 
@@ -58,7 +59,7 @@ public final class Enjin {
         switch server.serverWithEnhancedSupport {
         case .main:
             return true
-        case .xDai, .candle, .polygon, .binance_smart_chain, .heco, .arbitrum, .klaytnCypress, .klaytnBaobabTestnet, .rinkeby, nil:
+        case .xDai, .polygon, .binance_smart_chain, .heco, .arbitrum, .klaytnCypress, .klaytnBaobabTestnet, .rinkeby, nil:
             return false
         }
     }

@@ -8,15 +8,16 @@ class SendCoordinatorTests: XCTestCase {
 
     func testRootViewController() {
         let coordinator = SendCoordinator(
-            transactionType: .nativeCryptocurrency(Token(), destination: .none, amount: nil),
+            transactionType: .nativeCryptocurrency(Token(), destination: .none, amount: .notSet),
             navigationController: FakeNavigationController(),
             session: .make(),
             keystore: FakeEtherKeystore(),
             tokensService: WalletDataProcessingPipeline.make().pipeline,
-            assetDefinitionStore: AssetDefinitionStore(),
+            assetDefinitionStore: .make(),
             analytics: FakeAnalyticsService(),
-            domainResolutionService: FakeDomainResolutionService()
-        )
+            domainResolutionService: FakeDomainResolutionService(),
+            importToken: ImportToken.make(wallet: .make()),
+            networkService: FakeNetworkService())
 
         coordinator.start()
 
@@ -26,15 +27,16 @@ class SendCoordinatorTests: XCTestCase {
     func testDestination() {
         let address: AlphaWallet.Address = .make()
         let coordinator = SendCoordinator(
-            transactionType: .nativeCryptocurrency(Token(), destination: .init(address: address), amount: nil),
+            transactionType: .nativeCryptocurrency(Token(), destination: .init(address: address), amount: .notSet),
             navigationController: FakeNavigationController(),
             session: .make(),
             keystore: FakeEtherKeystore(),
             tokensService: WalletDataProcessingPipeline.make().pipeline,
-            assetDefinitionStore: AssetDefinitionStore(),
+            assetDefinitionStore: .make(),
             analytics: FakeAnalyticsService(),
-            domainResolutionService: FakeDomainResolutionService()
-        )
+            domainResolutionService: FakeDomainResolutionService(),
+            importToken: ImportToken.make(wallet: .make()),
+            networkService: FakeNetworkService())
         coordinator.start()
 
         XCTAssertEqual(address.eip55String, coordinator.sendViewController.targetAddressTextField.value)

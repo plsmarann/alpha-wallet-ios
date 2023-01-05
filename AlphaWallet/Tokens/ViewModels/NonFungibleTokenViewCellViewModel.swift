@@ -6,65 +6,40 @@ import BigInt
 import AlphaWalletFoundation
 
 struct NonFungibleTokenViewCellViewModel {
-    private let token: TokenViewModel
+    private let safeShortTitleInPluralForm: String
+    private let symbol: String
+    private let server: RPCServer
+    private let contract: AlphaWallet.Address
+    private let nonZeroBalanceCount: Int
     private let isVisible: Bool
+
+    let iconImage: Subscribable<TokenImage>
     let accessoryType: UITableViewCell.AccessoryType
 
     init(token: TokenViewModel, isVisible: Bool = true, accessoryType: UITableViewCell.AccessoryType = .none) {
-        self.token = token
+        self.contract = token.contractAddress
+        self.server = token.server
+        self.iconImage = token.icon(withSize: .s750)
+        self.nonZeroBalanceCount = token.nonZeroBalance.count
+        self.symbol = token.symbol
+        self.safeShortTitleInPluralForm = token.tokenScriptOverrides?.safeShortTitleInPluralForm ?? ""
         self.isVisible = isVisible
         self.accessoryType = accessoryType
     }
 
-    var blockChainNameFont: UIFont {
-        return Screen.TokenCard.Font.blockChainName
-    }
-
-    var blockChainNameColor: UIColor {
-        return Screen.TokenCard.Color.blockChainName
-    }
-
-    var blockChainNameBackgroundColor: UIColor {
-        return token.server.blockChainNameColor
-    }
-
-    var blockChainTag: String {
-        return "  \(token.server.name)     "
-    }
-
-    var blockChainNameTextAlignment: NSTextAlignment {
-        return .center
-    }
-
-    var blockChainNameCornerRadius: CGFloat {
-        return Screen.TokenCard.Metric.blockChainTagCornerRadius
-    }
-
-    var blockChainName: String {
-        return token.server.blockChainName
-    }
-
-    var backgroundColor: UIColor {
-        return Screen.TokenCard.Color.background
-    }
-
-    var contentsBackgroundColor: UIColor {
-        return Configuration.Color.Semantic.tableViewCellBackground
-    }
-
     var contentsCornerRadius: CGFloat {
-        return Metrics.CornerRadius.box
+        return DataEntry.Metric.CornerRadius.box
     }
 
     var titleAttributedString: NSAttributedString {
-        return .init(string: token.tokenScriptOverrides?.safeShortTitleInPluralForm ?? "-", attributes: [
+        return .init(string: safeShortTitleInPluralForm, attributes: [
             .font: Screen.TokenCard.Font.title,
             .foregroundColor: Configuration.Color.Semantic.defaultForegroundText
         ])
     }
 
     var tickersAmountAttributedString: NSAttributedString {
-        return .init(string: "\(token.nonZeroBalance.count.toString()) \(token.symbol)", attributes: [
+        return .init(string: "\(nonZeroBalanceCount) \(symbol)", attributes: [
             .font: Screen.TokenCard.Font.subtitle,
             .foregroundColor: Configuration.Color.Semantic.defaultSubtitleText
         ])
@@ -74,29 +49,10 @@ struct NonFungibleTokenViewCellViewModel {
         return isVisible ? 1.0 : 0.4
     }
 
-    var iconImage: Subscribable<TokenImage> {
-        token.icon(withSize: .s750)
-    }
-
     var blockChainTagViewModel: BlockchainTagLabelViewModel {
-        return .init(server: token.server)
+        return .init(server: server)
     }
 
 }
 
-extension NonFungibleTokenViewCellViewModel: Hashable {
-    static func == (lhs: NonFungibleTokenViewCellViewModel, rhs: NonFungibleTokenViewCellViewModel) -> Bool {
-        return lhs.token == rhs.token &&
-            lhs.token.tokenScriptOverrides?.safeShortTitleInPluralForm == rhs.token.tokenScriptOverrides?.shortTitleInPluralForm &&
-            lhs.token.nonZeroBalance.count.toString() == rhs.token.nonZeroBalance.count.toString()
-    }
-
-    func hash(into hasher: inout Hasher) {
-        hasher.combine(isVisible)
-        hasher.combine(accessoryType)
-        hasher.combine(token.contractAddress)
-        hasher.combine(token.server)
-        hasher.combine(token.tokenScriptOverrides?.safeShortTitleInPluralForm)
-        hasher.combine(token.nonZeroBalance.count)
-    }
-}
+extension NonFungibleTokenViewCellViewModel: Hashable { }

@@ -24,11 +24,11 @@ class ImageView: UIImageView {
     }
 }
 
-class TokenImageView: UIView, ViewRoundingSupportable, ViewLoadingCancelable {
+final class TokenImageView: UIView, ViewRoundingSupportable, ViewLoadingCancelable {
     private var subscriptionKey: Subscribable<TokenImage>.SubscribableKey?
     private let symbolLabel: UILabel = {
         let label = UILabel()
-        label.textColor = Colors.appWhite
+        label.textColor = Configuration.Color.Semantic.defaultInverseText
         label.font = UIFont.systemFont(ofSize: 13)
         label.textAlignment = .center
         label.adjustsFontSizeToFitWidth = true
@@ -120,8 +120,7 @@ class TokenImageView: UIView, ViewRoundingSupportable, ViewLoadingCancelable {
             imageView.anchorsConstraint(to: self, edgeInsets: edgeInsets),
             chainOverlayImageView.leftAnchor.constraint(equalTo: imageView.leftAnchor, constant: 0),
             chainOverlayImageView.bottomAnchor.constraint(equalTo: imageView.bottomAnchor, constant: 0),
-            chainOverlayImageView.widthAnchor.constraint(equalToConstant: Metrics.tokenChainOverlayDimension),
-            chainOverlayImageView.heightAnchor.constraint(equalTo: chainOverlayImageView.widthAnchor),
+            chainOverlayImageView.sized(DataEntry.Metric.ChainOverlay.size),
         ])
 
         chainOverlayImageView.isHidden = isChainOverlayHidden

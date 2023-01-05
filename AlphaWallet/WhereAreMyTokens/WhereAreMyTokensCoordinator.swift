@@ -8,9 +8,9 @@
 import UIKit
 import AlphaWalletFoundation
 
-protocol WhereAreMyTokensCoordinatorDelegate: class {
+protocol WhereAreMyTokensCoordinatorDelegate: AnyObject {
     func switchToMainnetSelected(in coordinator: WhereAreMyTokensCoordinator)
-    func didDismiss(in coordinator: WhereAreMyTokensCoordinator)
+    func didClose(in coordinator: WhereAreMyTokensCoordinator)
 }
 
 class WhereAreMyTokensCoordinator: NSObject, Coordinator {
@@ -42,7 +42,7 @@ extension WhereAreMyTokensCoordinator: PromptViewControllerDelegate {
         delegate?.switchToMainnetSelected(in: self)
     }
 
-    func controllerDismiss(_ controller: PromptViewController) {
-        delegate?.didDismiss(in: self)
+    func didClose(in controller: PromptViewController) {
+        delegate?.didClose(in: self)
     }
 }

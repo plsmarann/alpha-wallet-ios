@@ -6,26 +6,13 @@ import AlphaWalletFoundation
 
 struct TransactionRowCellViewModel {
     private let transactionRow: TransactionRow
-    private let chainState: ChainState
     private let wallet: Wallet
     private let transactionRowViewModel: TransactionRowViewModel
-    private let server: RPCServer
 
-    init(
-            transactionRow: TransactionRow,
-            chainState: ChainState,
-            wallet: Wallet,
-            server: RPCServer
-    ) {
+    init(transactionRow: TransactionRow, chainState: ChainState, wallet: Wallet) {
         self.transactionRow = transactionRow
-        self.chainState = chainState
         self.wallet = wallet
-        self.server = server
-        self.transactionRowViewModel = TransactionRowViewModel(
-            transactionRow: transactionRow,
-            chainState: chainState,
-            wallet: wallet
-        )
+        self.transactionRowViewModel = TransactionRowViewModel(transactionRow: transactionRow, chainState: chainState, wallet: wallet)
     }
 
     private var operationTitle: String? {
@@ -54,8 +41,8 @@ struct TransactionRowCellViewModel {
         }
     }
 
-    var titleTextColor: UIColor {
-        return Colors.appText
+    var blockchainTagLabelViewModel: BlockchainTagLabelViewModel {
+        return .init(server: transactionRow.server, isHidden: false)
     }
 
     var title: String {
@@ -86,37 +73,13 @@ struct TransactionRowCellViewModel {
         }
     }
 
-    var subTitleTextColor: UIColor {
-        return Colors.appSubtitle
-    }
-
-    var titleFont: UIFont {
-        return Fonts.regular(size: 17)
-    }
-
-    var subTitleFont: UIFont {
-        return Fonts.regular(size: 13)
-    }
-
-    var amountFont: UIFont {
-        return Fonts.semibold(size: 14)
-    }
-
     var contentsBackgroundColor: UIColor {
         switch transactionRow.state {
         case .completed, .error, .unknown, .failed:
-            return .white
+            return Configuration.Color.Semantic.defaultViewBackground
         case .pending:
-            return Colors.veryLightOrange
+            return Configuration.Color.Semantic.pendingState
         }
-    }
-
-    var contentsCornerRadius: CGFloat {
-        return Metrics.CornerRadius.box
-    }
-
-    var backgroundColor: UIColor {
-        return Colors.appBackground
     }
 
     var amountAttributedString: NSAttributedString {
@@ -127,57 +90,26 @@ struct TransactionRowCellViewModel {
         } else {
             amount = transactionRowViewModel.amountWithSign(for: value.amount) + " " + value.symbol
         }
-        return NSAttributedString(
-                string: amount,
-                attributes: [
-                    .font: Fonts.regular(size: 25),
-                    .foregroundColor: transactionRowViewModel.amountTextColor,
-                ]
-        )
+
+        return NSAttributedString(string: amount, attributes: [
+            .font: Fonts.regular(size: ScreenChecker.size(big: 22, medium: 22, small: 17)),
+            .foregroundColor: transactionRowViewModel.amountTextColor,
+        ])
     }
 
     var statusImage: UIImage? {
         switch transactionRow.state {
         case .error, .unknown, .failed: return R.image.transaction_error()
-        case .completed:
-            return nil
-        case .pending:
-            return R.image.transaction_pending()
+        case .completed: return nil
+        case .pending: return R.image.transaction_pending()
         }
-    }
-
-    var blockChainNameFont: UIFont {
-        return Screen.TokenCard.Font.blockChainName
-    }
-
-    var blockChainNameColor: UIColor {
-        return Screen.TokenCard.Color.blockChainName
-    }
-
-    var blockChainNameBackgroundColor: UIColor {
-        return server.blockChainNameColor
-    }
-
-    var blockChainName: String {
-        return "  \(server.name)     "
-    }
-
-    var blockChainNameTextAlignment: NSTextAlignment {
-        return .center
-    }
-
-    var blockChainNameCornerRadius: CGFloat {
-        return Screen.TokenCard.Metric.blockChainTagCornerRadius
     }
 
     var leftMargin: CGFloat {
         switch transactionRow {
-        case .standalone:
-            return StyleLayout.sideMargin
-        case .group:
-            return StyleLayout.sideMargin
-        case .item:
-            return StyleLayout.sideMargin + 20
+        case .standalone: return DataEntry.Metric.sideMargin
+        case .group: return DataEntry.Metric.sideMargin
+        case .item: return DataEntry.Metric.sideMargin + ScreenChecker.size(big: 20, medium: 20, small: 10)
         }
     }
 }

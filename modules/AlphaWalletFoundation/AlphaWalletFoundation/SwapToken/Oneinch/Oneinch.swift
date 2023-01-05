@@ -7,7 +7,6 @@
 
 import Foundation
 import Combine
-import Alamofire
 import AlphaWalletCore
 
 public class Oneinch: SupportedTokenActionsProvider, SwapTokenViaUrlProvider {
@@ -38,7 +37,7 @@ public class Oneinch: SupportedTokenActionsProvider, SwapTokenViaUrlProvider {
     public let analyticsNavigation: Analytics.Navigation = .onOneinch
     public let analyticsName: String = "Oneinch"
 
-    public init(action: String, networkProvider: OneinchNetworkProviderType = OneinchNetworkProvider(), reachability: ReachabilityManagerProtocol = ReachabilityManager(), retryBehavior: RetryBehavior<RunLoop> = Oneinch.defaultRetryBehavior) {
+    public init(action: String, networkProvider: OneinchNetworkProviderType, reachability: ReachabilityManagerProtocol = ReachabilityManager(), retryBehavior: RetryBehavior<RunLoop> = Oneinch.defaultRetryBehavior) {
         self.action = action
         self.networkProvider = networkProvider
         self.reachability = reachability
@@ -90,7 +89,7 @@ public class Oneinch: SupportedTokenActionsProvider, SwapTokenViaUrlProvider {
         switch token.server.serverWithEnhancedSupport {
         case .main, .arbitrum:
             return asset(for: token.contractAddress) != nil
-        case .main, .xDai, .candle, .polygon, .binance_smart_chain, .heco, .rinkeby, .klaytnCypress, .klaytnBaobabTestnet, nil:
+        case .main, .xDai, .polygon, .binance_smart_chain, .heco, .rinkeby, .klaytnCypress, .klaytnBaobabTestnet, nil:
             return false
         }
     }

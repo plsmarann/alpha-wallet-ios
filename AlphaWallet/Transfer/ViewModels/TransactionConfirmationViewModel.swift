@@ -5,53 +5,52 @@ import BigInt
 import Combine
 import AlphaWalletFoundation
 
-protocol CryptoToFiatRateUpdatable: class {
-    var cryptoToDollarRate: Double? { get set }
+protocol RateUpdatable: AnyObject {
+    var rate: CurrencyRate? { get set }
 }
 
-protocol BalanceUpdatable: class {
+protocol BalanceUpdatable: AnyObject {
     func updateBalance(_ balanceViewModel: BalanceViewModel?)
 }
 
+struct TransactionConfirmationViewModelInput {
+
+}
+
+struct TransactionConfirmationViewModelOutput {
+    let viewState: AnyPublisher<TransactionConfirmationViewModel.ViewState, Never>
+}
+
 class TransactionConfirmationViewModel {
-    private let session: WalletSession
-    private lazy var token: AnyPublisher<Token, Never> = {
-        let token = configurator.transaction.transactionType.tokenObject
-        return Just(token)
-            .eraseToAnyPublisher()
-    }()
     private let configurationHasChangedSubject = PassthroughSubject<Void, Never>()
     private let reloadViewSubject = PassthroughSubject<Void, Never>()
-    private let resolver: RecipientResolver
+    private let recipientResolver: RecipientResolver
     private let configurator: TransactionConfigurator
     private (set) var canBeConfirmed = true
     private var timerToReenableConfirmButton: Timer?
     private let type: ViewModelType
     private let tokensService: TokenViewModelState
 
-    var backgroundColor: UIColor = UIColor.clear
-    var footerBackgroundColor: UIColor = Colors.appWhite
+    var backgroundColor: UIColor = Colors.clear
+    var footerBackgroundColor: UIColor = Configuration.Color.Semantic.defaultViewBackground
 
     init(configurator: TransactionConfigurator, configuration: TransactionType.Configuration, assetDefinitionStore: AssetDefinitionStore, domainResolutionService: DomainResolutionServiceType, tokensService: TokenViewModelState) {
         self.tokensService = tokensService
         let recipientOrContract = configurator.transaction.recipient ?? configurator.transaction.contract
-        resolver = RecipientResolver(address: recipientOrContract, domainResolutionService: domainResolutionService)
+        recipientResolver = RecipientResolver(address: recipientOrContract, domainResolutionService: domainResolutionService)
         self.configurator = configurator
-        session = configurator.session
 
         switch configuration {
         case .tokenScriptTransaction(_, let contract, let functionCallMetaData):
             type = .tokenScriptTransaction(.init(address: contract, configurator: configurator, functionCallMetaData: functionCallMetaData))
         case .dappTransaction:
-            type = .dappOrWalletConnectTransaction(.init(configurator: configurator, assetDefinitionStore: assetDefinitionStore, recipientResolver: resolver, requester: nil))
+            type = .dappOrWalletConnectTransaction(.init(configurator: configurator, assetDefinitionStore: assetDefinitionStore, recipientResolver: recipientResolver, requester: nil))
         case .walletConnect(_, let requester):
-            type = .dappOrWalletConnectTransaction(.init(configurator: configurator, assetDefinitionStore: assetDefinitionStore, recipientResolver: resolver, requester: requester))
-        case .sendFungiblesTransaction(_, let amount):
-            let resolver = RecipientResolver(address: configurator.transaction.recipient, domainResolutionService: domainResolutionService)
-            type = .sendFungiblesTransaction(.init(configurator: configurator, assetDefinitionStore: assetDefinitionStore, recipientResolver: resolver, amount: amount))
-        case .sendNftTransaction(_, let tokenInstanceNames):
-            let resolver = RecipientResolver(address: configurator.transaction.recipient, domainResolutionService: domainResolutionService)
-            type = .sendNftTransaction(.init(configurator: configurator, recipientResolver: resolver, tokenInstanceNames: tokenInstanceNames))
+            type = .dappOrWalletConnectTransaction(.init(configurator: configurator, assetDefinitionStore: assetDefinitionStore, recipientResolver: recipientResolver, requester: requester))
+        case .sendFungiblesTransaction:
+            type = .sendFungiblesTransaction(.init(configurator: configurator, assetDefinitionStore: assetDefinitionStore, recipientResolver: recipientResolver))
+        case .sendNftTransaction:
+            type = .sendNftTransaction(.init(configurator: configurator, recipientResolver: recipientResolver))
         case .claimPaidErc875MagicLink(_, let price, let numberOfTokens):
             type = .claimPaidErc875MagicLink(.init(configurator: configurator, price: price, numberOfTokens: numberOfTokens))
         case .speedupTransaction:
@@ -62,68 +61,47 @@ class TransactionConfirmationViewModel {
             type = .swapTransaction(.init(configurator: configurator, fromToken: fromToken, fromAmount: fromAmount, toToken: toToken, toAmount: toAmount))
         case .approve:
             //TODO rename `.dappOrWalletConnectTransaction` so it's more general?
-            type = .dappOrWalletConnectTransaction(.init(configurator: configurator, assetDefinitionStore: assetDefinitionStore, recipientResolver: resolver, requester: nil))
+            type = .dappOrWalletConnectTransaction(.init(configurator: configurator, assetDefinitionStore: assetDefinitionStore, recipientResolver: recipientResolver, requester: nil))
         }
     }
 
     private lazy var resolvedRecipient: AnyPublisher<Void, Never> = {
-        return resolver.resolveRecipient()
+        return recipientResolver.resolveRecipient()
             .receive(on: RunLoop.main)
             .eraseToAnyPublisher()
     }()
 
     private lazy var tokenBalance: AnyPublisher<BalanceViewModel?, Never> = {
+        //NOTE: isn't really correctly to handle this case, need to update it
         let forceTriggerUpdateBalance = configurationHasChangedSubject
-            .flatMap { _ in self.token }
-            .map { [tokensService] token -> TokenViewModel? in
+            .flatMap { [configurator] _ -> AnyPublisher<Token, Never> in
+                return .just(configurator.transaction.transactionType.tokenObject)
+            }.map { [tokensService] token -> TokenViewModel? in
                 switch token.type {
                 case .nativeCryptocurrency:
                     let etherToken = MultipleChainsTokensDataStore.functional.etherToken(forServer: token.server)
                     return tokensService.tokenViewModel(for: etherToken)
-                case .erc20:
-                    return tokensService.tokenViewModel(for: token)
-                case .erc1155, .erc721, .erc875, .erc721ForTickets:
+                case .erc20, .erc1155, .erc721, .erc875, .erc721ForTickets:
                     return tokensService.tokenViewModel(for: token)
                 }
             }.map { $0?.balance }
-            .eraseToAnyPublisher()
 
-        let tokenBalance = token.flatMap { [tokensService] token -> AnyPublisher<TokenViewModel?, Never> in
-            switch token.type {
-            case .nativeCryptocurrency:
-                let etherToken = MultipleChainsTokensDataStore.functional.etherToken(forServer: token.server)
-                return tokensService.tokenViewModelPublisher(for: etherToken)
-            case .erc20:
-                return tokensService.tokenViewModelPublisher(for: token)
-            case .erc1155, .erc721, .erc875, .erc721ForTickets:
-                return tokensService.tokenViewModelPublisher(for: token)
-            }
-        }.map { $0?.balance }
-        .eraseToAnyPublisher()
+        let tokenBalance = Just(configurator.transaction.transactionType.tokenObject)
+            .flatMap { [tokensService] token -> AnyPublisher<TokenViewModel?, Never> in
+                switch token.type {
+                case .nativeCryptocurrency:
+                    let etherToken = MultipleChainsTokensDataStore.functional.etherToken(forServer: token.server)
+                    return tokensService.tokenViewModelPublisher(for: etherToken)
+                case .erc20, .erc1155, .erc721, .erc875, .erc721ForTickets:
+                    return tokensService.tokenViewModelPublisher(for: token)
+                }
+            }.map { $0?.balance }
 
         return Publishers.Merge(tokenBalance, forceTriggerUpdateBalance)
             .handleEvents(receiveOutput: { [weak self] balance in
-                self?.cryptoToFiatRateUpdatable.cryptoToDollarRate = balance?.ticker?.price_usd
+                self?.rateUpdatable.rate = balance?.ticker.flatMap { CurrencyRate(currency: $0.currency, value: $0.price_usd) }
                 self?.updateBalance(balance)
             }).eraseToAnyPublisher()
-    }()
-
-    lazy var views: AnyPublisher<[ViewType], Never> = {
-        let balanceUpdated = tokenBalance
-            .mapToVoid()
-            .eraseToAnyPublisher()
-
-        let recipientUpdated = resolvedRecipient
-            .mapToVoid()
-            .eraseToAnyPublisher()
-
-        let forceViewReload = reloadViewSubject.eraseToAnyPublisher()
-
-        let initial = Just<Void>(()).eraseToAnyPublisher()
-
-        return Publishers.Merge4(initial, balanceUpdated, recipientUpdated, forceViewReload)
-            .map { _ in TransactionConfirmationViewModel.generateViews(for: self) }
-            .eraseToAnyPublisher()
     }()
 
     var canUserChangeGas: Bool {
@@ -142,6 +120,16 @@ class TransactionConfirmationViewModel {
     func reloadViewWithGasChanges() {
         reloadViewSubject.send(())
         disableConfirmButtonForShortTime()
+    }
+
+    func transform(input: TransactionConfirmationViewModelInput) -> TransactionConfirmationViewModelOutput {
+        let views = Publishers.Merge4(Just<Void>(()), tokenBalance.mapToVoid(), resolvedRecipient, reloadViewSubject)
+            .map { _ in self.generateViews(for: self) }
+
+        let viewState = views.map { TransactionConfirmationViewModel.ViewState(title: self.title, views: $0) }
+            .eraseToAnyPublisher()
+
+        return .init(viewState: viewState)
     }
 
     func shouldShowChildren(for section: Int, index: Int) -> Bool {
@@ -166,7 +154,7 @@ class TransactionConfirmationViewModel {
         }
     }
 
-    var cryptoToFiatRateUpdatable: CryptoToFiatRateUpdatable {
+    var rateUpdatable: RateUpdatable {
         switch type {
         case .dappOrWalletConnectTransaction(let viewModel): return viewModel
         case .tokenScriptTransaction(let viewModel): return viewModel
@@ -179,24 +167,24 @@ class TransactionConfirmationViewModel {
         }
     }
 
-    func showHideSection(_ section: Int) -> Action {
+    func expandOrCollapseAction(for section: Int) -> ExpandOrCollapseAction {
         switch type {
         case .dappOrWalletConnectTransaction(let viewModel):
-            return viewModel.showHideSection(section)
+            return viewModel.expandOrCollapseAction(for: section)
         case .tokenScriptTransaction(let viewModel):
-            return viewModel.showHideSection(section)
+            return viewModel.expandOrCollapseAction(for: section)
         case .sendFungiblesTransaction(let viewModel):
-            return viewModel.showHideSection(section)
+            return viewModel.expandOrCollapseAction(for: section)
         case .sendNftTransaction(let viewModel):
-            return viewModel.showHideSection(section)
+            return viewModel.expandOrCollapseAction(for: section)
         case .claimPaidErc875MagicLink(let viewModel):
-            return viewModel.showHideSection(section)
+            return viewModel.expandOrCollapseAction(for: section)
         case .speedupTransaction(let viewModel):
-            return viewModel.showHideSection(section)
+            return viewModel.expandOrCollapseAction(for: section)
         case .cancelTransaction(let viewModel):
-            return viewModel.showHideSection(section)
+            return viewModel.expandOrCollapseAction(for: section)
         case .swapTransaction(let viewModel):
-            return viewModel.showHideSection(section)
+            return viewModel.expandOrCollapseAction(for: section)
         }
     }
 
@@ -271,6 +259,10 @@ class TransactionConfirmationViewModel {
 }
 
 extension TransactionConfirmationViewModel {
+    struct ViewState {
+        let title: String
+        let views: [ViewType]
+    }
 
     enum ViewType {
         case separator(height: CGFloat)
@@ -279,9 +271,15 @@ extension TransactionConfirmationViewModel {
         case header(viewModel: TransactionConfirmationHeaderViewModel, isEditEnabled: Bool)
     }
 
-    enum Action {
-        case show
-        case hide
+    enum State {
+        case ready
+        case pending
+        case done(withError: Bool)
+    }
+
+    enum ExpandOrCollapseAction {
+        case expand
+        case collapse
     }
 
     enum ViewModelType {
@@ -295,18 +293,18 @@ extension TransactionConfirmationViewModel {
         case swapTransaction(SwapTransactionViewModel)
     }
 
-    static func gasFeeString(for configurator: TransactionConfigurator, cryptoToDollarRate: Double?) -> String {
-        let fee = configurator.currentConfiguration.gasPrice * configurator.currentConfiguration.gasLimit
+    static func gasFeeString(for configurator: TransactionConfigurator, rate: CurrencyRate?) -> String {
+        let configuration = configurator.currentConfiguration
+        let fee = Decimal(bigUInt: configuration.gasPrice * configuration.gasLimit, decimals: configurator.session.server.decimals) ?? .zero
         let estimatedProcessingTime = configurator.selectedConfigurationType.estimatedProcessingTime
-        let symbol = configurator.session.server.symbol
-        let feeString = EtherNumberFormatter.short.string(from: fee)
-        let cryptoToDollarSymbol = Currency.USD.rawValue
+        let feeString = NumberFormatter.shortCrypto.string(decimal: fee) ?? "-"
         let costs: String
-        if let cryptoToDollarRate = cryptoToDollarRate {
-            let cryptoToDollarValue = StringFormatter().currency(with: Double(fee) * cryptoToDollarRate / Double(EthereumUnit.ether.rawValue), and: cryptoToDollarSymbol)
-            costs =  "< ~\(feeString) \(symbol) (\(cryptoToDollarValue) \(cryptoToDollarSymbol))"
+        if let rate = rate {
+            let amountInFiat = NumberFormatter.fiat(currency: rate.currency).string(double: fee.doubleValue * rate.value) ?? "-"
+
+            costs =  "< ~\(feeString) \(configurator.session.server.symbol) (\(amountInFiat))"
         } else {
-            costs = "< ~\(feeString) \(symbol)"
+            costs = "< ~\(feeString) \(configurator.session.server.symbol)"
         }
 
         if estimatedProcessingTime.isEmpty {
@@ -317,7 +315,7 @@ extension TransactionConfirmationViewModel {
     }
 
     // swiftlint:disable function_body_length
-    private static func generateViews(for _viewModel: TransactionConfirmationViewModel) -> [ViewType] {
+    private func generateViews(for _viewModel: TransactionConfirmationViewModel) -> [ViewType] {
         var views: [ViewType] = []
 
         switch _viewModel.type {

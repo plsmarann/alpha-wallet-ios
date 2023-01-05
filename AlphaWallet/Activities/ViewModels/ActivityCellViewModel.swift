@@ -12,14 +12,14 @@ struct ActivityCellViewModel {
     let activity: Activity
 
     var contentsBackgroundColor: UIColor {
-        .white
+        Configuration.Color.Semantic.tableViewCellBackground
     }
 
     var contentsCornerRadius: CGFloat {
-        return Metrics.CornerRadius.box
+        return DataEntry.Metric.CornerRadius.box
     }
 
     var backgroundColor: UIColor {
-        return Colors.appBackground
+        return Configuration.Color.Semantic.tableViewCellBackground
     }
 }

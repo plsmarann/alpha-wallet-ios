@@ -10,7 +10,7 @@ import Combine
 import BigInt
 import AlphaWalletFoundation
 
-protocol SwapTokensViewControllerDelegate: class {
+protocol SwapTokensViewControllerDelegate: AnyObject {
     func swapSelected(in viewController: SwapTokensViewController)
     func changeSwapRouteSelected(in viewController: SwapTokensViewController)
     func chooseTokenSelected(in viewController: SwapTokensViewController, selection: SwapTokens.TokenSelection)
@@ -21,24 +21,24 @@ class SwapTokensViewController: UIViewController {
     private let fromTokenHeaderView = SendViewSectionHeader()
     private let toTokenHeaderView = SendViewSectionHeader()
     private let buttonsBar = HorizontalButtonsBar(configuration: .primary(buttons: 1))
-    private lazy var fromAmountTextField: AmountTextField_v2 = {
-        let amountTextField = AmountTextField_v2(token: viewModel.swapPair.value.from, debugName: "from")
+    private lazy var fromAmountTextField: AmountTextField = {
+        let amountTextField = AmountTextField(token: viewModel.swapPair.value.from, debugName: "from")
         amountTextField.translatesAutoresizingMaskIntoConstraints = false
         amountTextField.delegate = self
-        amountTextField.viewModel.accessoryButtonTitle = .next
+        amountTextField.inputAccessoryButtonType = .done
         amountTextField.viewModel.errorState = .none
         amountTextField.isAlternativeAmountEnabled = true
-        amountTextField.allFundsAvailable = true
+        amountTextField.isAllFundsEnabled = true
 
         return amountTextField
     }()
-    private lazy var toAmountTextField: AmountTextField_v2 = {
-        let amountTextField = AmountTextField_v2(token: viewModel.swapPair.value.to, debugName: "to")
+    private lazy var toAmountTextField: AmountTextField = {
+        let amountTextField = AmountTextField(token: viewModel.swapPair.value.to, debugName: "to")
         amountTextField.translatesAutoresizingMaskIntoConstraints = false
-        amountTextField.viewModel.accessoryButtonTitle = .next
+        amountTextField.inputAccessoryButtonType = .none
         amountTextField.viewModel.errorState = .none
         amountTextField.isAlternativeAmountEnabled = true
-        amountTextField.allFundsAvailable = false
+        amountTextField.isAllFundsEnabled = false
         amountTextField.textField.isUserInteractionEnabled = false
 
         return amountTextField
@@ -59,9 +59,9 @@ class SwapTokensViewController: UIViewController {
         return imageView
     }()
     private lazy var containerView: ScrollableStackView = ScrollableStackView()
-    private let line: UIView = .spacer(height: 1, backgroundColor: R.color.mercury()!)
+    private let line: UIView = .separator()
     private lazy var footerBar: ButtonsBarBackgroundView = {
-        let view = ButtonsBarBackgroundView(buttonsBar: buttonsBar, edgeInsets: .zero, separatorHeight: 1.0)
+        let view = ButtonsBarBackgroundView(buttonsBar: buttonsBar)
         return view
     }()
     private (set) var loadingIndicatorView: UIActivityIndicatorView = {
@@ -73,8 +73,6 @@ class SwapTokensViewController: UIViewController {
     }()
     private var cancelable = Set<AnyCancellable>()
     private let viewModel: SwapTokensViewModel
-    private lazy var checker = KeyboardChecker(self, resetHeightDefaultValue: 0)
-    private var footerBottomConstraint: NSLayoutConstraint!
 
     weak var delegate: SwapTokensViewControllerDelegate?
 
@@ -82,7 +80,30 @@ class SwapTokensViewController: UIViewController {
         self.viewModel = viewModel
         super.init(nibName: nil, bundle: nil)
 
-        generageLayout()
+        containerView.stackView.addArrangedSubviews([
+            fromTokenHeaderView,
+            fromAmountTextField.defaultLayout(edgeInsets: .init(top: ScreenChecker.size(big: 16, medium: 16, small: 7), left: 16, bottom: 0, right: 16)),
+            line,
+            toTokenHeaderView,
+            toAmountTextField.defaultLayout(edgeInsets: .init(top: ScreenChecker.size(big: 16, medium: 16, small: 7), left: 16, bottom: 0, right: 16)),
+            UIView.separator(),
+            quoteDetailsView
+        ])
+
+        view.addSubview(footerBar)
+        view.addSubview(containerView)
+        view.addSubview(togglePairButton)
+
+        NSLayoutConstraint.activate([
+            togglePairButton.centerXAnchor.constraint(equalTo: containerView.centerXAnchor),
+            togglePairButton.centerYAnchor.constraint(equalTo: line.centerYAnchor),
+            containerView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            containerView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            containerView.topAnchor.constraint(equalTo: view.topAnchor),
+            containerView.bottomAnchor.constraint(equalTo: footerBar.topAnchor),
+
+            footerBar.anchorsConstraint(to: view)
+        ])
     }
 
     override func viewDidLoad() {
@@ -95,66 +116,25 @@ class SwapTokensViewController: UIViewController {
         toAmountTextField.selectCurrencyButton.addTarget(self, action: #selector(chooseTokenSelected), for: .touchUpInside)
         fromAmountTextField.selectCurrencyButton.addTarget(self, action: #selector(chooseTokenSelected), for: .touchUpInside)
 
+        containerView.backgroundColor = Configuration.Color.Semantic.tableViewHeaderBackground
+        view.backgroundColor = Configuration.Color.Semantic.tableViewHeaderBackground
+        title = viewModel.title
+        fromTokenHeaderView.configure(viewModel: viewModel.fromHeaderViewModel)
+        toTokenHeaderView.configure(viewModel: viewModel.toHeaderViewModel)
+
         bind(viewModel: viewModel)
-    }
-
-    override func viewDidAppear(_ animated: Bool) {
-        super.viewDidAppear(animated)
-        checker.viewWillAppear()
-    }
-
-    override func viewWillDisappear(_ animated: Bool) {
-        super.viewWillDisappear(animated)
-        checker.viewWillDisappear()
     }
 
     required init?(coder: NSCoder) {
         return nil
     }
 
-    private func generageLayout() {
-        containerView.stackView.addArrangedSubviews([
-            fromTokenHeaderView,
-            fromAmountTextField.defaultLayout(edgeInsets: .init(top: 0, left: 16, bottom: 0, right: 16)),
-            line,
-            toTokenHeaderView,
-            toAmountTextField.defaultLayout(edgeInsets: .init(top: 0, left: 16, bottom: 0, right: 16)),
-            .spacer(height: 1, backgroundColor: R.color.mercury()!),
-            quoteDetailsView
-        ])
-
-        view.addSubview(footerBar)
-        view.addSubview(containerView)
-        view.addSubview(togglePairButton)
-
-        footerBottomConstraint = footerBar.bottomAnchor.constraint(equalTo: view.bottomAnchor)
-
-        NSLayoutConstraint.activate([
-            togglePairButton.centerXAnchor.constraint(equalTo: containerView.centerXAnchor),
-            togglePairButton.centerYAnchor.constraint(equalTo: line.centerYAnchor),
-            containerView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            containerView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            containerView.topAnchor.constraint(equalTo: view.topAnchor),
-            containerView.bottomAnchor.constraint(equalTo: footerBar.topAnchor),
-            footerBar.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            footerBar.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            footerBottomConstraint,
-        ])
-
-        checker.constraints = [footerBottomConstraint]
-    }
-
     private func bind(viewModel: SwapTokensViewModel) {
-        view.backgroundColor = viewModel.backgoundColor
-        containerView.scrollView.backgroundColor = viewModel.backgoundColor
-        title = viewModel.title
+        let input = SwapTokensViewModelInput(
+            cryptoValue: fromAmountTextField.cryptoValuePublisher,
+            allFunds: fromAmountTextField.allFundsButton.publisher(forEvent: .touchUpInside).eraseToAnyPublisher(),
+            togglePair: togglePairButton.publisher(forEvent: .touchUpInside).eraseToAnyPublisher())
 
-        fromTokenHeaderView.configure(viewModel: viewModel.fromHeaderViewModel)
-        toTokenHeaderView.configure(viewModel: viewModel.toHeaderViewModel)
-
-        let allFunds = fromAmountTextField.allFundsButton.publisher(forEvent: .touchUpInside).eraseToAnyPublisher()
-        let togglePair = togglePairButton.publisher(forEvent: .touchUpInside).eraseToAnyPublisher()
-        let input = SwapTokensViewModelInput(cryptoValue: fromAmountTextField.cryptoValue, allFunds: allFunds, togglePair: togglePair)
         let output = viewModel.transform(input: input)
 
         output.anyErrorString
@@ -175,7 +155,7 @@ class SwapTokensViewController: UIViewController {
             }.store(in: &cancelable)
 
         output.convertedValue
-            .sink { [weak toAmountTextField] in toAmountTextField?.set(crypto: $0, useFormatting: false) }
+            .sink { [weak toAmountTextField] in toAmountTextField?.set(amount: $0) }
             .store(in: &cancelable)
 
         output.amountValidation
@@ -196,7 +176,8 @@ class SwapTokensViewController: UIViewController {
             .sink { [weak toAmountTextField] in toAmountTextField?.statusLabel.text = $0 }
             .store(in: &cancelable)
 
-        output.allFunds.sink { [weak fromAmountTextField] in fromAmountTextField?.set(crypto: $0.allFundsFullValue.localizedString, shortCrypto: $0.allFundsShortValue, useFormatting: false) }
+        output.allFunds
+            .sink { [weak fromAmountTextField] in fromAmountTextField?.set(amount: $0) }
             .store(in: &cancelable)
     }
 
@@ -223,17 +204,12 @@ extension SwapTokensViewController: PopNotifiable {
     }
 }
 
-extension SwapTokensViewController: AmountTextField_v2Delegate {
-
-    func changeAmount(in textField: AmountTextField_v2) {
-        //no-op
+extension SwapTokensViewController: AmountTextFieldDelegate {
+    func doneButtonTapped(for textField: AmountTextField) {
+        view.endEditing(true)
     }
-
-    func changeType(in textField: AmountTextField_v2) {
-        //no-op
-    }
-
-    func shouldReturn(in textField: AmountTextField_v2) -> Bool {
+    
+    func shouldReturn(in textField: AmountTextField) -> Bool {
         textField.resignFirstResponder()
         return false
     }

@@ -8,6 +8,8 @@
 import UIKit
 import AlphaWalletFoundation
 
+fileprivate typealias CFG = Configuration
+
 protocol TransactionConfirmationHeaderViewDelegate: AnyObject {
     func headerView(_ header: TransactionConfirmationHeaderView, shouldHideChildren section: Int, index: Int) -> Bool
     func headerView(_ header: TransactionConfirmationHeaderView, shouldShowChildren section: Int, index: Int) -> Bool
@@ -61,7 +63,7 @@ class TransactionConfirmationHeaderView: UIView {
     private let chevronImageView: UIImageView = {
         let imageView = UIImageView()
         imageView.translatesAutoresizingMaskIntoConstraints = false
-        imageView.tintColor = R.color.black()
+        imageView.tintColor = CFG.Color.Semantic.tableViewAccessory
         imageView.contentMode = .scaleAspectFit
 
         return imageView
@@ -89,7 +91,7 @@ class TransactionConfirmationHeaderView: UIView {
 
         let separatorLine = UIView()
         separatorLine.translatesAutoresizingMaskIntoConstraints = false
-        separatorLine.backgroundColor = R.color.mercury()
+        separatorLine.backgroundColor = CFG.Color.Semantic.popupSeparator
 
         let titleRow = [titleIconImageView, titleLabel].asStackView(axis: .horizontal, spacing: 6, alignment: .center)
 
@@ -189,7 +191,7 @@ class TransactionConfirmationHeaderView: UIView {
             chevronImageView.image = viewModel.chevronImage
             titleLabel.alpha = viewModel.titleAlpha
             titleIconImageView.alpha = viewModel.titleAlpha
-            
+
             delegate?.headerView(self, openStateChanged: viewModel.configuration.section)
         }
     }
@@ -197,20 +199,16 @@ class TransactionConfirmationHeaderView: UIView {
     func expand() {
         guard let delegate = delegate else { return }
 
-        for (index, view) in childrenStackView.arrangedSubviews.enumerated() {
-            if delegate.headerView(self, shouldShowChildren: viewModel.configuration.section, index: index) {
-                view.isHidden = false
-            }
+        for (index, view) in childrenStackView.arrangedSubviews.enumerated() where delegate.headerView(self, shouldShowChildren: viewModel.configuration.section, index: index) {
+            view.isHidden = false
         }
     }
 
     func collapse() {
         guard let delegate = delegate else { return }
 
-        for (index, view) in childrenStackView.arrangedSubviews.enumerated() {
-            if delegate.headerView(self, shouldHideChildren: viewModel.configuration.section, index: index) {
-                view.isHidden = true
-            }
+        for (index, view) in childrenStackView.arrangedSubviews.enumerated() where delegate.headerView(self, shouldHideChildren: viewModel.configuration.section, index: index) {
+            view.isHidden = true
         }
     }
 }
@@ -225,7 +223,7 @@ extension TransactionConfirmationHeaderView {
 
         label.attributedText = NSAttributedString(string: title, attributes: [
             .font: Fonts.bold(size: 17) as Any,
-            .foregroundColor: R.color.azure() as Any,
+            .foregroundColor: Colors.appTint,
             .paragraphStyle: paragraph
         ])
         label.translatesAutoresizingMaskIntoConstraints = false

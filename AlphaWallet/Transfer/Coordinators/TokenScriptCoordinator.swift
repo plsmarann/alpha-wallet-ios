@@ -31,22 +31,25 @@ class TokenScriptCoordinator: Coordinator {
     private let action: TokenInstanceAction
     private var cancelable = Set<AnyCancellable>()
     private let tokensService: TokenViewModelState
+    private let networkService: NetworkService
+
     weak var delegate: TokenScriptCoordinatorDelegate?
     let navigationController: UINavigationController
     var coordinators: [Coordinator] = []
 
-    init(
-            session: WalletSession,
-            navigationController: UINavigationController,
-            keystore: Keystore,
-            tokenHolder: TokenHolder,
-            tokenObject: Token,
-            assetDefinitionStore: AssetDefinitionStore,
-            analytics: AnalyticsLogger,
-            domainResolutionService: DomainResolutionServiceType,
-            action: TokenInstanceAction,
-            tokensService: TokenViewModelState
-    ) {
+    init(session: WalletSession,
+         navigationController: UINavigationController,
+         keystore: Keystore,
+         tokenHolder: TokenHolder,
+         tokenObject: Token,
+         assetDefinitionStore: AssetDefinitionStore,
+         analytics: AnalyticsLogger,
+         domainResolutionService: DomainResolutionServiceType,
+         action: TokenInstanceAction,
+         tokensService: TokenViewModelState,
+         networkService: NetworkService) {
+
+        self.networkService = networkService
         self.tokensService = tokensService
         self.action = action
         self.tokenHolder = tokenHolder
@@ -61,14 +64,46 @@ class TokenScriptCoordinator: Coordinator {
     }
 
     func start() {
-        viewController.navigationItem.largeTitleDisplayMode = .never
-        navigationController.pushViewController(viewController, animated: true)
+        switch action.type {
+        case .tokenScript(_, let title, viewHtml: (html: let html, style: let style), attributes: let attributes, transactionFunction: let transactionFunction, selection: let selection):
+            if TokenScript.functional.isNoView(html: html, style: style) {
+                let noViewActionCoordinator = NoViewCardTokenScriptActionCoordinator(
+                    token: token,
+                    tokenHolder: tokenHolder,
+                    action: action,
+                    title: title,
+                    viewHtml: (html: html, style: style),
+                    attributes: attributes,
+                    transactionFunction: transactionFunction,
+                    selection: selection,
+                    navigationController: navigationController,
+                    assetDefinitionStore: assetDefinitionStore,
+                    session: session,
+                    keystore: keystore)
 
-        subscribeForEthereumEventChanges()
+                noViewActionCoordinator.delegate = self
+                noViewActionCoordinator.start()
+            } else {
+                viewController.navigationItem.largeTitleDisplayMode = .never
+                navigationController.pushViewController(viewController, animated: true)
+                //TODO need to handle this for no-view cards too?
+                subscribeForEthereumEventChanges()
+            }
+        case .erc20Send, .erc20Receive, .nftRedeem, .nftSell, .nonFungibleTransfer, .swap, .bridge, .buy:
+            assertImpossibleCodePath(message: "Should only be TokenScript actions")
+        }
     }
 
     private func makeTokenInstanceActionViewController(token: Token, for tokenHolder: TokenHolder, action: TokenInstanceAction) -> TokenInstanceActionViewController {
-        let vc = TokenInstanceActionViewController(analytics: analytics, token: token, tokenHolder: tokenHolder, assetDefinitionStore: assetDefinitionStore, action: action, session: session, keystore: keystore)
+        let vc = TokenInstanceActionViewController(
+            analytics: analytics,
+            token: token,
+            tokenHolder: tokenHolder,
+            assetDefinitionStore: assetDefinitionStore,
+            action: action,
+            session: session,
+            keystore: keystore)
+
         vc.delegate = self
         vc.configure()
 
@@ -98,22 +133,6 @@ extension TokenScriptCoordinator: TokenInstanceActionViewControllerDelegate {
 
     func didPressOpenWebPage(_ url: URL, in viewController: UIViewController) {
         delegate?.didPressOpenWebPage(url, in: viewController)
-    }
-
-    func confirmTransactionSelected(in viewController: TokenInstanceActionViewController, token: Token, contract: AlphaWallet.Address, tokenId: TokenId, values: [AttributeId: AssetInternalValue], localRefs: [AttributeId: AssetInternalValue], server: RPCServer, session: WalletSession, keystore: Keystore, transactionFunction: FunctionOrigin) {
-        guard let navigationController = viewController.navigationController else { return }
-
-        do {
-            let data = try transactionFunction.makeUnConfirmedTransaction(withTokenObject: token, tokenId: tokenId, attributeAndValues: values, localRefs: localRefs, server: server, session: session)
-            let coordinator = try TransactionConfirmationCoordinator(presentingViewController: navigationController, session: session, transaction: data.0, configuration: .tokenScriptTransaction(confirmType: .signThenSend, contract: contract, functionCallMetaData: data.1), analytics: analytics, domainResolutionService: domainResolutionService, keystore: keystore, assetDefinitionStore: assetDefinitionStore, tokensService: tokensService)
-            coordinator.delegate = self
-            addCoordinator(coordinator)
-            coordinator.start(fromSource: .tokenScript)
-        } catch {
-            UIApplication.shared
-                .presentedViewController(or: navigationController)
-                .displayError(message: error.prettyError)
-        }
     }
 
     func didPressViewRedemptionInfo(in viewController: TokenInstanceActionViewController) {
@@ -177,5 +196,42 @@ extension TokenScriptCoordinator: TransactionInProgressCoordinatorDelegate {
 
         guard case .some(let result) = transactionConfirmationResult else { return }
         delegate?.didFinish(result, in: self)
+    }
+}
+
+extension TokenScriptCoordinator: ConfirmTokenScriptActionTransactionDelegate {
+    func confirmTransactionSelected(in navigationController: UINavigationController, token: Token, contract: AlphaWallet.Address, tokenId: TokenId, values: [AttributeId: AssetInternalValue], localRefs: [AttributeId: AssetInternalValue], server: RPCServer, session: WalletSession, keystore: Keystore, transactionFunction: FunctionOrigin) {
+        do {
+            let data = try transactionFunction.makeUnConfirmedTransaction(
+                withTokenObject: token,
+                tokenId: tokenId,
+                attributeAndValues: values,
+                localRefs: localRefs,
+                server: server,
+                session: session)
+
+            let coordinator = TransactionConfirmationCoordinator(
+                presentingViewController: navigationController,
+                session: session,
+                transaction: data.0,
+                configuration: .tokenScriptTransaction(
+                    confirmType: .signThenSend,
+                    contract: contract,
+                    functionCallMetaData: data.1),
+                analytics: analytics,
+                domainResolutionService: domainResolutionService,
+                keystore: keystore,
+                assetDefinitionStore: assetDefinitionStore,
+                tokensService: tokensService,
+                networkService: networkService)
+
+            coordinator.delegate = self
+            addCoordinator(coordinator)
+            coordinator.start(fromSource: .tokenScript)
+        } catch {
+            UIApplication.shared
+                .presentedViewController(or: navigationController)
+                .displayError(message: error.prettyError)
+        }
     }
 }

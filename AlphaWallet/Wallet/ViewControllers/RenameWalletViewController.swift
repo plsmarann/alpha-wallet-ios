@@ -14,25 +14,27 @@ protocol RenameWalletViewControllerDelegate: AnyObject {
 }
 
 class RenameWalletViewController: UIViewController {
-
     private let viewModel: RenameWalletViewModel
     private var cancelable = Set<AnyCancellable>()
     private lazy var nameTextField: TextField = {
         let textField: TextField = .textField
-        textField.label.translatesAutoresizingMaskIntoConstraints = false
         textField.delegate = self
-        textField.translatesAutoresizingMaskIntoConstraints = false
-        textField.textField.autocorrectionType = .no
-        textField.textField.autocapitalizationType = .none
         textField.returnKeyType = .done
-        textField.isSecureTextEntry = false
-
+        textField.inputAccessoryButtonType = .done
+        textField.label.text = R.string.localizable.walletRenameEnterNameTitle()
+        textField.placeholder = "Wallet Name"
+        
         return textField
     }()
-    private let buttonsBar = HorizontalButtonsBar(configuration: .primary(buttons: 1))
-    private var footerBottomConstraint: NSLayoutConstraint!
-    private lazy var keyboardChecker = KeyboardChecker(self)
-    private let roundedBackground = RoundedBackground()
+    private let buttonsBar: HorizontalButtonsBar = {
+        let buttonsBar = HorizontalButtonsBar(configuration: .primary(buttons: 1))
+        buttonsBar.configure()
+
+        return buttonsBar
+    }()
+
+    private let willAppear = PassthroughSubject<Void, Never>()
+
     weak var delegate: RenameWalletViewControllerDelegate?
 
     init(viewModel: RenameWalletViewModel) {
@@ -40,64 +42,33 @@ class RenameWalletViewController: UIViewController {
 
         super.init(nibName: nil, bundle: nil)
 
-        let footerBar = ButtonsBarBackgroundView(buttonsBar: buttonsBar, edgeInsets: .zero, separatorHeight: 0.0)
+        let footerBar = ButtonsBarBackgroundView(buttonsBar: buttonsBar, separatorHeight: 0)
+        let nameTextFieldLayout = nameTextField.defaultLayout(edgeInsets: .init(top: 20, left: 16, bottom: 0, right: 16))
 
-        footerBottomConstraint = footerBar.bottomAnchor.constraint(equalTo: view.bottomAnchor)
-        footerBottomConstraint.constant = -UIApplication.shared.bottomSafeAreaHeight
-        keyboardChecker.constraints = [footerBottomConstraint]
-
-        let stackview = [
-            nameTextField.label,
-            .spacer(height: 4),
-            nameTextField,
-            .spacer(height: 4),
-            nameTextField.statusLabel
-        ].asStackView(axis: .vertical)
-
-        stackview.translatesAutoresizingMaskIntoConstraints = false
-
-        roundedBackground.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(roundedBackground)
-
-        roundedBackground.addSubview(stackview)
-        roundedBackground.addSubview(footerBar)
+        view.addSubview(nameTextFieldLayout)
+        view.addSubview(footerBar)
 
         NSLayoutConstraint.activate([
-            stackview.topAnchor.constraint(equalTo: roundedBackground.safeAreaLayoutGuide.topAnchor, constant: 20),
-            stackview.leadingAnchor.constraint(equalTo: roundedBackground.safeAreaLayoutGuide.leadingAnchor, constant: 20),
-            stackview.trailingAnchor.constraint(equalTo: roundedBackground.safeAreaLayoutGuide.trailingAnchor, constant: -20),
-            stackview.bottomAnchor.constraint(lessThanOrEqualTo: footerBar.topAnchor),
+            nameTextFieldLayout.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
+            nameTextFieldLayout.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor),
+            nameTextFieldLayout.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor),
 
-            footerBar.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            footerBar.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            footerBottomConstraint,
-        ] + roundedBackground.createConstraintsWithContainer(view: view))
+            footerBar.anchorsConstraint(to: view)
+        ])
     }
 
     override func viewDidLoad() {
         super.viewDidLoad()
 
-        buttonsBar.configure()
-        buttonsBar.buttons[0].addTarget(self, action: #selector(saveWalletNameSelected), for: .touchUpInside)
-
+        view.backgroundColor = Configuration.Color.Semantic.defaultViewBackground
+        buttonsBar.buttons[0].setTitle(R.string.localizable.walletRenameSave(), for: .normal)
+        
         bind(viewModel: viewModel)
-
-        let tap = UITapGestureRecognizer(target: self, action: #selector(tapSelected))
-        roundedBackground.addGestureRecognizer(tap)
-    }
-
-    @objc private func tapSelected(_ sender: UITapGestureRecognizer) {
-        view.endEditing(true)
     }
 
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
-        keyboardChecker.viewWillAppear()
-    }
-
-    override func viewWillDisappear(_ animated: Bool) {
-        super.viewWillDisappear(animated)
-        keyboardChecker.viewWillDisappear()
+        willAppear.send(())
     }
 
     required init?(coder: NSCoder) {
@@ -105,23 +76,27 @@ class RenameWalletViewController: UIViewController {
     }
 
     private func bind(viewModel: RenameWalletViewModel) {
-        navigationItem.title = viewModel.title
-        nameTextField.label.text = viewModel.walletNameTitle
-        buttonsBar.buttons[0].setTitle(viewModel.saveWalletNameTitle, for: .normal)
 
-        viewModel.resolvedEns
-            .assign(to: \.placeholder, on: nameTextField.textField)
+        let walletName = buttonsBar.buttons[0].publisher(forEvent: .touchUpInside)
+            .map { [nameTextField] _ in nameTextField.value }
+            .eraseToAnyPublisher()
+
+        let input = RenameWalletViewModelInput(
+            willAppear: willAppear.eraseToAnyPublisher(),
+            walletName: walletName)
+
+        let output = viewModel.transform(input: input)
+
+        output.viewState
+            .sink { [nameTextField, navigationItem] viewState in
+                nameTextField.textField.placeholder = viewState.placeholder
+                nameTextField.textField.text = viewState.text
+                navigationItem.title = viewState.title
+            }.store(in: &cancelable)
+
+        output.walletNameSaved
+            .sink { _ in self.delegate?.didFinish(in: self) }
             .store(in: &cancelable)
-
-        viewModel.assignedName
-            .assign(to: \.text, on: nameTextField.textField)
-            .store(in: &cancelable)
-    }
-
-    @objc private func saveWalletNameSelected(_ sender: UIButton) {
-        viewModel.set(walletName: nameTextField.value)
-
-        delegate?.didFinish(in: self)
     }
 }
 
@@ -133,10 +108,6 @@ extension RenameWalletViewController: TextFieldDelegate {
     }
 
     func doneButtonTapped(for textField: TextField) {
-        //no-op
-    }
-
-    func nextButtonTapped(for textField: TextField) {
-        //no-op
+        view.endEditing(true)
     }
 }

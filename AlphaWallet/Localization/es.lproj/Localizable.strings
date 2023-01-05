@@ -32,8 +32,11 @@
 "transaction.to.label.title" = "A";
 "transaction.time.label.title" = "Hora de la transacción";
 "transaction.id.label.title" = "Transacción n.º";
+"transaction.id" = "Transaction ID";
 "transaction.blockNumber.label.title" = "Bloque n.º";
 "transaction.nonce.label.title" = "Nonce";
+"transaction.amount.label.title" = "Amount";
+"transaction.network.label.title" = "Network";
 "confirmPayment.confirm.button.title" = "Confirmar";
 "confirmPayment.sign.button.title" = "Sign";
 "confirmPayment.reject.button.title" = "Reject";
@@ -47,6 +50,8 @@
 "Copy" = "Copiar";
 "Empty" = "Vacío";
 "emptyView.noTokens.label.title" = "¡Todavía no has recibido ningún token!";
+"emptyView.noMessages.label.title" = "There is nothing logged";
+"emptyView.noTransactions.label.title" = "You haven't received any transactions yet!";
 "errorView.description.label.title" = "Ha habido un problema... Inténtalo de nuevo.";
 "export.backup.button.title" = "Copia de seguridad del monedero";
 "export.controlYourMoney.label.title" = "Como solo tú controlas tu dinero, tendrás que guardar la copia de seguridad del almacén de claves por si se elimina esta aplicación.";
@@ -60,7 +65,8 @@
 "OK" = "OK";
 "Password" = "Contraseña";
 "Refresh" = "Actualizar";
-"request.addressCopied.title" = "Dirección copiada";
+"copiedToClipboard.title" = "%@ copied";
+"address" = "Address";
 "request.copyWallet.button.title" = "Copiar la dirección del monedero";
 "Retry" = "Reintentar";
 "Send" = "Enviar";
@@ -80,7 +86,7 @@
 "settings.biometricsEnabled.label.title" = "Código de acceso / %@";
 "settings.error.failedToSendEmail" = "Error al enviar el correo electrónico. Asegúrate de que tienes una aplicación de correo instalada.";
 "settings.network.button.title" = "Red";
-"settings.enabledNetworks.button.title" = "Redes activadas";
+"settings.enabledNetworks.button.title" = "Enabled Networks %@";
 "settings.enabledNetworks.mainnet" = "Mainnet";
 "settings.enabledNetworks.testnet" = "Testnet";
 "settings.enabledNetworks.promptEnableTestnet.title" = "What is Testnet?";
@@ -113,6 +119,7 @@
 "settings.contactUs.title" = "Contacta con nosotros";
 "settings.changeCurrency.title" = "Cambiar moneda";
 "settings.analitycs.title" = "Análisis";
+"settings.crashReporter.title" = "Crash Reporting";
 "settings.pingInfura.title" = "Ping Infura";
 "settings.pingInfura.successful" = "Infura looks OK";
 "settings.pingInfura.fail" = "Infura Error";
@@ -467,6 +474,7 @@
 "blockchain.Mumbai" = "Mumbai Testnet";
 "blockchain.Optimistic" = "Optimistic Testnet";
 "blockchain.Optimistic.Kovan" = "Optimistic Kovan Testnet";
+"blockchain.Cronos.Mainnet" = "Cronos";
 "blockchain.Cronos.Testnet" = "Cronos Testnet";
 "blockchain.arbitrum" = "Arbitrum";
 "blockchain.arbitrum.rinkeby" = "Arbitrum Rinkeby";
@@ -497,7 +505,7 @@
 "backup.prompt.afterInterval.title" = "Es hora de hacer una copia de seguridad de tu monedero";
 "backup.prompt.afterInterval.description" = "Te recomendamos encarecidamente que hagas una copia de seguridad de tu monedero";
 "backup.prompt.afterHittingThreshold.title" = "¡Tu monedero está en peligro!";
-"backup.prompt.afterHittingThreshold.description" = "Todavía no has hecho una copia de seguridad de tu monedero. Tienes %@ USD netos. Hazlo ahora. ";
+"backup.prompt.afterHittingThreshold.description" = "Todavía no has hecho una copia de seguridad de tu monedero. Tienes %@ netos. Hazlo ahora. ";
 "onboarding.newWallet.backupWallet.title" = "Haz una copia de seguridad de tu monedero";
 "onboarding.newWallet.backupWallet.description" = "Tus fondos estarán en peligro si no haces una copia de seguridad antes de utilizar tu monedero";
 "keystore.accessKey.nonHd.backup" = "Accediendo a la clave de tu monedero para hacer una copia de seguridad";
@@ -624,7 +632,7 @@
 "transactionConfirmation.Row.title.wallet" = "Wallet Address";
 "transactionConfirmation.Send.Section.Gas.title" = "Gas";
 "transactionConfirmation.Send.Section.Balance.title" = "Balance";
-"transactionConfirmation.Send.Section.Balance.new.title" = "(New: %@ %@)";
+"transactionConfirmation.Send.Section.Balance.new.title" = "(New: %@)";
 "transactionConfirmation.Send.Section.Amount.title" = "Amount";
 "transactionConfirmation.Send.Section.Recipient.title" = "Recipient";
 "transactionConfirmation.Send.Section.TokenId.title" = "Token";
@@ -862,3 +870,5 @@
 "accept.deepLink.field.url.title" = "URL";
 "accept.deepLink.field.note.title" = "Note";
 "accept.walletConnect.field.methods.title" = "Methods";
+"tokenscript.overrides.empty" = "There are no TokenScript overrides";
+"currency.navigationTitle" = "Change Fiat Currency";

@@ -8,7 +8,7 @@
 import Foundation
 import PromiseKit
 
-protocol SelectTransactionHashViewControllerDelegate: class {
+protocol SelectTransactionHashViewControllerDelegate: AnyObject {
     func didClose(in viewController: CheckTransactionStateViewController)
     func didSelectServerSelected(in viewController: CheckTransactionStateViewController)
     func didSelectedCheckTransactionStatus(in viewController: CheckTransactionStateViewController, transactionHash: String)
@@ -21,7 +21,7 @@ class CheckTransactionStateViewController: ModalViewController {
         let v = UILabel()
         v.numberOfLines = 0
         v.textAlignment = .center
-        v.textColor = R.color.black()
+        v.textColor = Configuration.Color.Semantic.defaultForegroundText
         v.font = Fonts.bold(size: 24)
 
         return v

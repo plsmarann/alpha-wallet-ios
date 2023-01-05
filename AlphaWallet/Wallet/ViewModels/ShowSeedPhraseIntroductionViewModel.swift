@@ -10,10 +10,6 @@ import AlphaWalletFoundation
 
 struct ShowSeedPhraseIntroductionViewModel {
 
-    var backgroundColor: UIColor {
-        return Colors.appWhite
-    }
-
     var title: String {
         return R.string.localizable.walletsShowSeedPhraseIntroductionButtonTitle()
     }
@@ -32,7 +28,7 @@ struct ShowSeedPhraseIntroductionViewModel {
         attributeString.addAttributes([
             .paragraphStyle: style,
             .font: Screen.Backup.subtitleFont,
-            .foregroundColor: R.color.black()!,
+            .foregroundColor: Configuration.Color.Semantic.defaultForegroundText,
             .kern: 0.0
         ], range: NSRange(location: 0, length: subtitle.count))
 
@@ -49,7 +45,7 @@ struct ShowSeedPhraseIntroductionViewModel {
         attributedString.addAttributes([
             .paragraphStyle: style,
             .font: Screen.Backup.descriptionFont,
-            .foregroundColor: Colors.appText,
+            .foregroundColor: Configuration.Color.Semantic.defaultForegroundText,
             .kern: 0.0
         ], range: NSRange(location: 0, length: description.count))
 

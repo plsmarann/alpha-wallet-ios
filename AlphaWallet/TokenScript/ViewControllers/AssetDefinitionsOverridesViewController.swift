@@ -2,70 +2,116 @@
 
 import UIKit
 import AlphaWalletFoundation
+import StatefulViewController
+import Combine
 
 protocol AssetDefinitionsOverridesViewControllerDelegate: AnyObject {
-    func didDelete(overrideFileForContract file: URL, in viewController: AssetDefinitionsOverridesViewController)
     func didTapShare(file: URL, in viewController: AssetDefinitionsOverridesViewController)
+    func didClose(in viewController: AssetDefinitionsOverridesViewController)
 }
 
 class AssetDefinitionsOverridesViewController: UIViewController {
-    private let tableView = UITableView(frame: .zero, style: .grouped)
-    private let fileExtension: String
-    private var overriddenURLs: [URL] = []
+    private lazy var tableView: UITableView = {
+        let tableView = UITableView.grouped
+        tableView.register(AssetDefinitionsOverridesViewCell.self)
+        tableView.delegate = self
+
+        return tableView
+    }()
+
+    private let viewModel: AssetDefinitionsOverridesViewModel
+    private var cancelable = Set<AnyCancellable>()
+    private lazy var dataSource = makeDataSource()
+    private let willAppear = PassthroughSubject<Void, Never>()
+    private let deletion = PassthroughSubject<URL, Never>()
+
     weak var delegate: AssetDefinitionsOverridesViewControllerDelegate?
 
-    init(fileExtension: String) {
-        self.fileExtension = fileExtension
+    init(viewModel: AssetDefinitionsOverridesViewModel) {
+        self.viewModel = viewModel
         super.init(nibName: nil, bundle: nil)
 
-        view.backgroundColor = GroupedTable.Color.background
-
-        tableView.register(AssetDefinitionsOverridesViewCell.self)
-        tableView.translatesAutoresizingMaskIntoConstraints = false
-        tableView.delegate = self
-        tableView.dataSource = self
-        tableView.separatorStyle = .singleLine
-        tableView.backgroundColor = GroupedTable.Color.background
-        tableView.tableFooterView = UIView.tableFooterToRemoveEmptyCellSeparators()
-
         view.addSubview(tableView)
-
         NSLayoutConstraint.activate([
-            tableView.anchorsConstraint(to: view),
+            tableView.anchorsConstraint(to: view)
         ])
+
+        emptyView = EmptyView.tokenscriptOverridesEmptyView()
+    }
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+
+        view.backgroundColor = Configuration.Color.Semantic.defaultViewBackground
+        bind(viewModel: viewModel)
+    }
+
+    override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        willAppear.send(())
     }
 
     required init?(coder aDecoder: NSCoder) {
-        fatalError("init(coder:) has not been implemented")
+        return nil
     }
 
-    func configure(overriddenURLs urls: [URL]) {
-        self.overriddenURLs = urls
-        tableView.reloadData()
+    private func bind(viewModel: AssetDefinitionsOverridesViewModel) {
+        let input = AssetDefinitionsOverridesViewModelInput(
+            willAppear: willAppear.eraseToAnyPublisher(),
+            deletion: deletion.eraseToAnyPublisher())
+
+        let output = viewModel.transform(input: input)
+
+        output.viewState
+            .sink { [dataSource, navigationItem, weak self] viewState in
+                navigationItem.title = viewState.title
+                dataSource.apply(viewState.snapshot, animatingDifferences: viewState.animatingDifferences)
+                self?.endLoading(animated: false)
+            }.store(in: &cancelable)
+    }
+}
+
+extension AssetDefinitionsOverridesViewController: StatefulViewController {
+    func hasContent() -> Bool {
+        return dataSource.snapshot().numberOfItems > 0
+    }
+}
+
+fileprivate extension AssetDefinitionsOverridesViewController {
+    private func makeDataSource() -> AssetDefinitionsOverridesViewModel.DataSource {
+        return AssetDefinitionsOverridesViewModel.DataSource(tableView: tableView, cellProvider: { tableView, indexPath, viewModel in
+            let cell: AssetDefinitionsOverridesViewCell = tableView.dequeueReusableCell(for: indexPath)
+            cell.configure(viewModel: viewModel)
+
+            return cell
+        })
+    }
+}
+
+extension AssetDefinitionsOverridesViewController: PopNotifiable {
+    func didPopViewController(animated: Bool) {
+        delegate?.didClose(in: self)
     }
 }
 
 extension AssetDefinitionsOverridesViewController: UITableViewDelegate {
-    func tableView(_ tableView: UITableView, commit editingStyle: UITableViewCell.EditingStyle, forRowAt indexPath: IndexPath) {
-        if editingStyle == .delete {
-            delegate?.didDelete(overrideFileForContract: overriddenURLs[indexPath.row], in: self)
+    func tableView(_ tableView: UITableView, trailingSwipeActionsConfigurationForRowAt indexPath: IndexPath) -> UISwipeActionsConfiguration? {
+        let hideAction = UIContextualAction(style: .destructive, title: R.string.localizable.delete()) { [deletion, dataSource] _, _, completionHandler in
+            deletion.send(dataSource.item(at: indexPath).url)
+            completionHandler(true)
         }
+
+        hideAction.backgroundColor = Colors.appRed
+        hideAction.image = R.image.hideToken()
+
+        let configuration = UISwipeActionsConfiguration(actions: [hideAction])
+        configuration.performsFirstActionWithFullSwipe = true
+
+        return configuration
     }
 
     func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
-        delegate?.didTapShare(file: overriddenURLs[indexPath.row], in: self)
-    }
-}
-
-extension AssetDefinitionsOverridesViewController: UITableViewDataSource {
-    func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
-        let cell: AssetDefinitionsOverridesViewCell = tableView.dequeueReusableCell(for: indexPath)
-        cell.configure(viewModel: .init(url: overriddenURLs[indexPath.row], fileExtension: fileExtension))
-        return cell
-    }
-
-    func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
-        return overriddenURLs.count
+        delegate?.didTapShare(file: dataSource.item(at: indexPath).url, in: self)
     }
 
     //Hide the header

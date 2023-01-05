@@ -10,7 +10,15 @@ extension WalletConnectCoordinator {
     static func fake() -> WalletConnectCoordinator {
         let keystore = FakeEtherKeystore()
         let sessionProvider: SessionsProvider = .make(wallet: .make(), servers: [.main])
-        return WalletConnectCoordinator(keystore: keystore, navigationController: .init(), analytics: FakeAnalyticsService(), domainResolutionService: FakeDomainResolutionService(), config: .make(), sessionProvider: sessionProvider, assetDefinitionStore: AssetDefinitionStore())
+        return WalletConnectCoordinator(
+            keystore: keystore,
+            navigationController: .init(),
+            analytics: FakeAnalyticsService(),
+            domainResolutionService: FakeDomainResolutionService(),
+            config: .make(),
+            sessionProvider: sessionProvider,
+            assetDefinitionStore: .make(),
+            networkService: FakeNetworkService())
     }
 }
 
@@ -20,8 +28,8 @@ class ConfigTests: XCTestCase {
     func testChangeChainID() {
         let testDefaults = UserDefaults.test
         XCTAssertEqual(1, Config.getChainId(defaults: testDefaults))
-        Config.setChainId(RPCServer.ropsten.chainID, defaults: testDefaults)
-        XCTAssertEqual(RPCServer.ropsten.chainID, Config.getChainId(defaults: testDefaults))
+        Config.setChainId(RPCServer.goerli.chainID, defaults: testDefaults)
+        XCTAssertEqual(RPCServer.goerli.chainID, Config.getChainId(defaults: testDefaults))
     }
 
     func testSwitchLocale() {
@@ -33,13 +41,16 @@ class ConfigTests: XCTestCase {
         let tokenActionsService = FakeSwapTokenService()
         let dep1 = WalletDataProcessingPipeline.make(wallet: .make(), server: .main)
 
+        let walletAddressesStore = fakeWalletAddressStore(wallets: [.make()], recentlyUsedWallet: .make())
+        let walletBalanceService = MultiWalletBalanceService()
+
         let coordinator_1 = TokensCoordinator(
             navigationController: FakeNavigationController(),
             sessions: sessions,
             keystore: FakeEtherKeystore(),
             config: config,
-            assetDefinitionStore: AssetDefinitionStore(),
-            promptBackupCoordinator: PromptBackupCoordinator(keystore: FakeEtherKeystore(), wallet: .make(), config: config, analytics: FakeAnalyticsService()),
+            assetDefinitionStore: .make(),
+            promptBackupCoordinator: .make(),
             analytics: FakeAnalyticsService(),
             nftProvider: FakeNftProvider(),
             tokenActionsService: tokenActionsService,
@@ -51,8 +62,8 @@ class ConfigTests: XCTestCase {
             importToken: dep1.importToken,
             blockiesGenerator: .make(),
             domainResolutionService: FakeDomainResolutionService(),
-            tokensFilter: .make()
-        )
+            tokensFilter: .make(),
+            currencyService: .make())
 
         coordinator_1.start()
         coordinator_1.tokensViewController.viewWillAppear(false)
@@ -66,8 +77,8 @@ class ConfigTests: XCTestCase {
             sessions: sessions,
             keystore: FakeEtherKeystore(),
             config: config,
-            assetDefinitionStore: AssetDefinitionStore(),
-            promptBackupCoordinator: PromptBackupCoordinator(keystore: FakeEtherKeystore(), wallet: .make(), config: config, analytics: FakeAnalyticsService()),
+            assetDefinitionStore: .make(),
+            promptBackupCoordinator: .make(),
             analytics: FakeAnalyticsService(),
             nftProvider: FakeNftProvider(),
             tokenActionsService: tokenActionsService,
@@ -79,8 +90,8 @@ class ConfigTests: XCTestCase {
             importToken: dep2.importToken,
             blockiesGenerator: .make(),
             domainResolutionService: FakeDomainResolutionService(),
-            tokensFilter: .make()
-        )
+            tokensFilter: .make(),
+            currencyService: .make())
 
         coordinator_2.start()
         coordinator_2.tokensViewController.viewWillAppear(false)

@@ -9,7 +9,7 @@ import UIKit
 import Combine
 import AlphaWalletFoundation
 
-protocol EditPriceAlertViewControllerDelegate: class {
+protocol EditPriceAlertViewControllerDelegate: AnyObject {
     func didUpdateAlert(in viewController: EditPriceAlertViewController)
     func didClose(in viewController: EditPriceAlertViewController)
 }
@@ -18,39 +18,44 @@ class EditPriceAlertViewController: UIViewController {
 
     private lazy var headerView: SendViewSectionHeader = {
         let view = SendViewSectionHeader()
-        view.configure(viewModel: .init(text: viewModel.headerTitle))
+        view.configure(viewModel: .init(text: R.string.localizable.priceAlertEnterTargetPrice().uppercased()))
 
         return view
     }()
 
-    private lazy var amountTextField: AmountTextField_v2 = {
-        let view = AmountTextField_v2(token: viewModel.token)
-        view.translatesAutoresizingMaskIntoConstraints = false
-        view.delegate = self
-        view.viewModel.accessoryButtonTitle = .next
-        view.viewModel.errorState = .none
-        view.viewModel.toggleFiatAndCryptoPair()
+    private lazy var amountTextField: AmountTextField = {
+        let textField = AmountTextField(token: viewModel.token)
+        textField.translatesAutoresizingMaskIntoConstraints = false
+        textField.delegate = self
+        textField.inputAccessoryButtonType = .done
+        textField.viewModel.errorState = .none
+        textField.viewModel.toggleFiatAndCryptoPair()
+        textField.isAlternativeAmountEnabled = false
+        textField.isAllFundsEnabled = false
+        textField.selectCurrencyButton.isHidden = false
+        textField.selectCurrencyButton.expandIconHidden = true
+        textField.statusLabel.text = nil
+        textField.availableTextHidden = false
+        textField.selectCurrencyButton.hasToken = true
 
-        view.isAlternativeAmountEnabled = false
-        view.allFundsAvailable = false
-        view.selectCurrencyButton.isHidden = false
-        view.selectCurrencyButton.expandIconHidden = true
-        view.statusLabel.text = nil
-        view.availableTextHidden = false
-        view.selectCurrencyButton.hasToken = true
-
-        return view
+        return textField
     }()
 
-    private let buttonsBar = HorizontalButtonsBar(configuration: .primary(buttons: 1))
+    private let buttonsBar: HorizontalButtonsBar = {
+        let buttonsBar = HorizontalButtonsBar(configuration: .primary(buttons: 1))
+        buttonsBar.configure()
+
+        return buttonsBar
+    }()
     private lazy var containerView: ScrollableStackView = {
         let view = ScrollableStackView()
         return view
     }()
 
     private let viewModel: EditPriceAlertViewModel
-    private let appear = PassthroughSubject<Void, Never>()
+    private let willAppear = PassthroughSubject<Void, Never>()
     private var cancelable = Set<AnyCancellable>()
+    private var saveButton: UIButton { return buttonsBar.buttons[0] }
 
     weak var delegate: EditPriceAlertViewControllerDelegate?
 
@@ -58,44 +63,47 @@ class EditPriceAlertViewController: UIViewController {
         self.viewModel = viewModel
         super.init(nibName: nil, bundle: nil)
 
+        containerView.stackView.addArrangedSubviews([
+            headerView,
+            amountTextField.defaultLayout(edgeInsets: .init(top: 16, left: 16, bottom: 0, right: 16))
+        ])
+
         let footerBar = ButtonsBarBackgroundView(buttonsBar: buttonsBar, separatorHeight: 0)
         view.addSubview(footerBar)
         view.addSubview(containerView)
 
         NSLayoutConstraint.activate([
-            containerView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            containerView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            containerView.topAnchor.constraint(equalTo: view.topAnchor),
+            containerView.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor),
+            containerView.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor),
+            containerView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
             containerView.bottomAnchor.constraint(equalTo: footerBar.topAnchor),
 
             footerBar.anchorsConstraint(to: view),
         ])
-
-        generateSubviews(viewModel: viewModel)
     }
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        buttonsBar.configure()
-        buttonsBar.buttons[0].setTitle(viewModel.setAlertTitle, for: .normal)
+
+        saveButton.setTitle(R.string.localizable.priceAlertSet(), for: .normal)
+        view.backgroundColor = Configuration.Color.Semantic.defaultViewBackground
 
         bind(viewModel: viewModel)
     }
 
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
-        appear.send(())
+        willAppear.send(())
     }
 
     private func bind(viewModel: EditPriceAlertViewModel) {
-        view.backgroundColor = viewModel.backgroundColor
-        title = viewModel.title
+        navigationItem.title = viewModel.title
 
-        containerView.configure(viewModel: .init(backgroundColor: viewModel.backgroundColor))
+        let input = EditPriceAlertViewModelInput(
+            willAppear: willAppear.eraseToAnyPublisher(),
+            save: saveButton.publisher(forEvent: .touchUpInside).eraseToAnyPublisher(),
+            amountToSend: amountTextField.cryptoValuePublisher)
 
-        let save = buttonsBar.buttons[0].publisher(forEvent: .touchUpInside).eraseToAnyPublisher()
-
-        let input = EditPriceAlertViewModelInput(appear: appear.eraseToAnyPublisher(), save: save, cryptoValue: amountTextField.cryptoValue)
         let output = viewModel.transform(input: input)
 
         output.cryptoToFiatRate
@@ -103,7 +111,7 @@ class EditPriceAlertViewController: UIViewController {
             .store(in: &cancelable)
 
         output.cryptoInitial
-            .sink { [weak amountTextField] in amountTextField?.set(crypto: $0, useFormatting: false) }
+            .sink { [weak amountTextField] in amountTextField?.set(amount: .amount($0)) }
             .store(in: &cancelable)
 
         output.marketPrice
@@ -111,7 +119,7 @@ class EditPriceAlertViewController: UIViewController {
             .store(in: &cancelable)
 
         output.isEnabled
-            .sink { [weak buttonsBar] in buttonsBar?.buttons[0].isEnabled = $0 }
+            .sink { [weak self] in self?.saveButton.isEnabled = $0 }
             .store(in: &cancelable)
 
         output.createOrUpdatePriceAlert
@@ -121,18 +129,6 @@ class EditPriceAlertViewController: UIViewController {
                 case .failure: break
                 }
             }.store(in: &cancelable)
-    }
-
-    private func generateSubviews(viewModel: EditPriceAlertViewModel) {
-        containerView.stackView.removeAllArrangedSubviews()
-
-        let subViews: [UIView] = [
-            headerView,
-            .spacer(height: 34),
-            amountTextField.defaultLayout(edgeInsets: .init(top: 0, left: 16, bottom: 0, right: 16))
-        ] 
-
-        containerView.stackView.addArrangedSubviews(subViews)
     }
 
     required init?(coder: NSCoder) {
@@ -146,16 +142,12 @@ extension EditPriceAlertViewController: PopNotifiable {
     }
 }
 
-extension EditPriceAlertViewController: AmountTextField_v2Delegate {
-    func changeAmount(in textField: AmountTextField_v2) {
-        // no-op
+extension EditPriceAlertViewController: AmountTextFieldDelegate {
+    func doneButtonTapped(for textField: AmountTextField) {
+        view.endEditing(true)
     }
-
-    func changeType(in textField: AmountTextField_v2) {
-        // no-op
-    }
-
-    func shouldReturn(in textField: AmountTextField_v2) -> Bool {
+    
+    func shouldReturn(in textField: AmountTextField) -> Bool {
         return true
     }
 }

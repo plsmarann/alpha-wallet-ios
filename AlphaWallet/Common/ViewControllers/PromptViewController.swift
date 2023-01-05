@@ -4,7 +4,7 @@ import UIKit
 
 protocol PromptViewControllerDelegate: AnyObject {
     func actionButtonTapped(inController controller: PromptViewController)
-    func controllerDismiss(_ controller: PromptViewController)
+    func didClose(in controller: PromptViewController)
 }
 
 class PromptViewController: ModalViewController {
@@ -39,7 +39,7 @@ class PromptViewController: ModalViewController {
     init() {
         super.init(nibName: nil, bundle: nil)
         let footerView = ButtonsBarBackgroundView(buttonsBar: buttonsBar, separatorHeight: 0)
-        UIKitFactory.decorateAsDefaultView(footerView)
+        footerView.backgroundColor = Configuration.Color.Semantic.headerViewBackground
         footerStackView.addArrangedSubview(footerView)
         generateSubviews()
         presentationDelegate = self
@@ -69,13 +69,13 @@ class PromptViewController: ModalViewController {
 extension PromptViewController: ModalViewControllerDelegate {
 
     func didDismiss(_ controller: ModalViewController) {
-        _delegate?.controllerDismiss(self)
+        _delegate?.didClose(in: self)
         dismiss(animated: false)
     }
 
     func didClose(_ controller: ModalViewController) {
         dismissViewAnimated(with: {
-            self._delegate?.controllerDismiss(self)
+            self._delegate?.didClose(in: self)
             self.dismiss(animated: false)
         })
     }

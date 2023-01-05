@@ -14,7 +14,6 @@ class AddMultipleCustomRpcView: UIView {
 
     var chainNameString: String = ""
     var progressString: String = ""
-    var progress: Float = 0.0
 
     // MARK: - User Interface Elements
 
@@ -23,6 +22,7 @@ class AddMultipleCustomRpcView: UIView {
         label.font = Fonts.bold(size: 17)
         label.textAlignment = .center
         label.translatesAutoresizingMaskIntoConstraints = false
+        label.textColor = Configuration.Color.Semantic.defaultForegroundText
         return label
     }()
 
@@ -40,13 +40,8 @@ class AddMultipleCustomRpcView: UIView {
         label.text = "…"
         label.textAlignment = .center
         label.translatesAutoresizingMaskIntoConstraints = false
+        label.textColor = Configuration.Color.Semantic.defaultForegroundText
         return label
-    }()
-
-    private lazy var progressIndicatorView: UIProgressView = {
-        let view = UIProgressView(progressViewStyle: .default)
-        view.translatesAutoresizingMaskIntoConstraints = false
-        return view
     }()
 
     private lazy var progressLabel: UILabel = {
@@ -55,6 +50,7 @@ class AddMultipleCustomRpcView: UIView {
         label.text = "-"
         label.textAlignment = .center
         label.translatesAutoresizingMaskIntoConstraints = false
+        label.textColor = Configuration.Color.Semantic.defaultForegroundText
         return label
     }()
 
@@ -84,7 +80,7 @@ class AddMultipleCustomRpcView: UIView {
         configureNetworkNameLabel()
         configureProgressLabel()
         configureButton()
-        backgroundColor = R.color.alabaster()!
+        backgroundColor = Configuration.Color.Semantic.progressDialogBackground
         layer.cornerRadius = 25.0
     }
 
@@ -148,7 +144,6 @@ class AddMultipleCustomRpcView: UIView {
     func update() {
         networkNameLabel.text = chainNameString
         progressLabel.text = progressString
-        progressIndicatorView.setProgress(progress, animated: true)
     }
 
 }

@@ -18,38 +18,30 @@ class SelectTokenViewController: UIViewController {
     private let viewModel: SelectTokenViewModel
     private var cancellable = Set<AnyCancellable>()
     private lazy var tableView: UITableView = {
-        let tableView = UITableView(frame: .zero, style: .grouped)
+        let tableView = UITableView.grouped
         tableView.register(FungibleTokenViewCell.self)
         tableView.register(EthTokenViewCell.self)
         tableView.register(NonFungibleTokenViewCell.self)
         tableView.estimatedRowHeight = 100
-        tableView.tableFooterView = UIView.tableFooterToRemoveEmptyCellSeparators()
         tableView.separatorInset = .zero
-        tableView.translatesAutoresizingMaskIntoConstraints = false
+        tableView.delegate = self
 
         return tableView
     }()
     private lazy var dataSource = makeDataSource()
-    private (set) lazy var headerView: ConfirmationHeaderView = {
-        let view = ConfirmationHeaderView(viewModel: .init(title: viewModel.title))
-        view.isHidden = true
-
-        return view
-    }()
-    private let appear = PassthroughSubject<Void, Never>()
+    private let willAppear = PassthroughSubject<Void, Never>()
     private let fetch = PassthroughSubject<Void, Never>()
+
     weak var delegate: SelectTokenViewControllerDelegate?
 
     init(viewModel: SelectTokenViewModel) {
         self.viewModel = viewModel
         super.init(nibName: nil, bundle: nil)
 
-        let stackView = [headerView, tableView].asStackView(axis: .vertical)
-        stackView.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(stackView)
+        view.addSubview(tableView)
 
         NSLayoutConstraint.activate([
-            stackView.anchorsConstraint(to: view)
+            tableView.anchorsConstraint(to: view)
         ])
 
         loadingView = LoadingView.tokenSelectionLoadingView()
@@ -60,7 +52,9 @@ class SelectTokenViewController: UIViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        tableView.delegate = self
+
+        view.backgroundColor = Configuration.Color.Semantic.defaultViewBackground
+
         bind(viewModel: viewModel)
     }
 
@@ -71,7 +65,7 @@ class SelectTokenViewController: UIViewController {
         navigationController?.navigationBar.prefersLargeTitles = false
         hidesBottomBarWhenPushed = true
 
-        appear.send(())
+        willAppear.send(())
     }
 
     required init?(coder aDecoder: NSCoder) {
@@ -79,17 +73,14 @@ class SelectTokenViewController: UIViewController {
     }
 
     private func bind(viewModel: SelectTokenViewModel) {
-        title = viewModel.title
-        view.backgroundColor = viewModel.backgroundColor
-        tableView.backgroundColor = viewModel.backgroundColor
-
         let input = SelectTokenViewModelInput(
-            appear: appear.eraseToAnyPublisher(),
+            willAppear: willAppear.eraseToAnyPublisher(),
             fetch: fetch.eraseToAnyPublisher())
 
         let output = viewModel.transform(input: input)
-        output.viewState.sink { [weak self] state in
-            switch state.loadingState {
+        output.viewState.sink { [weak self, dataSource, navigationItem] viewState in
+            dataSource.apply(viewState.snapshot, animatingDifferences: false)
+            switch viewState.loadingState {
             case .idle:
                 break
             case .beginLoading:
@@ -97,7 +88,7 @@ class SelectTokenViewController: UIViewController {
             case .endLoading:
                 self?.endLoading(animated: false)
             }
-            self?.applySnapshot(with: state.views, animate: false)
+            navigationItem.title = viewState.title
         }.store(in: &cancellable)
     } 
 }
@@ -157,13 +148,5 @@ fileprivate extension SelectTokenViewController {
                 return cell
             }
         })
-    }
-
-    private func applySnapshot(with viewModels: [SelectTokenViewModel.ViewModelType], animate: Bool = true) {
-        var snapshot = NSDiffableDataSourceSnapshot<SelectTokenViewModel.Section, SelectTokenViewModel.ViewModelType>()
-        snapshot.appendSections([.tokens])
-        snapshot.appendItems(viewModels, toSection: .tokens)
-
-        dataSource.apply(snapshot, animatingDifferences: animate)
     }
 }

@@ -2,23 +2,22 @@
 
 import UIKit
 import AlphaWalletFoundation
+import Combine
 
 class ChooseSendPrivateTransactionsProviderViewController: UIViewController {
     private let viewModel: ChooseSendPrivateTransactionsProviderViewModel
     private lazy var tableView: UITableView = {
-        let tableView = UITableView(frame: .zero, style: .grouped)
-        tableView.tableFooterView = UIView.tableFooterToRemoveEmptyCellSeparators()
+        let tableView = UITableView.grouped
         tableView.register(SettingTableViewCell.self)
         tableView.register(SelectionTableViewCell.self)
-        tableView.separatorStyle = .singleLine
-        tableView.separatorColor = Configuration.Color.Semantic.tableViewSeparator
-        tableView.backgroundColor = Configuration.Color.Semantic.tableViewBackground
-        tableView.dataSource = self
         tableView.delegate = self
-        tableView.translatesAutoresizingMaskIntoConstraints = false
 
         return tableView
     }()
+    private lazy var dataSource: ChooseSendPrivateTransactionsProviderViewModel.DataSource = makeDataSource()
+    private let willAppear = PassthroughSubject<Void, Never>()
+    private let selection = PassthroughSubject<IndexPath, Never>()
+    private var cancelable = Set<AnyCancellable>()
 
     init(viewModel: ChooseSendPrivateTransactionsProviderViewModel) {
         self.viewModel = viewModel
@@ -27,18 +26,35 @@ class ChooseSendPrivateTransactionsProviderViewController: UIViewController {
         view.addSubview(tableView)
 
         NSLayoutConstraint.activate([
-            tableView.anchorsConstraint(to: view)
+            tableView.anchorsIgnoringBottomSafeArea(to: view)
         ])
     }
 
     override func viewDidLoad() {
         super.viewDidLoad()
+
+        view.backgroundColor = Configuration.Color.Semantic.defaultViewBackground
+
         bind(viewModel: viewModel)
     }
 
+    override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        willAppear.send(())
+    }
+
     private func bind(viewModel: ChooseSendPrivateTransactionsProviderViewModel) {
-        title = viewModel.title
-        navigationItem.largeTitleDisplayMode = viewModel.largeTitleDisplayMode
+        let input = ChooseSendPrivateTransactionsProviderViewModelInput(
+            willAppear: willAppear.eraseToAnyPublisher(),
+            selection: selection.eraseToAnyPublisher())
+
+        let output = viewModel.transform(input: input)
+        output.viewState
+            .sink { [dataSource, navigationItem] state in
+                navigationItem.title = state.title
+
+                dataSource.apply(state.snapshot, animatingDifferences: false)
+            }.store(in: &cancelable)
     }
 
     required init?(coder aDecoder: NSCoder) {
@@ -46,16 +62,14 @@ class ChooseSendPrivateTransactionsProviderViewController: UIViewController {
     }
 }
 
-extension ChooseSendPrivateTransactionsProviderViewController: UITableViewDataSource {
-    func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
-        return viewModel.numberOfRows
-    }
+extension ChooseSendPrivateTransactionsProviderViewController {
+    private func makeDataSource() -> ChooseSendPrivateTransactionsProviderViewModel.DataSource {
+        ChooseSendPrivateTransactionsProviderViewModel.DataSource(tableView: tableView) { tableView, indexPath, viewModel -> SelectionTableViewCell in
+            let cell: SelectionTableViewCell = tableView.dequeueReusableCell(for: indexPath)
+            cell.configure(viewModel: viewModel)
 
-    func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
-        let cell: SelectionTableViewCell = tableView.dequeueReusableCell(for: indexPath)
-        cell.configure(viewModel: viewModel.viewModel(for: indexPath))
-        
-        return cell
+            return cell
+        }
     }
 }
 
@@ -76,13 +90,27 @@ extension ChooseSendPrivateTransactionsProviderViewController: UITableViewDelega
     func tableView(_ tableView: UITableView, heightForFooterInSection section: Int) -> CGFloat {
         .leastNormalMagnitude
     }
+
     func tableView(_ tableView: UITableView, viewForFooterInSection section: Int) -> UIView? {
         nil
     }
 
     func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         tableView.deselectRow(at: indexPath, animated: true)
-        viewModel.selectProvider(at: indexPath)
-        tableView.reloadRows(at: [indexPath], with: .none)
+
+        selection.send(indexPath)
+    }
+}
+
+extension UITableView {
+    static var grouped: UITableView {
+        let tableView = UITableView(frame: .zero, style: .grouped)
+        tableView.tableFooterView = UIView.tableFooterToRemoveEmptyCellSeparators()
+        tableView.separatorStyle = .singleLine
+        tableView.separatorColor = Configuration.Color.Semantic.tableViewSeparator
+        tableView.backgroundColor = Configuration.Color.Semantic.tableViewBackground
+        tableView.translatesAutoresizingMaskIntoConstraints = false
+
+        return tableView
     }
 }

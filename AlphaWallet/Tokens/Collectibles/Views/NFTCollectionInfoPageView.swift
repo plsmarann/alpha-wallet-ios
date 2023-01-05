@@ -9,13 +9,13 @@ import UIKit
 import Combine
 import AlphaWalletFoundation
 
-protocol NFTCollectionInfoPageViewDelegate: class {
+protocol NFTCollectionInfoPageViewDelegate: AnyObject {
     func didPressOpenWebPage(_ url: URL, in view: NFTCollectionInfoPageView)
     func didPressViewContractWebPage(forContract contract: AlphaWallet.Address, in view: NFTCollectionInfoPageView)
 }
 
 class NFTCollectionInfoPageView: ScrollableStackView, PageViewType {
-    private let previewView: NFTPreviewView
+    private var previewView: NFTPreviewViewRepresentable
     private let viewModel: NFTCollectionInfoPageViewModel
     private var cancelable = Set<AnyCancellable>()
 
@@ -23,9 +23,9 @@ class NFTCollectionInfoPageView: ScrollableStackView, PageViewType {
     var rightBarButtonItem: UIBarButtonItem?
     var title: String { return viewModel.tabTitle }
 
-    init(viewModel: NFTCollectionInfoPageViewModel, keystore: Keystore, session: WalletSession, assetDefinitionStore: AssetDefinitionStore, analytics: AnalyticsLogger) {
+    init(viewModel: NFTCollectionInfoPageViewModel, session: WalletSession, tokenCardViewFactory: TokenCardViewFactory) {
         self.viewModel = viewModel
-        self.previewView = .init(type: viewModel.previewViewType, keystore: keystore, session: session, assetDefinitionStore: assetDefinitionStore, analytics: analytics, edgeInsets: viewModel.previewEdgeInsets)
+        self.previewView = tokenCardViewFactory.createPreview(of: viewModel.previewViewType, session: session, edgeInsets: viewModel.previewEdgeInsets)
         self.previewView.rounding = .custom(20)
         self.previewView.contentMode = .scaleAspectFill
         super.init()

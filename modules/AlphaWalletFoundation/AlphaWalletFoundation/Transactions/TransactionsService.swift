@@ -3,17 +3,13 @@
 import Foundation
 import Combine
 
-public enum TransactionError: Error {
-    case failedToFetch
-}
-
 public protocol TransactionsServiceDelegate: AnyObject {
     func didCompleteTransaction(in service: TransactionsService, transaction: TransactionInstance)
     func didExtractNewContracts(in service: TransactionsService, contractsAndServers: [AddressAndRPCServer])
 }
 
 public class TransactionsService {
-    public let transactionDataStore: TransactionDataStore
+    private let transactionDataStore: TransactionDataStore
     private let sessions: ServerDictionary<WalletSession>
     private let tokensService: DetectedContractsProvideble & TokenProvidable & TokenAddable
     private let analytics: AnalyticsLogger
@@ -32,7 +28,7 @@ public class TransactionsService {
     public var transactionsChangeset: AnyPublisher<[TransactionInstance], Never> {
         let servers = sessions.values.map { $0.server }
         return transactionDataStore
-            .transactionsChangeset(forFilter: .all, servers: servers)
+            .transactionsChangeset(filter: .all, servers: servers)
             .map { change -> [TransactionInstance] in
                 switch change {
                 case .initial(let transactions): return transactions
@@ -43,13 +39,14 @@ public class TransactionsService {
     }
     private var cancelable = Set<AnyCancellable>()
     private let queue = DispatchQueue(label: "com.TransactionsService.UpdateQueue")
+    private let networkService: NetworkService
 
-    public init(sessions: ServerDictionary<WalletSession>, transactionDataStore: TransactionDataStore, analytics: AnalyticsLogger, tokensService: DetectedContractsProvideble & TokenProvidable & TokenAddable) {
+    public init(sessions: ServerDictionary<WalletSession>, transactionDataStore: TransactionDataStore, analytics: AnalyticsLogger, tokensService: DetectedContractsProvideble & TokenProvidable & TokenAddable, networkService: NetworkService) {
         self.sessions = sessions
         self.tokensService = tokensService
         self.transactionDataStore = transactionDataStore
         self.analytics = analytics
-
+        self.networkService = networkService
         setupSingleChainTransactionProviders()
 
         NotificationCenter.default.applicationState
@@ -78,7 +75,7 @@ public class TransactionsService {
             let providerType = each.server.transactionProviderType
             let tokensFromTransactionsFetcher = TokensFromTransactionsFetcher(detectedTokens: tokensService, session: each)
             tokensFromTransactionsFetcher.delegate = self
-            let provider = providerType.init(session: each, analytics: analytics, transactionDataStore: transactionDataStore, tokensService: tokensService, fetchLatestTransactionsQueue: fetchLatestTransactionsQueue, tokensFromTransactionsFetcher: tokensFromTransactionsFetcher)
+            let provider = providerType.init(session: each, analytics: analytics, transactionDataStore: transactionDataStore, tokensService: tokensService, fetchLatestTransactionsQueue: fetchLatestTransactionsQueue, tokensFromTransactionsFetcher: tokensFromTransactionsFetcher, networkService: networkService)
             provider.delegate = self
 
             return provider
@@ -117,6 +114,12 @@ public class TransactionsService {
         }
     }
 
+    public func transactionPublisher(for transactionId: String, server: RPCServer) -> AnyPublisher<TransactionInstance?, Never> {
+        transactionDataStore.transactionPublisher(for: transactionId, server: server)
+            .replaceError(with: nil)
+            .eraseToAnyPublisher()
+    }
+
     public func transaction(withTransactionId transactionId: String, forServer server: RPCServer) -> TransactionInstance? {
         transactionDataStore.transaction(withTransactionId: transactionId, forServer: server)
     }
@@ -139,8 +142,10 @@ public class TransactionsService {
 
 extension TransactionsService: TokensFromTransactionsFetcherDelegate {
 
-    public func didExtractTokens(in fetcher: TokensFromTransactionsFetcher, contractsAndServers: [AddressAndRPCServer], tokenUpdates: [TokenUpdate]) {
-        tokensService.add(tokenUpdates: tokenUpdates)
+    public func didExtractTokens(in fetcher: TokensFromTransactionsFetcher, contractsAndServers: [AddressAndRPCServer], ercTokens: [ErcToken]) {
+        let actions = ercTokens.map { AddOrUpdateTokenAction.add(ercToken: $0, shouldUpdateBalance: true) }
+        tokensService.addOrUpdate(with: actions)
+
         delegate?.didExtractNewContracts(in: self, contractsAndServers: contractsAndServers)
     }
 }

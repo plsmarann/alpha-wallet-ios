@@ -10,7 +10,7 @@ import BigInt
 import AlphaWalletFoundation
 
 extension TransactionConfirmationViewModel {
-    class SendNftTransactionViewModel: SectionProtocol, CryptoToFiatRateUpdatable, BalanceUpdatable {
+    class SendNftTransactionViewModel: ExpandableSection, RateUpdatable, BalanceUpdatable {
         enum Section: Int, CaseIterable {
             case gas
             case network
@@ -33,7 +33,6 @@ extension TransactionConfirmationViewModel {
 
         private let configurator: TransactionConfigurator
         private let transactionType: TransactionType
-        private let tokenInstanceNames: [TokenId: String]
         private let recipientResolver: RecipientResolver
         private var configurationTitle: String {
             configurator.selectedConfigurationType.title
@@ -42,18 +41,17 @@ extension TransactionConfirmationViewModel {
         var ensName: String? { recipientResolver.ensName }
         var addressString: String? { recipientResolver.address?.eip55String }
         var openedSections = Set<Int>()
-        var cryptoToDollarRate: Double?
+        var rate: CurrencyRate?
         var sections: [Section] {
             return Section.allCases
         }
         let session: WalletSession
 
-        init(configurator: TransactionConfigurator, recipientResolver: RecipientResolver, tokenInstanceNames: [TokenId: String]) {
+        init(configurator: TransactionConfigurator, recipientResolver: RecipientResolver) {
             self.configurator = configurator
             self.transactionType = configurator.transaction.transactionType
             self.session = configurator.session
             self.recipientResolver = recipientResolver
-            self.tokenInstanceNames = tokenInstanceNames
         }
 
         func updateBalance(_ balanceViewModel: BalanceViewModel?) {
@@ -79,13 +77,26 @@ extension TransactionConfirmationViewModel {
             }
         }
 
-        private var tokenIdsAndValues: [UnconfirmedTransaction.TokenIdAndValue] {
-            configurator.transaction.tokenIdsAndValues ?? []
+        private var tokenHolders: [TokenHolder] {
+            switch transactionType {
+            case .erc1155Token(_, let tokenHolders):
+                return tokenHolders
+            case .erc721Token(_, let tokenHolders), .erc875Token(_, let tokenHolders), .erc721ForTicketToken(_, let tokenHolders):
+                return tokenHolders
+            case .nativeCryptocurrency, .erc20Token, .prebuilt:
+                fatalError()
+            }
         }
 
         func tokenIdAndValueViewModels() -> [String] {
-            return tokenIdsAndValues.map { tokenIdAndValue in
+            let tokenIdsAndValues: [TokenSelection] = tokenHolders
+                .flatMap { $0.selections }
 
+            let tokenInstanceNames = tokenHolders
+                .valuesAll
+                .compactMapValues { $0.nameStringValue }
+
+            return tokenIdsAndValues.map { tokenIdAndValue in
                 let tokenId = tokenIdAndValue.tokenId
                 let value = tokenIdAndValue.value
                 let title: String
@@ -112,7 +123,7 @@ extension TransactionConfirmationViewModel {
             case .network:
                 return .init(title: .normal(session.server.displayName), headerName: headerName, titleIcon: session.server.walletConnectIconImage, configuration: configuration)
             case .gas:
-                let gasFee = gasFeeString(for: configurator, cryptoToDollarRate: cryptoToDollarRate)
+                let gasFee = gasFeeString(for: configurator, rate: rate)
                 if let warning = configurator.gasPriceWarning {
                     return .init(title: .warning(warning.shortTitle), headerName: headerName, details: gasFee, configuration: configuration)
                 } else {
@@ -127,22 +138,23 @@ extension TransactionConfirmationViewModel {
                     }
 
                     return .init(title: .normal(viewModels.first ?? "-"), headerName: headerName, configuration: configuration)
-                case .nativeCryptocurrency, .erc20Token, .erc721Token, .claimPaidErc875MagicLink, .erc875Token, .erc875TokenOrder, .erc721ForTicketToken, .dapp, .tokenScript, .prebuilt:
-                    //This is really just for ERC721, but the type system…
-                    let tokenId = configurator.transaction.tokenId.flatMap({ String($0) })
-                    let title: String
-                    let tokenInstanceName = configurator.transaction.tokenId.flatMap { tokenInstanceNames[$0] }
+                case .erc721Token, .erc875Token, .erc721ForTicketToken:
+                    let tokenHolder = tokenHolders[0]
 
+                    let tokenInstanceNames = tokenHolders
+                        .valuesAll
+                        .compactMapValues { $0.nameStringValue }
+
+                    let tokenInstanceName = tokenInstanceNames[tokenHolder.tokenId]
+                    let title: String
                     if let tokenInstanceName = tokenInstanceName, !tokenInstanceName.isEmpty {
-                        if let tokenId = tokenId {
-                            title = "\(tokenInstanceName) (\(tokenId))"
-                        } else {
-                            title = tokenInstanceName
-                        }
+                        title = "\(tokenInstanceName) (\(tokenHolder.tokenId))"
                     } else {
-                        title = tokenId ?? ""
+                        title = String(tokenHolder.tokenId)
                     }
                     return .init(title: .normal(title), headerName: headerName, configuration: configuration)
+                case .nativeCryptocurrency, .erc20Token, .prebuilt:
+                    fatalError()
                 }
             case .recipient:
                 return .init(title: .normal(recipientResolver.value), headerName: headerName, configuration: configuration)

@@ -12,10 +12,25 @@ protocol TransferNFTCoordinatorDelegate: CanOpenURL, SendTransactionDelegate, Bu
 
 class TransferNFTCoordinator: Coordinator {
     private lazy var sendViewController: SendSemiFungibleTokenViewController = {
-        let tokenCardViewFactory: TokenCardViewFactory = .init(token: token, assetDefinitionStore: assetDefinitionStore, analytics: analytics, keystore: keystore, wallet: session.account)
-        let viewModel = SendSemiFungibleTokenViewModel(token: token, tokenHolders: [tokenHolder])
-        let controller = SendSemiFungibleTokenViewController(viewModel: viewModel, tokenCardViewFactory: tokenCardViewFactory, domainResolutionService: domainResolutionService)
+        let tokenCardViewFactory = TokenCardViewFactory(
+            token: token,
+            assetDefinitionStore: assetDefinitionStore,
+            analytics: analytics,
+            keystore: keystore,
+            wallet: session.account)
+
+        let viewModel = SendSemiFungibleTokenViewModel(
+            token: token,
+            tokenHolders: [tokenHolder])
+
+        let controller = SendSemiFungibleTokenViewController(
+            viewModel: viewModel,
+            tokenCardViewFactory: tokenCardViewFactory,
+            domainResolutionService: domainResolutionService)
+
         controller.delegate = self
+        controller.navigationItem.largeTitleDisplayMode = .never
+        controller.hidesBottomBarWhenPushed = true
 
         return controller
     }()
@@ -30,23 +45,25 @@ class TransferNFTCoordinator: Coordinator {
     private var transactionConfirmationResult: ConfirmResult? = .none
     private let transactionType: TransactionType
     private let tokensService: TokenViewModelState
+    private let networkService: NetworkService
 
     weak var delegate: TransferNFTCoordinatorDelegate?
     let navigationController: UINavigationController
     var coordinators: [Coordinator] = []
 
-    init(
-            session: WalletSession,
-            navigationController: UINavigationController,
-            keystore: Keystore,
-            tokenHolder: TokenHolder,
-            token: Token,
-            transactionType: TransactionType,
-            assetDefinitionStore: AssetDefinitionStore,
-            analytics: AnalyticsLogger,
-            domainResolutionService: DomainResolutionServiceType,
-            tokensService: TokenViewModelState
-    ) {
+    init(session: WalletSession,
+         navigationController: UINavigationController,
+         keystore: Keystore,
+         tokenHolder: TokenHolder,
+         token: Token,
+         transactionType: TransactionType,
+         assetDefinitionStore: AssetDefinitionStore,
+         analytics: AnalyticsLogger,
+         domainResolutionService: DomainResolutionServiceType,
+         tokensService: TokenViewModelState,
+         networkService: NetworkService) {
+
+        self.networkService = networkService
         self.tokensService = tokensService
         self.transactionType = transactionType
         self.tokenHolder = tokenHolder
@@ -61,7 +78,6 @@ class TransferNFTCoordinator: Coordinator {
     }
 
     func start() {
-        sendViewController.navigationItem.largeTitleDisplayMode = .never
         navigationController.pushViewController(sendViewController, animated: true)
     }
 }
@@ -69,15 +85,21 @@ class TransferNFTCoordinator: Coordinator {
 extension TransferNFTCoordinator: SendSemiFungibleTokenViewControllerDelegate {
     func didEnterWalletAddress(tokenHolders: [AlphaWalletFoundation.TokenHolder], to recipient: AlphaWalletFoundation.AlphaWallet.Address, in viewController: SendSemiFungibleTokenViewController) {
         do {
-            guard let tokenHolder = tokenHolders.first else { throw TransactionConfiguratorError.impossibleToBuildConfiguration }
-            guard let token = tokenHolder.tokens.first else { throw TransactionConfiguratorError.impossibleToBuildConfiguration }
-            let transaction = UnconfirmedTransaction(transactionType: transactionType, value: BigInt(0), recipient: recipient, contract: tokenHolder.contractAddress, data: nil, tokenId: token.id, indices: tokenHolder.indices)
-
-            let tokenInstanceNames = tokenHolder.valuesAll.compactMapValues { $0.nameStringValue }
-            let configuration: TransactionType.Configuration = .sendNftTransaction(confirmType: .signThenSend, tokenInstanceNames: tokenInstanceNames)
-            let coordinator = try TransactionConfirmationCoordinator(presentingViewController: navigationController, session: session, transaction: transaction, configuration: configuration, analytics: analytics, domainResolutionService: domainResolutionService, keystore: keystore, assetDefinitionStore: assetDefinitionStore, tokensService: tokensService)
+            let coordinator = TransactionConfirmationCoordinator(
+                presentingViewController: navigationController,
+                session: session,
+                transaction: try transactionType.buildSendErc721Token(recipient: recipient, account: session.account.address),
+                configuration: .sendNftTransaction(confirmType: .signThenSend),
+                analytics: analytics,
+                domainResolutionService: domainResolutionService,
+                keystore: keystore,
+                assetDefinitionStore: assetDefinitionStore,
+                tokensService: tokensService,
+                networkService: networkService)
+            
             addCoordinator(coordinator)
             coordinator.delegate = self
+
             coordinator.start(fromSource: .sendNft)
         } catch {
             UIApplication.shared
@@ -105,7 +127,12 @@ extension TransferNFTCoordinator: SendSemiFungibleTokenViewControllerDelegate {
     func openQRCode(in controller: SendSemiFungibleTokenViewController) {
         guard navigationController.ensureHasDeviceAuthorization() else { return }
 
-        let coordinator = ScanQRCodeCoordinator(analytics: analytics, navigationController: navigationController, account: session.account, domainResolutionService: domainResolutionService)
+        let coordinator = ScanQRCodeCoordinator(
+            analytics: analytics,
+            navigationController: navigationController,
+            account: session.account,
+            domainResolutionService: domainResolutionService)
+        
         coordinator.delegate = self
         addCoordinator(coordinator)
         coordinator.start(fromSource: .addressTextField)

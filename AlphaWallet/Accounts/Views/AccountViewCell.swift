@@ -1,7 +1,6 @@
 // Copyright © 2018 Stormbird PTE. LTD.
 
 import UIKit
-import Combine
 import AlphaWalletFoundation
 
 class AccountViewCell: UITableViewCell {
@@ -11,19 +10,17 @@ class AccountViewCell: UITableViewCell {
     private let blockieImageView = BlockieImageView(size: .init(width: 40, height: 40))
     lazy private var selectedIndicator: UIView = {
         let indicator = UIView()
-        indicator.layer.cornerRadius = Style.SelectionIndicator.width / 2.0
+        indicator.layer.cornerRadius = DataEntry.Metric.SelectionIndicator.width / 2.0
         indicator.borderWidth = 0.0
         indicator.backgroundColor = Configuration.Color.Semantic.indicator
         NSLayoutConstraint.activate([
-            indicator.widthAnchor.constraint(equalToConstant: Style.SelectionIndicator.width),
-            indicator.heightAnchor.constraint(equalToConstant: Style.SelectionIndicator.height)
+            indicator.widthAnchor.constraint(equalToConstant: DataEntry.Metric.SelectionIndicator.width),
+            indicator.heightAnchor.constraint(equalToConstant: DataEntry.Metric.SelectionIndicator.height)
         ])
         indicator.translatesAutoresizingMaskIntoConstraints = false
         indicator.isHidden = true
         return indicator
     }()
-
-    private var cancelable = Set<AnyCancellable>()
 
     override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
         super.init(style: style, reuseIdentifier: reuseIdentifier)
@@ -31,6 +28,7 @@ class AccountViewCell: UITableViewCell {
         selectionStyle = .none
         isUserInteractionEnabled = true
         addressOrEnsName.lineBreakMode = .byTruncatingMiddle
+        backgroundColor = Configuration.Color.Semantic.defaultViewBackground
 
         let leftStackView = [
             [balanceLabel, apprecation24hourLabel].asStackView(spacing: 10),
@@ -49,7 +47,7 @@ class AccountViewCell: UITableViewCell {
             stackView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -20),
             stackView.rightAnchor.constraint(equalTo: rightAnchor, constant: -25),
             selectedIndicator.centerYAnchor.constraint(equalTo: centerYAnchor),
-            selectedIndicator.leadingAnchor.constraint(equalTo: leadingAnchor, constant: Style.SelectionIndicator.leadingOffset)
+            selectedIndicator.leadingAnchor.constraint(equalTo: leadingAnchor, constant: DataEntry.Metric.SelectionIndicator.leadingOffset)
         ])
     }
 
@@ -57,36 +55,13 @@ class AccountViewCell: UITableViewCell {
         return nil
     }
 
-    override func prepareForReuse() {
-        super.prepareForReuse()
-        cancelable.cancellAll()
-    }
-
-    func bind(viewModel: AccountViewModel) {
-        cancelable.cancellAll()
-
-        backgroundColor = viewModel.backgroundColor
-        accessoryView = Style.AccessoryView.chevron
+    func configure(viewModel: AccountViewModel) {
+        accessoryView = UIImageView.chevronImageView
         selectedIndicator.isHidden = !viewModel.isSelected
 
-        viewModel.addressOrEnsName
-            .sink { [weak addressOrEnsName] value in
-                addressOrEnsName?.attributedText = value
-            }.store(in: &cancelable)
-
-        viewModel.blockieImage
-            .sink { [weak blockieImageView] image in
-                blockieImageView?.setBlockieImage(image: image)
-            }.store(in: &cancelable)
-
-        viewModel.balance
-            .sink { [weak balanceLabel] value in
-                balanceLabel?.attributedText = value
-            }.store(in: &cancelable)
-
-        viewModel.apprecation24hour
-            .sink { [weak apprecation24hourLabel] value in
-                apprecation24hourLabel?.attributedText = value
-            }.store(in: &cancelable)
+        addressOrEnsName.attributedText = viewModel.addressOrEnsName
+        blockieImageView.setBlockieImage(image: viewModel.blockieImage)
+        balanceLabel.attributedText = viewModel.balance
+        apprecation24hourLabel.attributedText = viewModel.apprecation24hour
     }
 }

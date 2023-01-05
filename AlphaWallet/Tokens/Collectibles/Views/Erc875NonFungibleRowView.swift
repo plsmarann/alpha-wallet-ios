@@ -8,7 +8,7 @@
 import UIKit
 import AlphaWalletFoundation
 
-class Erc875NonFungibleRowView: TokenCardViewType {
+class Erc875NonFungibleRowView: TokenCardViewRepresentable {
     private let titleLabel = UILabel()
     private let descriptionLabel = UILabel()
 
@@ -51,7 +51,7 @@ class Erc875NonFungibleRowView: TokenCardViewType {
     private let wallet: Wallet
     private let token: Token
 
-    init(token: Token, tokenType: OpenSeaBackedNonFungibleTokenHandling, analytics: AnalyticsLogger, keystore: Keystore, assetDefinitionStore: AssetDefinitionStore, wallet: Wallet, layout: GridOrListSelectionState, gridEdgeInsets: UIEdgeInsets = .zero, listEdgeInsets: UIEdgeInsets = .init(top: 0, left: 16, bottom: 0, right: 16)) {
+    init(token: Token, tokenType: OpenSeaBackedNonFungibleTokenHandling, analytics: AnalyticsLogger, keystore: Keystore, assetDefinitionStore: AssetDefinitionStore, wallet: Wallet, layout: GridOrListLayout, gridEdgeInsets: UIEdgeInsets = .zero, listEdgeInsets: UIEdgeInsets = .init(top: 0, left: 16, bottom: 0, right: 16)) {
         self.gridEdgeInsets = gridEdgeInsets
         self.listEdgeInsets = listEdgeInsets
         self.tokenType = tokenType
@@ -91,7 +91,8 @@ class Erc875NonFungibleRowView: TokenCardViewType {
         ])
 
         clipsToBounds = true
-        borderColor = R.color.mercury()
+        borderColor = Configuration.Color.Semantic.tableViewSeparator
+        backgroundColor = Configuration.Color.Semantic.defaultViewBackground
         configureLayout(layout: layout)
     }
 
@@ -106,7 +107,7 @@ class Erc875NonFungibleRowView: TokenCardViewType {
     private var gridEdgeInsets: UIEdgeInsets
     private var listEdgeInsets: UIEdgeInsets
 
-    func configureLayout(layout: GridOrListSelectionState) {
+    func configureLayout(layout: GridOrListLayout) {
         for each in subviews { each.removeFromSuperview() }
         NSLayoutConstraint.deactivate(_constraints)
 
@@ -131,7 +132,7 @@ class Erc875NonFungibleRowView: TokenCardViewType {
             _constraints = imageSmallSizeContraints + stackView.anchorsConstraint(to: self, edgeInsets: listEdgeInsets)
         case .grid:
             contentMode = .scaleAspectFill
-            cornerRadius = Metrics.CornerRadius.nftBox
+            cornerRadius = DataEntry.Metric.CornerRadius.nftBox
             col1.alignment = .center
             descriptionCo1.isHidden = true
 
@@ -169,7 +170,6 @@ class Erc875NonFungibleRowView: TokenCardViewType {
     }
 
     private func configure(viewModel: Erc875NonFungibleRowViewModel) {
-        backgroundColor = viewModel.contentsBackgroundColor
         titleLabel.text = viewModel.title
 
         descriptionLabel.font = viewModel.descriptionTextFont

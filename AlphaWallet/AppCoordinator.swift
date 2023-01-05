@@ -3,8 +3,10 @@
 import Combine
 import UIKit
 import PromiseKit
+import AlphaWalletAddress
 import AlphaWalletCore
 import AlphaWalletFoundation
+import AlphaWalletTrackAPICalls
 
 extension TokenScript {
     static let baseTokenScriptFiles: [TokenType: String] = [
@@ -13,24 +15,19 @@ extension TokenScript {
     ]
 }
 
+// swiftlint:disable type_body_length
 class AppCoordinator: NSObject, Coordinator {
     private let config = Config()
     private let legacyFileBasedKeystore: LegacyFileBasedKeystore
     private lazy var lock: Lock = SecuredLock(securedStorage: securedStorage)
     private var keystore: Keystore
-    private let assetDefinitionStore = AssetDefinitionStore(baseTokenScriptFiles: TokenScript.baseTokenScriptFiles)
+    private lazy var assetDefinitionStore = AssetDefinitionStore(baseTokenScriptFiles: TokenScript.baseTokenScriptFiles, networkService: networkService)
     private let window: UIWindow
     private var appTracker = AppTracker()
     //TODO rename and replace type? Not Initializer but similar as of writing
     private var services: [Initializer] = []
-    private var assetDefinitionStoreCoordinator: AssetDefinitionStoreCoordinator? {
-        return coordinators.first { $0 is AssetDefinitionStoreCoordinator } as? AssetDefinitionStoreCoordinator
-    }
     private var initialWalletCreationCoordinator: InitialWalletCreationCoordinator? {
         return coordinators.compactMap { $0 as? InitialWalletCreationCoordinator }.first
-    }
-    var promptBackupCoordinator: PromptBackupCoordinator? {
-        return coordinators.compactMap { $0 as? PromptBackupCoordinator }.first
     }
 
     private lazy var protectionCoordinator: ProtectionCoordinator = {
@@ -51,39 +48,42 @@ class AppCoordinator: NSObject, Coordinator {
     var activeWalletCoordinator: ActiveWalletCoordinator? {
         return coordinators.first { $0 is ActiveWalletCoordinator } as? ActiveWalletCoordinator
     }
-    private lazy var coinTickersFetcher: CoinTickersFetcher = CoinTickersFetcherImpl()
+
+    private lazy var currencyService = CurrencyService(storage: config)
+    private lazy var coinTickersFetcher: CoinTickersFetcher = CoinTickersFetcherImpl(networkService: networkService)
     private lazy var nftProvider: NFTProvider = AlphaWalletNFTProvider(analytics: analytics)
-    private lazy var dependencyProvider: WalletDependencyContainer = {
-        WalletComponentsFactory(analytics: analytics, nftProvider: nftProvider, assetDefinitionStore: assetDefinitionStore, coinTickersFetcher: coinTickersFetcher, config: config)
-    }()
-    private lazy var walletBalanceService: WalletBalanceService = {
-        let service = MultiWalletBalanceService(walletAddressesStore: walletAddressesStore, dependencyContainer: dependencyProvider)
-        service.start()
-        return service
-    }()
+    private var walletDependencies: [Wallet: WalletDependencies] = [:]
+    private let walletBalanceService = MultiWalletBalanceService()
     private var pendingActiveWalletCoordinator: ActiveWalletCoordinator?
 
     private lazy var accountsCoordinator: AccountsCoordinator = {
         let coordinator = AccountsCoordinator(
-                config: config,
-                navigationController: navigationController,
-                keystore: keystore,
-                analytics: analytics,
-                viewModel: .init(configuration: .summary),
-                walletBalanceService: walletBalanceService,
-                blockiesGenerator: blockiesGenerator,
-                domainResolutionService: domainResolutionService
-        )
+            config: config,
+            navigationController: navigationController,
+            keystore: keystore,
+            analytics: analytics,
+            viewModel: .init(configuration: .summary),
+            walletBalanceService: walletBalanceService,
+            blockiesGenerator: blockiesGenerator,
+            domainResolutionService: domainResolutionService,
+            promptBackup: promptBackup)
+        
         coordinator.delegate = self
 
         return coordinator
     }()
-    private lazy var tokenSwapper = TokenSwapper(reachabilityManager: ReachabilityManager(), sessionProvider: sessionProvider)
+    private lazy var networkService: NetworkService = BaseNetworkService(analytics: analytics)
+    private lazy var tokenSwapper: TokenSwapper = {
+        TokenSwapper(
+            reachabilityManager: ReachabilityManager(),
+            sessionProvider: activeSessionsProvider,
+            networkProvider: LiQuestTokenSwapperNetworkProvider(networkService: networkService))
+    }()
     private lazy var tokenActionsService: TokenActionsService = {
         let service = TokenActionsService()
         service.register(service: BuyTokenProvider(subProviders: [
             Coinbase(action: R.string.localizable.aWalletTokenBuyOnCoinbaseTitle()),
-            Ramp(action: R.string.localizable.aWalletTokenBuyOnRampTitle())
+            Ramp(action: R.string.localizable.aWalletTokenBuyOnRampTitle(), networkProvider: RampNetworkProvider(networkService: networkService))
         ], action: R.string.localizable.aWalletTokenBuyTitle()))
 
         let honeySwapService = HoneySwap(action: R.string.localizable.aWalletTokenErc20ExchangeHoneyswapButtonTitle())
@@ -94,8 +94,7 @@ class AppCoordinator: NSObject, Coordinator {
         var availableSwapProviders: [SupportedTokenActionsProvider & TokenActionProvider] = [
             honeySwapService,
             quickSwap,
-            Oneinch(action: R.string.localizable.aWalletTokenErc20ExchangeOn1inchButtonTitle()),
-            Carthage(action: R.string.localizable.aWalletTokenErc20ExchangeCarthageButtonTitle()),
+            Oneinch(action: R.string.localizable.aWalletTokenErc20ExchangeOn1inchButtonTitle(), networkProvider: OneinchNetworkProvider(networkService: networkService)),
             //uniswap
         ]
         availableSwapProviders += Features.default.isAvailable(.isSwapEnabled) ? [SwapTokenNativeProvider(tokenSwapper: tokenSwapper)] : []
@@ -108,7 +107,15 @@ class AppCoordinator: NSObject, Coordinator {
     }()
 
     private lazy var walletConnectCoordinator: WalletConnectCoordinator = {
-        let coordinator = WalletConnectCoordinator(keystore: keystore, navigationController: navigationController, analytics: analytics, domainResolutionService: domainResolutionService, config: config, sessionProvider: sessionProvider, assetDefinitionStore: assetDefinitionStore)
+        let coordinator = WalletConnectCoordinator(
+            keystore: keystore,
+            navigationController: navigationController,
+            analytics: analytics,
+            domainResolutionService: domainResolutionService,
+            config: config,
+            sessionProvider: activeSessionsProvider,
+            assetDefinitionStore: assetDefinitionStore,
+            networkService: networkService)
 
         return coordinator
     }()
@@ -118,30 +125,94 @@ class AppCoordinator: NSObject, Coordinator {
         let storage: EnsRecordsStorage = RealmStore.shared
         return storage
     }()
-    lazy private var blockiesGenerator: BlockiesGenerator = BlockiesGenerator(assetImageProvider: nftProvider, storage: sharedEnsRecordsStorage)
-    lazy private var domainResolutionService: DomainResolutionServiceType = DomainResolutionService(blockiesGenerator: blockiesGenerator, storage: sharedEnsRecordsStorage)
+    lazy private var blockiesGenerator: BlockiesGenerator = BlockiesGenerator(
+        assetImageProvider: nftProvider,
+        storage: sharedEnsRecordsStorage)
+
+    lazy private var domainResolutionService: DomainResolutionServiceType = DomainResolutionService(
+        blockiesGenerator: blockiesGenerator,
+        storage: sharedEnsRecordsStorage,
+        networkService: networkService)
+
     private lazy var walletApiCoordinator: WalletApiCoordinator = {
-        let coordinator = WalletApiCoordinator(keystore: keystore, navigationController: navigationController, analytics: analytics, serviceProvider: sessionProvider)
+        let coordinator = WalletApiCoordinator(
+            keystore: keystore,
+            navigationController: navigationController,
+            analytics: analytics,
+            serviceProvider: activeSessionsProvider)
+
         coordinator.delegate = self
 
         return coordinator
     }()
+
     private lazy var notificationService: NotificationService = {
         let pushNotificationsService = UNUserNotificationsService()
         let notificationService = LocalNotificationService()
-        return NotificationService(sources: [], walletBalanceService: walletBalanceService, notificationService: notificationService, pushNotificationsService: pushNotificationsService)
+
+        return NotificationService(
+            sources: [],
+            walletBalanceService: walletBalanceService,
+            notificationService: notificationService,
+            pushNotificationsService: pushNotificationsService)
     }()
 
-    private lazy var sessionProvider = SessionsProvider(config: config, analytics: analytics)
+    private lazy var activeSessionsProvider = SessionsProvider(config: config, analytics: analytics)
     private let securedStorage: SecuredPasswordStorage & SecuredStorage
-    init(window: UIWindow, analytics: AnalyticsServiceType, keystore: Keystore, walletAddressesStore: WalletAddressesStore, navigationController: UINavigationController = .withOverridenBarAppearence(), securedStorage: SecuredPasswordStorage & SecuredStorage) throws {
+    private let addressStorage: FileAddressStorage
+    private let tokenScriptOverridesFileManager = TokenScriptOverridesFileManager()
+
+    //Unfortunate to have to have a factory method and not be able to use an initializer (because we can't override `init()` to throw)
+    static func create() throws -> AppCoordinator {
+        crashlytics.register(AlphaWallet.FirebaseCrashlyticsReporter.instance)
+        applyStyle()
+
+        let window = UIWindow(frame: UIScreen.main.bounds)
+        let analytics = AnalyticsService()
+        let walletAddressesStore: WalletAddressesStore = EtherKeystore.migratedWalletAddressesStore(userDefaults: .standardOrForTests)
+        let securedStorage: SecuredStorage & SecuredPasswordStorage = try KeychainStorage()
+        let legacyFileBasedKeystore = try LegacyFileBasedKeystore(securedStorage: securedStorage)
+
+        let keystore: Keystore = EtherKeystore(
+            keychain: securedStorage,
+            walletAddressesStore: walletAddressesStore,
+            analytics: analytics,
+            legacyFileBasedKeystore: legacyFileBasedKeystore)
+
+        let navigationController: UINavigationController = .withOverridenBarAppearence()
+        navigationController.view.backgroundColor = Configuration.Color.Semantic.defaultViewBackground
+
+        let coordinator = AppCoordinator(
+            window: window,
+            analytics: analytics,
+            keystore: keystore,
+            walletAddressesStore: walletAddressesStore,
+            navigationController: navigationController,
+            securedStorage: securedStorage,
+            legacyFileBasedKeystore: legacyFileBasedKeystore)
+
+        return coordinator
+    }
+
+    init(window: UIWindow,
+         analytics: AnalyticsServiceType,
+         keystore: Keystore,
+         walletAddressesStore: WalletAddressesStore,
+         navigationController: UINavigationController,
+         securedStorage: SecuredPasswordStorage & SecuredStorage,
+         legacyFileBasedKeystore: LegacyFileBasedKeystore) {
+
+        let addressStorage = FileAddressStorage()
+        register(addressStorage: addressStorage)
+
+        self.addressStorage = addressStorage
         self.navigationController = navigationController
         self.window = window
         self.analytics = analytics
         self.keystore = keystore
         self.walletAddressesStore = walletAddressesStore
         self.securedStorage = securedStorage
-        self.legacyFileBasedKeystore = try LegacyFileBasedKeystore(securedStorage: securedStorage, keystore: keystore)
+        self.legacyFileBasedKeystore = legacyFileBasedKeystore
 
         super.init()
         window.rootViewController = navigationController
@@ -150,22 +221,57 @@ class AppCoordinator: NSObject, Coordinator {
         setupSplashViewController(on: navigationController)
         bindWalletAddressesStore()
     }
+    private lazy var promptBackup = PromptBackup(
+        keystore: keystore,
+        config: config,
+        analytics: analytics,
+        walletBalanceProvidable: walletBalanceService)
 
     private func bindWalletAddressesStore() {
         walletAddressesStore
             .didRemoveWalletPublisher
-            .sink { [config, analytics, keystore, legacyFileBasedKeystore] account in
+            .sink { [config, legacyFileBasedKeystore, promptBackup] account in
+
                 //TODO: pass ref
                 FileWalletStorage().addOrUpdate(name: nil, for: account.address)
-                PromptBackupCoordinator(keystore: keystore, wallet: account, config: config, analytics: analytics).deleteWallet()
+                promptBackup.deleteWallet(wallet: account)
                 TransactionsTracker.resetFetchingState(account: account, config: config)
                 Erc1155TokenIdsFetcher.deleteForWallet(account.address)
                 DatabaseMigration.addToDeleteList(address: account.address)
                 legacyFileBasedKeystore.delete(wallet: account)
+
+                self.destroy(for: account)
             }.store(in: &cancelable)
+
+        walletAddressesStore
+            .didAddWalletPublisher
+            .sink { [promptBackup] in promptBackup.markWalletAsImported(wallet: $0) }
+            .store(in: &cancelable)
+
+        walletAddressesStore
+            .walletsPublisher
+            .receive(on: RunLoop.main) //NOTE: async to avoid `swift_beginAccess` crash
+            .map { wallets -> [Wallet: WalletBalanceFetcherType] in
+                var fetchers: [Wallet: WalletBalanceFetcherType] = [:]
+
+                for wallet in wallets {
+                    let dep = self.buildDependencies(for: wallet, activeSessionsProvider: nil)
+                    fetchers[wallet] = dep.fetcher
+                }
+
+                return fetchers
+            }.sink { [walletBalanceService] in walletBalanceService.start(fetchers: $0) }
+            .store(in: &cancelable)
     }
 
-    func start() {
+    func start(launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) {
+        if AlphaWallet.Device.isSimulator {
+            //Want to start as soon as possible
+            TrackApiCalls.shared.start()
+
+            UserDefaults.standard.set(!isRunningTests(), forKey: "_UIConstraintBasedLayoutLogUnsatisfiable")
+        }
+
         if Features.default.isAvailable(.isLoggingEnabledForTickerMatches) {
             Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { _ in
                 infoLog("Ticker ID positive matching counts: \(TickerIdFilter.matchCounts)")
@@ -177,8 +283,7 @@ class AppCoordinator: NSObject, Coordinator {
         runServices()
         appTracker.start()
         notificationService.registerForReceivingRemoteNotifications()
-
-        setupAssetDefinitionStoreCoordinator()
+        tokenScriptOverridesFileManager.start()
         migrateToStoringRawPrivateKeysInKeychain()
         tokenActionsService.start()
 
@@ -190,7 +295,23 @@ class AppCoordinator: NSObject, Coordinator {
             showInitialWalletCoordinator()
         }
 
-        assetDefinitionStore.delegate = self
+        if let shortcutItem = launchOptions?[UIApplication.LaunchOptionsKey.shortcutItem] as? UIApplicationShortcutItem, shortcutItem.type == Constants.launchShortcutKey {
+            //Delay needed to work because app is launching..
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                self.launchUniversalScanner()
+            }
+        }
+    }
+
+    deinit {
+        tokenScriptOverridesFileManager.stop()
+    }
+
+    func applicationPerformActionFor(_ shortcutItem: UIApplicationShortcutItem, completionHandler: @escaping (Bool) -> Void) {
+        if shortcutItem.type == Constants.launchShortcutKey {
+            launchUniversalScanner()
+        }
+        completionHandler(true)
     }
 
     func applicationWillResignActive() {
@@ -210,6 +331,31 @@ class AppCoordinator: NSObject, Coordinator {
         protectionCoordinator.applicationWillEnterForeground()
     }
 
+    func applicationShouldAllowExtensionPointIdentifier(_ extensionPointIdentifier: UIApplication.ExtensionPointIdentifier) -> Bool {
+        if extensionPointIdentifier == .keyboard {
+            return false
+        }
+        return true
+    }
+
+    func applicationOpenUrl(_ url: URL, options: [UIApplication.OpenURLOptionsKey: Any] = [:]) -> Bool {
+        return handleUniversalLink(url: url, source: .customUrlScheme)
+    }
+
+    func applicationContinueUserActivity(_ userActivity: NSUserActivity, restorationHandler: @escaping ([UIUserActivityRestoring]?) -> Void) -> Bool {
+        let hasHandledIntent = handleIntent(userActivity: userActivity)
+        if hasHandledIntent {
+            return true
+        }
+
+        var handled = false
+        if let url = userActivity.webpageURL {
+            handled = handleUniversalLink(url: url, source: .deeplink)
+        }
+        //TODO: if we handle other types of URLs, check if handled==false, then we pass the url to another handlers
+        return handled
+    }
+
     private func setupSplashViewController(on navigationController: UINavigationController) {
         navigationController.viewControllers = [
             SplashViewController()
@@ -218,14 +364,7 @@ class AppCoordinator: NSObject, Coordinator {
     }
 
     private func migrateToStoringRawPrivateKeysInKeychain() {
-        legacyFileBasedKeystore.migrateKeystoreFilesToRawPrivateKeysInKeychain()
-    }
-
-    private func setupAssetDefinitionStoreCoordinator() {
-        let coordinator = AssetDefinitionStoreCoordinator(assetDefinitionStore: assetDefinitionStore)
-        coordinator.delegate = self
-        addCoordinator(coordinator)
-        coordinator.start()
+        legacyFileBasedKeystore.migrateKeystoreFilesToRawPrivateKeysInKeychain(using: keystore)
     }
 
     @discardableResult func showActiveWallet(for wallet: Wallet, animated: Bool) -> ActiveWalletCoordinator {
@@ -233,41 +372,42 @@ class AppCoordinator: NSObject, Coordinator {
             removeCoordinator(coordinator)
         }
 
-        let dep = dependencyProvider.makeDependencies(for: wallet)
-        dep.sessionsProvider.start(wallet: wallet)
-        dep.fetcher.start()
-        dep.pipeline.start()
+        let dep = buildDependencies(for: wallet, activeSessionsProvider: activeSessionsProvider)
 
         walletConnectCoordinator.configure(with: dep.pipeline)
 
         let coordinator = ActiveWalletCoordinator(
-                navigationController: navigationController,
-                walletAddressesStore: walletAddressesStore,
-                activitiesPipeLine: dep.activitiesPipeLine,
-                wallet: wallet,
-                keystore: keystore,
-                assetDefinitionStore: assetDefinitionStore,
-                config: config,
-                appTracker: appTracker,
-                analytics: analytics,
-                nftProvider: nftProvider,
-                restartQueue: restartQueue,
-                universalLinkCoordinator: universalLinkService,
-                accountsCoordinator: accountsCoordinator,
-                walletBalanceService: walletBalanceService,
-                coinTickersFetcher: coinTickersFetcher,
-                tokenActionsService: tokenActionsService,
-                walletConnectCoordinator: walletConnectCoordinator,
-                notificationService: notificationService,
-                blockiesGenerator: blockiesGenerator,
-                domainResolutionService: domainResolutionService,
-                tokenSwapper: tokenSwapper,
-                sessionsProvider: dep.sessionsProvider,
-                tokenCollection: dep.pipeline,
-                importToken: dep.importToken,
-                transactionsDataStore: dep.transactionsDataStore,
-                tokensService: dep.tokensService,
-                lock: lock)
+            navigationController: navigationController,
+            walletAddressesStore: walletAddressesStore,
+            activitiesPipeLine: dep.activitiesPipeLine,
+            wallet: wallet,
+            keystore: keystore,
+            assetDefinitionStore: assetDefinitionStore,
+            config: config,
+            appTracker: appTracker,
+            analytics: analytics,
+            nftProvider: nftProvider,
+            restartQueue: restartQueue,
+            universalLinkCoordinator: universalLinkService,
+            accountsCoordinator: accountsCoordinator,
+            walletBalanceService: walletBalanceService,
+            coinTickersFetcher: coinTickersFetcher,
+            tokenActionsService: tokenActionsService,
+            walletConnectCoordinator: walletConnectCoordinator,
+            notificationService: notificationService,
+            blockiesGenerator: blockiesGenerator,
+            domainResolutionService: domainResolutionService,
+            tokenSwapper: tokenSwapper,
+            sessionsProvider: dep.sessionsProvider,
+            tokenCollection: dep.pipeline,
+            importToken: dep.importToken,
+            transactionsDataStore: dep.transactionsDataStore,
+            tokensService: dep.tokensService,
+            lock: lock,
+            currencyService: currencyService,
+            tokenScriptOverridesFileManager: tokenScriptOverridesFileManager,
+            networkService: networkService,
+            promptBackup: promptBackup)
 
         coordinator.delegate = self
 
@@ -275,8 +415,6 @@ class AppCoordinator: NSObject, Coordinator {
         addCoordinator(accountsCoordinator)
 
         coordinator.start(animated: animated)
-
-        sessionProvider.start(sessions: dep.sessionsProvider.sessions)
 
         return coordinator
     }
@@ -287,7 +425,8 @@ class AppCoordinator: NSObject, Coordinator {
             ConfigureApp(),
             CleanupWallets(keystore: keystore, walletAddressesStore: walletAddressesStore, config: config),
             SkipBackupFiles(legacyFileBasedKeystore: legacyFileBasedKeystore),
-            CleanupPasscode(keystore: keystore, lock: lock)
+            CleanupPasscode(keystore: keystore, lock: lock),
+            KeyboardInitializer()
         ]
 
         initializers.forEach { $0.perform() }
@@ -310,21 +449,26 @@ class AppCoordinator: NSObject, Coordinator {
     }
 
     func showInitialWalletCoordinator() {
-        let coordinator = InitialWalletCreationCoordinator(config: config, navigationController: navigationController, keystore: keystore, analytics: analytics, domainResolutionService: domainResolutionService)
-        coordinator.delegate = self
-        coordinator.start()
-        addCoordinator(coordinator)
-    }
+        let coordinator = InitialWalletCreationCoordinator(
+            config: config,
+            navigationController: navigationController,
+            keystore: keystore,
+            analytics: analytics,
+            domainResolutionService: domainResolutionService)
 
-    func showInitialNetworkSelectionCoordinator() {
-        let coordinator = InitialNetworkSelectionCoordinator(config: config, navigationController: navigationController, restartTaskQueue: restartQueue)
         coordinator.delegate = self
         coordinator.start()
         addCoordinator(coordinator)
     }
 
     private func createInitialWalletIfMissing() {
-        WalletCoordinator(config: config, keystore: keystore, analytics: analytics, domainResolutionService: domainResolutionService).createInitialWalletIfMissing()
+        let coordinator = WalletCoordinator(
+            config: config,
+            keystore: keystore,
+            analytics: analytics,
+            domainResolutionService: domainResolutionService)
+
+        coordinator.createInitialWalletIfMissing()
     }
 
     private func showActiveWalletIfNeeded() {
@@ -341,7 +485,7 @@ class AppCoordinator: NSObject, Coordinator {
     }
 
     /// Return true if handled
-    @discardableResult func handleUniversalLink(url: URL, source: UrlSource) -> Bool {
+    @discardableResult private func handleUniversalLink(url: URL, source: UrlSource) -> Bool {
         createInitialWalletIfMissing()
         showActiveWalletIfNeeded()
 
@@ -369,7 +513,7 @@ class AppCoordinator: NSObject, Coordinator {
         activeWalletCoordinator?.didPressOpenWebPage(url, in: viewController)
     }
 
-    func handleIntent(userActivity: NSUserActivity) -> Bool {
+    private func handleIntent(userActivity: NSUserActivity) -> Bool {
         if let type = userActivity.userInfo?[WalletQrCodeDonation.userInfoType.key] as? String, type == WalletQrCodeDonation.userInfoType.value {
             analytics.log(navigation: Analytics.Navigation.openShortcut, properties: [
                 Analytics.Properties.type.rawValue: Analytics.ShortcutType.walletQrCode.rawValue
@@ -380,7 +524,82 @@ class AppCoordinator: NSObject, Coordinator {
             return false
         }
     }
+    //NOTE: not good to pass `activeSessionsProvider` but needed to update active wallet session with right sessions in time
+    private func buildDependencies(for wallet: Wallet, activeSessionsProvider: SessionsProvider?) -> WalletDependencies {
+        if let dep = walletDependencies[wallet] { return dep }
+
+        let tokensDataStore: TokensDataStore = MultipleChainsTokensDataStore(store: .storage(for: wallet), servers: config.enabledServers)
+        let eventsDataStore: NonActivityEventsDataStore = NonActivityMultiChainEventsDataStore(store: .storage(for: wallet))
+        let transactionsDataStore: TransactionDataStore = TransactionDataStore(store: .storage(for: wallet))
+        let eventsActivityDataStore: EventsActivityDataStoreProtocol = EventsActivityDataStore(store: .storage(for: wallet))
+
+        let sessionsProvider: SessionsProvider = .init(config: config, analytics: analytics)
+        sessionsProvider.start(wallet: wallet)
+        activeSessionsProvider?.set(activeSessions: sessionsProvider.activeSessions)
+
+        let contractDataFetcher = ContractDataFetcher(
+            sessionProvider: sessionsProvider,
+            assetDefinitionStore: assetDefinitionStore,
+            analytics: analytics,
+            reachability: ReachabilityManager())
+
+        let importToken = ImportToken(tokensDataStore: tokensDataStore, contractDataFetcher: contractDataFetcher)
+
+        let tokensService = AlphaWalletTokensService(
+            sessionsProvider: sessionsProvider,
+            tokensDataStore: tokensDataStore,
+            analytics: analytics,
+            importToken: importToken,
+            transactionsStorage: transactionsDataStore,
+            nftProvider: nftProvider,
+            assetDefinitionStore: assetDefinitionStore,
+            networkService: networkService)
+
+        let pipeline: TokensProcessingPipeline = WalletDataProcessingPipeline(
+            wallet: wallet,
+            tokensService: tokensService,
+            coinTickersFetcher: coinTickersFetcher,
+            assetDefinitionStore: assetDefinitionStore,
+            eventsDataStore: eventsDataStore,
+            currencyService: currencyService)
+
+        pipeline.start()
+
+        let fetcher = WalletBalanceFetcher(wallet: wallet, tokensService: pipeline)
+        fetcher.start()
+
+        let activitiesPipeLine = ActivitiesPipeLine(
+            config: config,
+            wallet: wallet,
+            assetDefinitionStore: assetDefinitionStore,
+            transactionDataStore: transactionsDataStore,
+            tokensService: tokensService,
+            sessionsProvider: sessionsProvider,
+            eventsActivityDataStore: eventsActivityDataStore,
+            eventsDataStore: eventsDataStore,
+            analytics: analytics)
+
+        let dependency = WalletDependencies(
+            activitiesPipeLine: activitiesPipeLine,
+            transactionsDataStore: transactionsDataStore,
+            importToken: importToken,
+            tokensService: tokensService,
+            pipeline: pipeline,
+            fetcher: fetcher,
+            sessionsProvider: sessionsProvider,
+            eventsDataStore: eventsDataStore,
+            currencyService: currencyService)
+
+        walletDependencies[wallet] = dependency
+
+        return dependency
+    }
+
+    private func destroy(for wallet: Wallet) {
+        walletDependencies[wallet] = nil
+    }
 }
+// swiftlint:enable type_body_length
 
 extension AppCoordinator: InitialWalletCreationCoordinatorDelegate {
 
@@ -389,33 +608,13 @@ extension AppCoordinator: InitialWalletCreationCoordinatorDelegate {
         removeCoordinator(coordinator)
     }
 
-    func didAddAccount(_ account: Wallet, in coordinator: InitialWalletCreationCoordinator) {
+    func didAddAccount(_ wallet: Wallet, in coordinator: InitialWalletCreationCoordinator) {
         coordinator.navigationController.dismiss(animated: true)
 
         removeCoordinator(coordinator)
-        switch account.type {
-        case .real:
-            showInitialNetworkSelectionCoordinator()
-        case .watch:
-            guard let wallet = keystore.currentWallet else { return }
-            showActiveWallet(for: wallet, animated: false)
-        }
-    }
-
-}
-
-extension AppCoordinator: InitialNetworkSelectionCoordinatorDelegate {
-    func didSelect(networks: [RPCServer], in coordinator: InitialNetworkSelectionCoordinator) {
-        coordinator.navigationController.dismiss(animated: true)
-        removeCoordinator(coordinator)
-        guard let wallet = keystore.currentWallet else { return }
-        WhatsNewExperimentCoordinator.lastCreatedWalletTimestamp = Date()
         showActiveWallet(for: wallet, animated: false)
-        DispatchQueue.main.async {
-            WhereIsWalletAddressFoundOverlayView.show()
-            self.restartQueue.add(.reloadServers(networks))
-        }
     }
+
 }
 
 extension AppCoordinator: ActiveWalletCoordinatorDelegate {
@@ -449,10 +648,6 @@ extension AppCoordinator: ActiveWalletCoordinatorDelegate {
         notificationService.requestToEnableNotification()
     }
 
-    func assetDefinitionsOverrideViewController(for coordinator: ActiveWalletCoordinator) -> UIViewController? {
-        return assetDefinitionStoreCoordinator?.createOverridesViewController()
-    }
-
     func handleUniversalLink(_ url: URL, forCoordinator coordinator: ActiveWalletCoordinator, source: UrlSource) {
         handleUniversalLink(url: url, source: source)
     }
@@ -484,27 +679,6 @@ extension AppCoordinator: ImportMagicLinkCoordinatorDelegate {
     }
 }
 
-extension AppCoordinator: AssetDefinitionStoreCoordinatorDelegate {
-
-    func show(error: Error, for viewController: AssetDefinitionStoreCoordinator) {
-        activeWalletCoordinator?.show(error: error)
-    }
-
-    func addedTokenScript(forContract contract: AlphaWallet.Address, forServer server: RPCServer, destinationFileInUse: Bool, filename: String) {
-        activeWalletCoordinator?.addImported(contract: contract, forServer: server)
-
-        if !destinationFileInUse {
-            activeWalletCoordinator?.show(openedURL: filename)
-        }
-    }
-}
-
-extension AppCoordinator: AssetDefinitionStoreDelegate {
-    func listOfBadTokenScriptFilesChanged(in: AssetDefinitionStore ) {
-        activeWalletCoordinator?.listOfBadTokenScriptFilesChanged(fileNames: assetDefinitionStore.listOfBadTokenScriptFiles + assetDefinitionStore.conflictingTokenScriptFileNames.all)
-    }
-}
-
 extension AppCoordinator: UniversalLinkServiceDelegate {
 
     private var hasImportMagicLinkCoordinator: ImportMagicLinkCoordinator? {
@@ -514,16 +688,18 @@ extension AppCoordinator: UniversalLinkServiceDelegate {
     func handle(url: DeepLink, for resolver: UrlSchemeResolver) {
         switch url {
         case .maybeFileUrl(let url):
-            guard let coordinator = assetDefinitionStoreCoordinator else { return }
-            coordinator.handleOpen(url: url)
+            tokenScriptOverridesFileManager.importTokenScriptOverrides(url: url)
         case .eip681(let url):
-            let account = resolver.sessions.anyValue.account
-            let paymentFlowResolver = PaymentFlowFromEip681UrlResolver(tokensService: resolver.service, account: account, assetDefinitionStore: assetDefinitionStore, analytics: analytics, config: config)
-            guard let promise = paymentFlowResolver.resolve(url: url) else { return }
+            let paymentFlowResolver = Eip681UrlResolver(config: config, importToken: resolver.importToken, missingRPCServerStrategy: .fallbackToAnyMatching)
             firstly {
-                promise
-            }.done { (paymentFlow: PaymentFlow, server: RPCServer) in
-                resolver.showPaymentFlow(for: paymentFlow, server: server, navigationController: resolver.presentationNavigationController)
+                paymentFlowResolver.resolve(url: url)
+            }.done { result in
+                switch result {
+                case .address:
+                    break //Add handling address, maybe same action when scan qr code
+                case .transaction(let transactionType, let token):
+                    resolver.showPaymentFlow(for: .send(type: .transaction(transactionType)), server: token.server, navigationController: resolver.presentationNavigationController)
+                }
             }.cauterize()
         case .walletConnect(let url, let source):
             switch source {
@@ -555,7 +731,8 @@ extension AppCoordinator: UniversalLinkServiceDelegate {
                     assetDefinitionStore: assetDefinitionStore,
                     url: url,
                     keystore: keystore,
-                    tokensService: resolver.service)
+                    tokensService: resolver.service,
+                    networkService: networkService)
 
                 coordinator.delegate = self
                 let handled = coordinator.start(url: url)
@@ -585,6 +762,20 @@ extension AppCoordinator: ServerUnavailableCoordinatorDelegate {
     }
 }
 
+extension AppCoordinator {
+    private struct WalletDependencies {
+        let activitiesPipeLine: ActivitiesPipeLine
+        let transactionsDataStore: TransactionDataStore
+        let importToken: ImportToken
+        let tokensService: DetectedContractsProvideble & TokenProvidable & TokenAddable & TokensServiceTests
+        let pipeline: TokensProcessingPipeline
+        let fetcher: WalletBalanceFetcher
+        let sessionsProvider: SessionsProvider
+        let eventsDataStore: NonActivityEventsDataStore
+        let currencyService: CurrencyService
+    }
+}
+
 extension AppCoordinator: WalletApiCoordinatorDelegate {
     func didOpenUrl(in service: WalletApiCoordinator, redirectUrl: URL) {
         if UIApplication.shared.canOpenURL(redirectUrl) {
@@ -599,7 +790,7 @@ extension AppCoordinator: AccountsCoordinatorDelegate {
 
     private func disconnectWalletConnectSessionsSelectively(for reason: RestartReason, walletConnectCoordinator: WalletConnectCoordinator) {
         switch reason {
-        case .changeLocalization, .walletChange:
+        case .changeLocalization, .walletChange, .currencyChange:
             break //no op
         case .serverChange:
             walletConnectCoordinator.disconnect(sessionsToDisconnect: .allExcept(config.enabledServers))
@@ -624,10 +815,6 @@ extension AppCoordinator: AccountsCoordinatorDelegate {
         coordinator.navigationController.dismiss(animated: true)
     }
 
-    func didFinishBackup(account: AlphaWallet.Address, in coordinator: AccountsCoordinator) {
-        activeWalletCoordinator?.didFinishBackup(account: account)
-    }
-
     func didSelectAccount(account: Wallet, in coordinator: AccountsCoordinator) {
         //NOTE: Push existing view controller to the app navigation stack
         if let pendingCoordinator = pendingActiveWalletCoordinator, keystore.currentWallet == account {
@@ -640,11 +827,5 @@ extension AppCoordinator: AccountsCoordinatorDelegate {
         }
 
         pendingActiveWalletCoordinator = .none
-    }
-}
-
-extension AppCoordinator: KeystoreDelegate {
-    func didImport(wallet: Wallet, in keystore: Keystore) {
-        PromptBackupCoordinator(keystore: keystore, wallet: wallet, config: config, analytics: analytics).markWalletAsImported()
     }
 }

@@ -44,7 +44,7 @@ open class TokenSwapper: ObservableObject {
             .eraseToAnyPublisher()
     }
 
-    public init(reachabilityManager: ReachabilityManagerProtocol, sessionProvider: SessionsProvider, networkProvider: TokenSwapperNetworkProvider = LiQuestTokenSwapperNetworkProvider()) {
+    public init(reachabilityManager: ReachabilityManagerProtocol, sessionProvider: SessionsProvider, networkProvider: TokenSwapperNetworkProvider) {
         self.reachabilityManager = reachabilityManager
         self.networkProvider = networkProvider
         self.sessions = sessionProvider.sessions
@@ -54,7 +54,7 @@ open class TokenSwapper: ObservableObject {
 
     public func start() {
         guard Features.default.isAvailable(.isSwapEnabled) else { return }
-        
+
         reachabilityManager.networkBecomeReachablePublisher
             .combineLatest(sessions, reloadSubject)
             .map { (_, sessions, _) in sessions }
@@ -136,7 +136,7 @@ open class TokenSwapper: ObservableObject {
             .receive(on: RunLoop.main)
             .map { swapRoutes -> String? in
                 guard !swapRoutes.isEmpty else { return nil }
-                
+
                 self.storage.addOrUpdate(swapRoutes: swapRoutes)
 
                 guard let pair = TokenSwapper.firstRouteWithExchange(from: swapRoutes) else { return nil }
@@ -161,8 +161,8 @@ open class TokenSwapper: ObservableObject {
         return route.steps.first?.tool
     }
 
-    public func buildSwapTransaction(keystore: Keystore, unsignedTransaction: UnsignedSwapTransaction, fromToken: TokenToSwap, fromAmount: BigUInt, toToken: TokenToSwap, toAmount: BigUInt) -> (UnconfirmedTransaction, TransactionType.Configuration) {
-        functional.buildSwapTransaction(keystore: keystore, unsignedTransaction: unsignedTransaction, fromToken: fromToken, fromAmount: fromAmount, toToken: toToken, toAmount: toAmount)
+    public func buildSwapTransaction(unsignedTransaction: UnsignedSwapTransaction, fromToken: TokenToSwap, fromAmount: BigUInt, toToken: TokenToSwap, toAmount: BigUInt) -> (UnconfirmedTransaction, TransactionType.Configuration) {
+        functional.buildSwapTransaction(unsignedTransaction: unsignedTransaction, fromToken: fromToken, fromAmount: fromAmount, toToken: toToken, toAmount: toAmount)
     }
 
     private func fetchAllSupportedTools() -> AnyPublisher<[SwapTool], Never> {
@@ -217,10 +217,10 @@ extension TokenSwapper {
 }
 
 fileprivate extension TokenSwapper.functional {
-    static func buildSwapTransaction(keystore: Keystore, unsignedTransaction: UnsignedSwapTransaction, fromToken: TokenToSwap, fromAmount: BigUInt, toToken: TokenToSwap, toAmount: BigUInt) -> (UnconfirmedTransaction, TransactionType.Configuration) {
-        let configuration: TransactionType.Configuration = .swapTransaction(fromToken: fromToken, fromAmount: fromAmount, toToken: toToken, toAmount: toAmount )
-        let transactionType: TransactionType = .prebuilt(unsignedTransaction.server)
-        let transaction: UnconfirmedTransaction = .init(transactionType: transactionType, value: unsignedTransaction.value, recipient: unsignedTransaction.from, contract: unsignedTransaction.to, data: unsignedTransaction.data, gasLimit: unsignedTransaction.gasLimit, gasPrice: unsignedTransaction.gasPrice)
+    static func buildSwapTransaction(unsignedTransaction: UnsignedSwapTransaction, fromToken: TokenToSwap, fromAmount: BigUInt, toToken: TokenToSwap, toAmount: BigUInt) -> (UnconfirmedTransaction, TransactionType.Configuration) {
+        let configuration: TransactionType.Configuration = .swapTransaction(fromToken: fromToken, fromAmount: fromAmount, toToken: toToken, toAmount: toAmount)
+        let transaction: UnconfirmedTransaction = .init(transactionType: .prebuilt(unsignedTransaction.server), value: unsignedTransaction.value, recipient: nil, contract: unsignedTransaction.to, data: unsignedTransaction.data, gasLimit: unsignedTransaction.gasLimit, gasPrice: unsignedTransaction.gasPrice)
+
         return (transaction, configuration)
     }
 }

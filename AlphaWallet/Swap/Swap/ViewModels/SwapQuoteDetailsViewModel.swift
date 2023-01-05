@@ -26,8 +26,6 @@ final class SwapQuoteDetailsViewModel {
     private (set) lazy var minimumReceivedViewModel = SwapQuoteFieldViewModel(title: "Minimum Received", value: minimumReceivedString)
     private (set) lazy var swapStepsViewModel = SwapStepsViewModel(swapSteps: swapSteps)
 
-    var backgoundColor: UIColor = R.color.alabaster()!
-
     func transform(input: SwapQuoteDetailsViewModelInput) -> SwapQuoteDetailsViewModelOutput {
         let isHidden = configurator.tokensWithTheirSwapQuote
             .map { $0 == nil }
@@ -44,7 +42,27 @@ final class SwapQuoteDetailsViewModel {
                     let subSteps = step.estimate.gasCosts.map {
                         SwapSubStep(gasCost: $0, type: step.type, amount: pair.swapQuote.estimate.toAmount, token: pair.swapQuote.action.toToken, tool: step.tool)
                     }
-                    return SwapStep(tool: pair.swapQuote.type, subSteps: subSteps)
+
+                    if subSteps.isEmpty {
+                        let gasCost = SwapEstimate.GasCost(
+                            type: step.type,
+                            amount: pair.swapQuote.unsignedSwapTransaction.value,
+                            amountUsd: pair.swapQuote.action.fromToken.priceUSD,
+                            estimate: pair.swapQuote.unsignedSwapTransaction.gasPrice ?? .zero,
+                            limit: pair.swapQuote.unsignedSwapTransaction.gasLimit,
+                            token: pair.swapQuote.action.fromToken)
+
+                        let step = SwapSubStep(
+                            gasCost: gasCost,
+                            type: step.type,
+                            amount: pair.swapQuote.estimate.toAmount,
+                            token: pair.swapQuote.action.toToken,
+                            tool: step.tool)
+
+                        return SwapStep(tool: pair.swapQuote.type, subSteps: [step])
+                    } else {
+                        return SwapStep(tool: pair.swapQuote.type, subSteps: subSteps)
+                    }
                 }
             }.eraseToAnyPublisher()
     }()
@@ -95,7 +113,7 @@ final class SwapQuoteDetailsViewModel {
                     guard fromAmount > 0 else { return nil }
                     return (toAmount / fromAmount).nilIfNan
                 }()
-                guard let cryptoToCryptoRate = rate.flatMap({ Formatter.shortCrypto(symbol: pair.tokens.to.symbol).string(from: $0) }) else { return "-" }
+                guard let cryptoToCryptoRate = rate.flatMap({ NumberFormatter.shortCrypto.string(double: $0).flatMap { "\($0) \(pair.tokens.to.symbol)" } }) else { return "-" }
 
                 return "1 \(pair.tokens.from.symbol) = \(cryptoToCryptoRate)"
             }.removeDuplicates()

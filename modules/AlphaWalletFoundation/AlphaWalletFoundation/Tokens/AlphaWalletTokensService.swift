@@ -24,7 +24,6 @@ public class AlphaWalletTokensService: TokensService {
         queue.maxConcurrentOperationCount = 1
         return queue
     }()
-    private let queue = DispatchQueue(label: "org.alphawallet.swift.tokensService", qos: .utility)
     private let sessionsProvider: SessionsProvider
     private let analytics: AnalyticsLogger
     private let importToken: ImportToken
@@ -32,6 +31,7 @@ public class AlphaWalletTokensService: TokensService {
     private let transactionsStorage: TransactionDataStore
     private let nftProvider: NFTProvider
     private let assetDefinitionStore: AssetDefinitionStore
+    private let networkService: NetworkService
 
     public lazy var tokensPublisher: AnyPublisher<[Token], Never> = {
         providers.map { $0.values }
@@ -55,7 +55,9 @@ public class AlphaWalletTokensService: TokensService {
             .eraseToAnyPublisher()
     }
 
-    public var tokens: [Token] { providers.value.flatMap { $0.value.tokens } }
+    public var tokens: [Token] {
+        AlphaWalletTokensService.filterAwaySpuriousTokens(providers.value.flatMap { $0.value.tokens })
+    }
 
     public lazy var newTokens: AnyPublisher<[Token], Never> = {
         providers.map { $0.values }
@@ -63,7 +65,16 @@ public class AlphaWalletTokensService: TokensService {
             .eraseToAnyPublisher()
     }()
 
-    public init(sessionsProvider: SessionsProvider, tokensDataStore: TokensDataStore, analytics: AnalyticsLogger, importToken: ImportToken, transactionsStorage: TransactionDataStore, nftProvider: NFTProvider, assetDefinitionStore: AssetDefinitionStore) {
+    public init(sessionsProvider: SessionsProvider,
+                tokensDataStore: TokensDataStore,
+                analytics: AnalyticsLogger,
+                importToken: ImportToken,
+                transactionsStorage: TransactionDataStore,
+                nftProvider: NFTProvider,
+                assetDefinitionStore: AssetDefinitionStore,
+                networkService: NetworkService) {
+
+        self.networkService = networkService
         self.sessionsProvider = sessionsProvider
         self.tokensDataStore = tokensDataStore
         self.importToken = importToken
@@ -123,37 +134,39 @@ public class AlphaWalletTokensService: TokensService {
 
     private func makeTokenSource(session: WalletSession) -> TokenSourceProvider {
         let etherToken = MultipleChainsTokensDataStore.functional.etherToken(forServer: session.server)
-        let balanceFetcher = TokenBalanceFetcher(session: session, nftProvider: nftProvider, tokensService: self, etherToken: etherToken, assetDefinitionStore: assetDefinitionStore, analytics: analytics, queue: queue)
+        let balanceFetcher = TokenBalanceFetcher(session: session,
+                                                 nftProvider: nftProvider,
+                                                 tokensService: self,
+                                                 etherToken: etherToken,
+                                                 assetDefinitionStore: assetDefinitionStore,
+                                                 analytics: analytics,
+                                                 importToken: importToken)
+        
         balanceFetcher.erc721TokenIdsFetcher = transactionsStorage
         
-        return ClientSideTokenSourceProvider(session: session, autoDetectTransactedTokensQueue: autoDetectTransactedTokensQueue, autoDetectTokensQueue: autoDetectTokensQueue, importToken: importToken, tokensDataStore: tokensDataStore, balanceFetcher: balanceFetcher)
+        return ClientSideTokenSourceProvider(
+            session: session,
+            autoDetectTransactedTokensQueue: autoDetectTransactedTokensQueue,
+            autoDetectTokensQueue: autoDetectTokensQueue,
+            importToken: importToken,
+            tokensDataStore: tokensDataStore,
+            balanceFetcher: balanceFetcher,
+            networkService: networkService)
     }
 
     deinit {
         stop()
     }
 
-    public func addCustom(tokens: [ERCToken], shouldUpdateBalance: Bool) -> [Token] {
-        tokensDataStore.addCustom(tokens: tokens, shouldUpdateBalance: shouldUpdateBalance)
-    }
-
-    public func add(tokenUpdates updates: [TokenUpdate]) {
-        tokensDataStore.add(tokenUpdates: updates)
-
-        //TODO should we do this for `addOrUpdate(tokensOrContracts:)` too?
-        let tokens: [Token] = updates.flatMap { tokensDataStore.token(forContract: $0.address, server: $0.server) }
-        refreshBalance(updatePolicy: .tokens(tokens: tokens))
-    }
-
     public func addOrUpdate(tokensOrContracts: [TokenOrContract]) -> [Token] {
         tokensDataStore.addOrUpdate(tokensOrContracts: tokensOrContracts)
     }
 
-    public func addOrUpdate(_ actions: [AddOrUpdateTokenAction]) -> Bool? {
-        tokensDataStore.addOrUpdate(actions)
+    public func addOrUpdate(with actions: [AddOrUpdateTokenAction]) -> [Token] {
+        tokensDataStore.addOrUpdate(with: actions)
     }
 
-    public func updateToken(primaryKey: String, action: TokenUpdateAction) -> Bool? {
+    public func updateToken(primaryKey: String, action: TokenFieldUpdate) -> Bool? {
         tokensDataStore.updateToken(primaryKey: primaryKey, action: action)
     }
 
@@ -185,7 +198,7 @@ public class AlphaWalletTokensService: TokensService {
             .eraseToAnyPublisher()
     }
 
-    public func update(token: TokenIdentifiable, value: TokenUpdateAction) {
+    public func update(token: TokenIdentifiable, value: TokenFieldUpdate) {
         let primaryKey = TokenObject.generatePrimaryKey(fromContract: token.contractAddress, server: token.server)
         tokensDataStore.updateToken(primaryKey: primaryKey, action: value)
     }
@@ -213,7 +226,7 @@ extension AlphaWalletTokensService: TokensServiceTests {
     }
 
     public func addOrUpdateTokenTestsOnly(token: Token) {
-        tokensDataStore.addOrUpdate(tokensOrContracts: [.token(token)])
+        tokensDataStore.addOrUpdate(with: [.init(token)])
     }
 
     public func deleteTokenTestsOnly(token: Token) {

@@ -31,7 +31,7 @@ class ActivityViewController: UIViewController {
         webView.isWebViewInteractionEnabled = true
         webView.delegate = self
         webView.isStandalone = true
-        webView.isAction = true
+
         return webView
     }()
     private var isFirstLoad = true
@@ -106,7 +106,7 @@ class ActivityViewController: UIViewController {
 
             separator.leadingAnchor.constraint(equalTo: stackView.leadingAnchor, constant: 20),
             separator.trailingAnchor.constraint(equalTo: stackView.trailingAnchor, constant: -20),
-            separator.heightAnchor.constraint(equalToConstant: GroupedTable.Metric.cellSeparatorHeight),
+            separator.heightAnchor.constraint(equalToConstant: DataEntry.Metric.TableView.groupedTableCellSeparatorHeight),
             stackView.anchorsConstraintSafeArea(to: roundedBackground),
 
             tokenScriptRendererView.widthAnchor.constraint(equalTo: stackView.widthAnchor),
@@ -162,7 +162,7 @@ class ActivityViewController: UIViewController {
         titleLabel.textAlignment = .center
         subTitleLabel.textAlignment = .center
 
-        separator.backgroundColor = GroupedTable.Color.cellSeparator
+        separator.backgroundColor = Configuration.Color.Semantic.tableViewSeparator
 
         switch viewModel.activity.nativeViewType {
         case .erc20Received, .erc20Sent, .erc20OwnerApproved, .erc20ApprovalObtained, .erc721Sent, .erc721Received, .erc721OwnerApproved, .erc721ApprovalObtained, .nativeCryptoSent, .nativeCryptoReceived:
@@ -175,8 +175,7 @@ class ActivityViewController: UIViewController {
             bottomFiller.isHidden = true
             tokenScriptRendererView.isHidden = false
 
-            let (html: html, hash: hash) = viewModel.activity.viewHtml
-            tokenScriptRendererView.loadHtml(html, hash: hash)
+            tokenScriptRendererView.loadHtml(viewModel.activity.viewHtml)
 
             tokenScriptRendererView.update(withId: .init(viewModel.activity.id), resolvedTokenAttributeNameValues: tokenAttributes, resolvedCardAttributeNameValues: cardAttributes, isFirstUpdate: isFirstLoad)
             isFirstLoad = false

@@ -8,8 +8,13 @@ protocol LocalesViewControllerDelegate: AnyObject {
 }
 
 class LocalesViewController: UIViewController {
-    private let roundedBackground = RoundedBackground()
-    private let tableView = UITableView(frame: .zero, style: .grouped)
+    private lazy var tableView: UITableView = {
+        let tableView = UITableView.grouped
+        tableView.delegate = self
+        tableView.register(LocaleViewCell.self)
+
+        return tableView
+    }()
     private var viewModel: LocalesViewModel?
 
     weak var delegate: LocalesViewControllerDelegate?
@@ -17,25 +22,17 @@ class LocalesViewController: UIViewController {
     init() {
         super.init(nibName: nil, bundle: nil)
 
-        roundedBackground.backgroundColor = GroupedTable.Color.background
-
-        roundedBackground.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(roundedBackground)
-
-        tableView.translatesAutoresizingMaskIntoConstraints = false
-        tableView.delegate = self
-        tableView.separatorStyle = .singleLine
-        tableView.backgroundColor = GroupedTable.Color.background
-        tableView.tableFooterView = UIView.tableFooterToRemoveEmptyCellSeparators()
-        tableView.register(LocaleViewCell.self)
-        roundedBackground.addSubview(tableView)
+        view.addSubview(tableView)
 
         NSLayoutConstraint.activate([
-            tableView.leadingAnchor.constraint(equalTo: roundedBackground.leadingAnchor),
-            tableView.trailingAnchor.constraint(equalTo: roundedBackground.trailingAnchor),
-            tableView.topAnchor.constraint(equalTo: roundedBackground.topAnchor),
-            tableView.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor),
-        ] + roundedBackground.createConstraintsWithContainer(view: view))
+            tableView.anchorsIgnoringBottomSafeArea(to: view)
+        ])
+    }
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+
+        view.backgroundColor = Configuration.Color.Semantic.defaultViewBackground
     }
 
     func configure(viewModel: LocalesViewModel) {
@@ -98,12 +95,10 @@ extension LocalesViewController: UITableViewDelegate, UITableViewDataSource {
             cell.accessoryType = LocaleViewCell.selectionAccessoryType.selected
         }
         guard let viewModel = viewModel else { return }
-        for (index, locale) in viewModel.locales.enumerated() {
-            if viewModel.isLocaleSelected(locale) {
-                guard let cell = tableView.cellForRow(at: .init(row: index, section: indexPath.section)) else { break }
-                cell.accessoryType = LocaleViewCell.selectionAccessoryType.unselected
-                break
-            }
+        for (index, locale) in viewModel.locales.enumerated() where viewModel.isLocaleSelected(locale) {
+            guard let cell = tableView.cellForRow(at: .init(row: index, section: indexPath.section)) else { break }
+            cell.accessoryType = LocaleViewCell.selectionAccessoryType.unselected
+            break
         }
     }
 }

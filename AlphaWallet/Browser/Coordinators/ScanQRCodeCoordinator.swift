@@ -35,7 +35,7 @@ final class ScanQRCodeCoordinator: NSObject, Coordinator {
         )
         controller.delegate = self
         controller.title = R.string.localizable.browserScanQRCodeTitle()
-        controller.navigationItem.leftBarButtonItem = UIBarButtonItem.cancelBarButton(self, selector: #selector(dismiss))
+        controller.navigationItem.rightBarButtonItem = UIBarButtonItem.cancelBarButton(self, selector: #selector(dismissButtonSelected))
         controller.delegate = self
 
         return controller
@@ -66,7 +66,7 @@ final class ScanQRCodeCoordinator: NSObject, Coordinator {
         }
     }
 
-    @objc private func dismiss() {
+    @objc private func dismissButtonSelected() {
         stopScannerAndDismiss {
             self.analytics.log(action: Analytics.Action.cancelScanQrCode)
             self.delegate?.didCancel(in: self)
@@ -90,6 +90,7 @@ extension ScanQRCodeCoordinator: QRCodeReaderDelegate {
 
     func reader(_ reader: QRCodeReaderViewController!, didScanResult result: String!) {
         stopScannerAndDismiss {
+            let result = result.trimmed
             infoLog("[QR Code] Scanned value: \(String(describing: result))")
             self.logCompleteScan(result: result)
             self.delegate?.didScan(result: result, in: self)
@@ -123,7 +124,7 @@ extension ScanQRCodeCoordinator {
     }
 
     private func convertToAnalyticsResultType(value: String!) -> Analytics.ScanQRCodeResultType {
-        if let resultType = QRCodeValueParser.from(string: value) {
+        if let resultType = AddressOrEip681Parser.from(string: value) {
             switch resultType {
             case .address:
                 return .address
@@ -132,11 +133,11 @@ extension ScanQRCodeCoordinator {
             }
         }
 
-        switch ScanQRCodeResolution(rawValue: value) {
-        case .value:
-            return .value
-        case .other:
-            return .other
+        switch QrCodeValue(string: value) {
+        case .addressOrEip681:
+            return .addressOrEip681
+        case .string:
+            return .string
         case .walletConnect:
             return .walletConnect
         case .url:

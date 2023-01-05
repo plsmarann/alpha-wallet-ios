@@ -61,9 +61,9 @@ class FungibleTokenViewCell: UITableViewCell {
     func configure(viewModel: FungibleTokenViewCellViewModel) {
         selectionStyle = .none
 
-        backgroundColor = viewModel.backgroundColor
-        background.backgroundColor = viewModel.contentsBackgroundColor
-        contentView.backgroundColor = GroupedTable.Color.background
+        backgroundColor = Configuration.Color.Semantic.tableViewCellBackground
+        background.backgroundColor = Configuration.Color.Semantic.tableViewCellBackground
+        contentView.backgroundColor = Configuration.Color.Semantic.tableViewCellBackground
 
         titleLabel.attributedText = viewModel.titleAttributedString
         titleLabel.baselineAdjustment = .alignCenters
@@ -73,7 +73,7 @@ class FungibleTokenViewCell: UITableViewCell {
 
         apprecation24hoursView.configure(viewModel: viewModel.apprecationViewModel)
 
-        priceChangeLabel.attributedText = viewModel.priceChangeUSDValueAttributedString
+        priceChangeLabel.attributedText = viewModel.priceChangeAttributedString
 
         fiatValueLabel.attributedText = viewModel.fiatValueAttributedString
 
@@ -81,7 +81,7 @@ class FungibleTokenViewCell: UITableViewCell {
         tokenImageView.subscribable = viewModel.iconImage
 
         blockChainTagLabel.configure(viewModel: viewModel.blockChainTagViewModel)
-        changeValueContainer.isHidden = !viewModel.blockChainTagViewModel.blockChainNameLabelHidden
+        changeValueContainer.isHidden = !viewModel.blockChainTagViewModel.isHidden
         accessoryType = viewModel.accessoryType
     }
 

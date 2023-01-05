@@ -3,6 +3,7 @@
 import UIKit
 import LocalAuthentication
 import AlphaWalletFoundation
+import Combine
 
 protocol VerifySeedPhraseViewControllerDelegate: AnyObject {
     var contextToVerifySeedPhrase: LAContext { get }
@@ -30,7 +31,7 @@ class VerifySeedPhraseViewController: UIViewController {
             }
         }
     }
-
+    private var cancelable = Set<AnyCancellable>()
     private var viewModel: VerifySeedPhraseViewModel
     private let keystore: Keystore
     private let account: AlphaWallet.Address
@@ -161,7 +162,7 @@ class VerifySeedPhraseViewController: UIViewController {
             footerBar.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             footerBar.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             footerBar.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor).set(priority: .defaultHigh),
-            footerBar.bottomAnchor.constraint(lessThanOrEqualTo: view.bottomAnchor, constant: -Style.insets.safeBottom).set(priority: .required),
+            footerBar.bottomAnchor.constraint(lessThanOrEqualTo: view.bottomAnchor, constant: -DataEntry.Metric.safeBottom).set(priority: .required),
 
             roundedBackground.createConstraintsWithContainer(view: view),
         ])
@@ -204,15 +205,16 @@ class VerifySeedPhraseViewController: UIViewController {
         guard isTopViewController else { return }
         guard notDisplayingSeedPhrase else { return }
         guard let context = delegate?.contextToVerifySeedPhrase else { return }
-        keystore.exportSeedPhraseOfHdWallet(forAccount: account, context: context, prompt: KeystoreExportReason.prepareForVerification.description) { result in
-            switch result {
-            case .success(let words):
-                self.state = .editingSeedPhrase(words: words.split(separator: " ").map { String($0) }.shuffled())
-            case .failure(let error):
-                self.state = .errorDisplaySeedPhrase(error)
-                self.delegate?.biometricsFailed(for: self.account, inViewController: self)
-            }
-        }
+        keystore.exportSeedPhraseOfHdWallet(forAccount: account, context: context, prompt: KeystoreExportReason.prepareForVerification.description)
+            .sink { result in
+                switch result {
+                case .success(let words):
+                    self.state = .editingSeedPhrase(words: words.split(separator: " ").map { String($0) }.shuffled())
+                case .failure(let error):
+                    self.state = .errorDisplaySeedPhrase(error)
+                    self.delegate?.biometricsFailed(for: self.account, inViewController: self)
+                }
+            }.store(in: &cancelable)
     }
 
     func configure() {
@@ -262,17 +264,18 @@ class VerifySeedPhraseViewController: UIViewController {
 
     @objc func verify() {
         guard let context = delegate?.contextToVerifySeedPhrase else { return }
-        keystore.verifySeedPhraseOfHdWallet(seedPhraseTextView.text.lowercased().trimmed, forAccount: account, prompt: R.string.localizable.keystoreAccessKeyHdVerify(), context: context) { result in
-            switch result {
-            case .success(let isMatched):
-                //Safety precaution, we clear the seed phrase. The next screen may be the prompt to elevate security of wallet screen which the user can go back from
-                self.clearChosenSeedPhrases()
-                self.updateStateWithVerificationResult(isMatched)
-            case .failure(let error):
-                self.reflectError(error)
-                self.delegate?.biometricsFailed(for: self.account, inViewController: self)
-            }
-        }
+        keystore.verifySeedPhraseOfHdWallet(seedPhraseTextView.text.lowercased().trimmed, forAccount: account, prompt: R.string.localizable.keystoreAccessKeyHdVerify(), context: context)
+            .sink { result in
+                switch result {
+                case .success(let isMatched):
+                    //Safety precaution, we clear the seed phrase. The next screen may be the prompt to elevate security of wallet screen which the user can go back from
+                    self.clearChosenSeedPhrases()
+                    self.updateStateWithVerificationResult(isMatched)
+                case .failure(let error):
+                    self.reflectError(error)
+                    self.delegate?.biometricsFailed(for: self.account, inViewController: self)
+                }
+            }.store(in: &cancelable)
     }
 
     private func updateStateWithVerificationResult(_ isMatched: Bool) {

@@ -20,19 +20,20 @@ final class SelectedSwapToolsCollectionView: UIView {
         let collectionView = UICollectionView(frame: .zero, collectionViewLayout: layout)
         collectionView.translatesAutoresizingMaskIntoConstraints = false
         collectionView.register(SwapToolCollectionViewCell.self)
-
+        collectionView.backgroundColor = Configuration.Color.Semantic.tableViewBackground
+        
         return collectionView
     }()
-    private lazy var dataSource: SelectedSwapToolsCollectionViewModel.ToolsDiffableDataSource = makeDataSource()
+    private lazy var dataSource: SelectedSwapToolsCollectionViewModel.DataSource = makeDataSource()
     private var cancelable = Set<AnyCancellable>()
     private static let fallbackHeight: CGFloat = 60
     lazy private var collectionViewHeightConstraint = collectionView.heightAnchor.constraint(equalToConstant: SelectedSwapToolsCollectionView.fallbackHeight)
     private let viewModel: SelectedSwapToolsCollectionViewModel
-    private let appear: AnyPublisher<Void, Never>
+    private let willAppear: AnyPublisher<Void, Never>
 
-    init(viewModel: SelectedSwapToolsCollectionViewModel, appear: AnyPublisher<Void, Never>) {
+    init(viewModel: SelectedSwapToolsCollectionViewModel, willAppear: AnyPublisher<Void, Never>) {
         self.viewModel = viewModel
-        self.appear = appear
+        self.willAppear = willAppear
         super.init(frame: .zero)
 
         addSubview(collectionView)
@@ -56,18 +57,18 @@ final class SelectedSwapToolsCollectionView: UIView {
     }
 
     private func bind(viewModel: SelectedSwapToolsCollectionViewModel) {
-        backgroundColor = viewModel.backgroundColor
+        backgroundColor = Configuration.Color.Semantic.tableViewBackground
 
-        let appear = appear.handleEvents(receiveOutput: { [weak self] _ in
-            self?.startLoading()
-        }).eraseToAnyPublisher()
+        let willAppear = willAppear
+            .handleEvents(receiveOutput: { [weak self] _ in self?.startLoading() })
+            .eraseToAnyPublisher()
 
-        let input = SelectedSwapToolsCollectionViewModelInput(appear: appear)
+        let input = SelectedSwapToolsCollectionViewModelInput(willAppear: willAppear)
         let output = viewModel.transform(input: input)
 
         output.viewState
             .sink { [weak self] in
-                self?.dataSource.apply($0.tools, animatingDifferences: false)
+                self?.dataSource.apply($0.snapshot, animatingDifferences: false)
                 self?.collectionView.flashScrollIndicators()
                 self?.endLoading()
             }.store(in: &cancelable)
@@ -81,8 +82,8 @@ extension SelectedSwapToolsCollectionView: StatefulViewController {
 }
 
 extension SelectedSwapToolsCollectionView {
-    private func makeDataSource() -> SelectedSwapToolsCollectionViewModel.ToolsDiffableDataSource {
-        SelectedSwapToolsCollectionViewModel.ToolsDiffableDataSource(collectionView: collectionView) { collectionView, indexPath, viewModel -> SwapToolCollectionViewCell in
+    private func makeDataSource() -> SelectedSwapToolsCollectionViewModel.DataSource {
+        SelectedSwapToolsCollectionViewModel.DataSource(collectionView: collectionView) { collectionView, indexPath, viewModel -> SwapToolCollectionViewCell in
             let cell: SwapToolCollectionViewCell = collectionView.dequeueReusableCell(for: indexPath)
             cell.configure(viewModel: viewModel)
 

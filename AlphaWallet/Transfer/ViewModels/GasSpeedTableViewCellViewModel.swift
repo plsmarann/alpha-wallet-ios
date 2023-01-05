@@ -12,7 +12,7 @@ import AlphaWalletFoundation
 struct GasSpeedViewModel {
     let configuration: TransactionConfiguration
     let configurationType: TransactionConfigurationType
-    let cryptoToDollarRate: Double?
+    let rate: CurrencyRate?
     let symbol: String
     var title: String
     let isSelected: Bool
@@ -20,17 +20,16 @@ struct GasSpeedViewModel {
     private var gasFeeString: String {
         let fee = configuration.gasPrice * configuration.gasLimit
         let feeString = EtherNumberFormatter.short.string(from: fee)
-        let cryptoToDollarSymbol = Currency.USD.rawValue
-        if let cryptoToDollarRate = cryptoToDollarRate {
-            let cryptoToDollarValue = StringFormatter().currency(with: Double(fee) * cryptoToDollarRate / Double(EthereumUnit.ether.rawValue), and: cryptoToDollarSymbol)
-            return  "< ~\(feeString) \(symbol) (\(cryptoToDollarValue) \(cryptoToDollarSymbol))"
+        if let rate = rate {
+            let cryptoToDollarValue = StringFormatter().currency(with: Double(fee) * rate.value / Double(EthereumUnit.ether.rawValue), and: rate.currency.code)
+            return  "< ~\(feeString) \(symbol) (\(cryptoToDollarValue) \(rate.currency.code))"
         } else {
             return "< ~\(feeString) \(symbol)"
         }
     }
 
     private var gasPriceString: String {
-        let price = configuration.gasPrice / BigInt(EthereumUnit.gwei.rawValue)
+        let price = configuration.gasPrice / BigUInt(EthereumUnit.gwei.rawValue)
         return "\(R.string.localizable.configureTransactionHeaderGasPrice()): \(price) \(EthereumUnit.gwei.name)"
     }
 
@@ -50,12 +49,12 @@ struct GasSpeedViewModel {
     var titleAttributedString: NSAttributedString? {
         if isSelected {
             return NSAttributedString(string: title, attributes: [
-                .foregroundColor: Colors.black,
+                .foregroundColor: Configuration.Color.Semantic.defaultTitleText,
                 .font: Fonts.semibold(size: 17)
             ])
         } else {
             return NSAttributedString(string: title, attributes: [
-                .foregroundColor: Colors.black,
+                .foregroundColor: Configuration.Color.Semantic.defaultTitleText,
                 .font: Fonts.regular(size: 17)
             ])
         }
@@ -65,21 +64,21 @@ struct GasSpeedViewModel {
         guard let estimatedTime = estimatedTime else { return nil }
 
         return NSAttributedString(string: estimatedTime, attributes: [
-            .foregroundColor: R.color.mine()!,
+            .foregroundColor: Configuration.Color.Semantic.defaultHeadlineText,
             .font: Fonts.regular(size: 15)
         ])
     }
 
     var detailsAttributedString: NSAttributedString? {
         return NSAttributedString(string: gasFeeString, attributes: [
-            .foregroundColor: R.color.dove()!,
+            .foregroundColor: Configuration.Color.Semantic.defaultSubtitleText,
             .font: Fonts.regular(size: 15)
         ])
     }
 
     var gasPriceAttributedString: NSAttributedString? {
         NSAttributedString(string: gasPriceString, attributes: [
-            .foregroundColor: R.color.dove()!,
+            .foregroundColor: Configuration.Color.Semantic.defaultSubtitleText,
             .font: Fonts.regular(size: 13)
         ])
     }

@@ -32,8 +32,11 @@
 "transaction.to.label.title" = "接收地址";
 "transaction.time.label.title" = "交易时间";
 "transaction.id.label.title" = "交易 #";
+"transaction.id" = "Transaction ID";
 "transaction.blockNumber.label.title" = "区块 #";
 "transaction.nonce.label.title" = "Nonce";
+"transaction.amount.label.title" = "Amount";
+"transaction.network.label.title" = "Network";
 "confirmPayment.confirm.button.title" = "确认";
 "confirmPayment.sign.button.title" = "Sign";
 "confirmPayment.reject.button.title" = "Reject";
@@ -47,6 +50,8 @@
 "Copy" = "复制";
 "Empty" = "空";
 "emptyView.noTokens.label.title" = "您尚未收到任何通证！";
+"emptyView.noMessages.label.title" = "There is nothing logged";
+"emptyView.noTransactions.label.title" = "You haven't received any transactions yet!";
 "errorView.description.label.title" = "出问题了... 再试一次。";
 "export.backup.button.title" = "备份钱包";
 "export.controlYourMoney.label.title" = "您的资金由您掌控！请务必保存好备份密钥库，以防此应用遭到删除。";
@@ -60,7 +65,8 @@
 "OK" = "确定";
 "Password" = "密码";
 "Refresh" = "刷新";
-"request.addressCopied.title" = "地址已复制";
+"copiedToClipboard.title" = "%@ copied";
+"address" = "Address";
 "request.copyWallet.button.title" = "复制钱包地址";
 "Retry" = "重试";
 "Send" = "发送";
@@ -80,7 +86,7 @@
 "settings.biometricsEnabled.label.title" = "密码 / %@";
 "settings.error.failedToSendEmail" = "发送电子邮件失败。请确保您已安装邮件应用。";
 "settings.network.button.title" = "网络";
-"settings.enabledNetworks.button.title" = "已启用网络";
+"settings.enabledNetworks.button.title" = "Enabled Networks %@";
 "settings.enabledNetworks.mainnet" = "Mainnet";
 "settings.enabledNetworks.testnet" = "Testnet";
 "settings.enabledNetworks.promptEnableTestnet.title" = "What is Testnet?";
@@ -113,6 +119,7 @@
 "settings.contactUs.title" = "联系我们";
 "settings.changeCurrency.title" = "更改货币";
 "settings.analitycs.title" = "分析";
+"settings.crashReporter.title" = "Crash Reporting";
 "settings.pingInfura.title" = "Ping Infura";
 "settings.pingInfura.successful" = "Infura looks OK";
 "settings.pingInfura.fail" = "Infura Error";
@@ -467,6 +474,7 @@
 "blockchain.Mumbai" = "Mumbai Testnet";
 "blockchain.Optimistic" = "Optimistic Testnet";
 "blockchain.Optimistic.Kovan" = "Optimistic Kovan Testnet";
+"blockchain.Cronos.Mainnet" = "Cronos";
 "blockchain.Cronos.Testnet" = "Cronos Testnet";
 "blockchain.arbitrum" = "Arbitrum";
 "blockchain.arbitrum.rinkeby" = "Arbitrum Rinkeby";
@@ -624,7 +632,7 @@
 "transactionConfirmation.Row.title.wallet" = "Wallet Address";
 "transactionConfirmation.Send.Section.Gas.title" = "Gas";
 "transactionConfirmation.Send.Section.Balance.title" = "Balance";
-"transactionConfirmation.Send.Section.Balance.new.title" = "(New: %@ %@)";
+"transactionConfirmation.Send.Section.Balance.new.title" = "(New: %@)";
 "transactionConfirmation.Send.Section.Amount.title" = "Amount";
 "transactionConfirmation.Send.Section.Recipient.title" = "Recipient";
 "transactionConfirmation.Send.Section.TokenId.title" = "Token";
@@ -862,3 +870,5 @@
 "accept.deepLink.field.url.title" = "URL";
 "accept.deepLink.field.note.title" = "Note";
 "accept.walletConnect.field.methods.title" = "Methods";
+"tokenscript.overrides.empty" = "There are no TokenScript overrides";
+"currency.navigationTitle" = "Change Fiat Currency";

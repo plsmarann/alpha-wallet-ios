@@ -46,7 +46,7 @@ class SaveCustomRpcBrowseViewController: UIViewController {
         tableViewController.tableView.translatesAutoresizingMaskIntoConstraints = false
         tableViewController.tableView.delegate = dataController
         tableViewController.tableView.separatorStyle = .singleLine
-        tableViewController.tableView.backgroundColor = GroupedTable.Color.background
+        tableViewController.tableView.backgroundColor = Configuration.Color.Semantic.tableViewBackground
         tableViewController.tableView.tableFooterView = UIView.tableFooterToRemoveEmptyCellSeparators()
         tableViewController.tableView.isEditing = false
         tableViewController.tableView.register(RPCDisplayTableViewCell.self)
@@ -60,7 +60,7 @@ class SaveCustomRpcBrowseViewController: UIViewController {
     }()
 
     private lazy var emptyView: UIView = {
-        let emptyView = EmptyTableView(title: Style.Search.Network.Empty.text, image: R.image.iconsIllustrationsSearchResults()!, heightAdjustment: 100.0)
+        let emptyView = EmptyTableView(title: R.string.localizable.searchNetworkResultEmpty(), image: R.image.empty_list()!, heightAdjustment: 100.0)
         emptyView.isHidden = true
         return emptyView
     }()

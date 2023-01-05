@@ -16,19 +16,15 @@ protocol WalletConnectSessionsViewControllerDelegate: AnyObject {
 class WalletConnectSessionsViewController: UIViewController {
 
     private lazy var tableView: UITableView = {
-        let tableView = UITableView(frame: .zero, style: .grouped)
+        let tableView = UITableView.grouped
         tableView.register(WalletConnectSessionCell.self)
         tableView.estimatedRowHeight = DataEntry.Metric.TableView.estimatedRowHeight
-        tableView.tableFooterView = UIView.tableFooterToRemoveEmptyCellSeparators()
         tableView.separatorInset = .zero
-        tableView.translatesAutoresizingMaskIntoConstraints = false
-        tableView.backgroundColor = GroupedTable.Color.background
+        tableView.delegate = self
 
         return tableView
     }()
 
-    private let roundedBackground = RoundedBackground()
-    
     private lazy var spinner: UIActivityIndicatorView = {
         let view = UIActivityIndicatorView(style: .medium)
         view.translatesAutoresizingMaskIntoConstraints = false
@@ -37,7 +33,7 @@ class WalletConnectSessionsViewController: UIViewController {
         return view
     }()
     private var cancelable = Set<AnyCancellable>()
-    private lazy var dataSource = WalletConnectSessionsDiffableDataSource(tableView: tableView, cellProvider: { tableView, indexPath, session in
+    private lazy var dataSource = WalletConnectSessionsViewModel.DataSource(tableView: tableView, cellProvider: { tableView, indexPath, session in
         let cell: WalletConnectSessionCell = tableView.dequeueReusableCell(for: indexPath)
 
         let viewModel = WalletConnectSessionCellViewModel(session: session)
@@ -53,29 +49,19 @@ class WalletConnectSessionsViewController: UIViewController {
         self.viewModel = viewModel
         super.init(nibName: nil, bundle: nil)
 
-        roundedBackground.backgroundColor = GroupedTable.Color.background
-
-        view.addSubview(roundedBackground)
-        roundedBackground.addSubview(tableView)
-        roundedBackground.addSubview(spinner)
+        view.addSubview(tableView)
+        view.addSubview(spinner)
 
         NSLayoutConstraint.activate([
-            tableView.anchorsConstraintSafeArea(to: roundedBackground),
+            tableView.anchorsIgnoringBottomSafeArea(to: view),
             spinner.centerXAnchor.constraint(equalTo: tableView.centerXAnchor),
             spinner.centerYAnchor.constraint(equalTo: tableView.centerYAnchor)
-        ] + roundedBackground.createConstraintsWithContainer(view: view))
-
-        navigationItem.rightBarButtonItem = UIBarButtonItem.qrCodeBarButton(self, selector: #selector(qrCodeButtonSelected))
+        ])
 
         emptyView = EmptyView.walletSessionEmptyView(completion: { [weak self] in
             guard let strongSelf = self else { return }
             strongSelf.delegate?.qrCodeSelected(in: strongSelf)
         })
-    }
-
-    private func configureDataSource() {
-        tableView.delegate = self
-        tableView.dataSource = dataSource
     }
 
     required init?(coder aDecoder: NSCoder) {
@@ -85,42 +71,32 @@ class WalletConnectSessionsViewController: UIViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
 
-        navigationItem.largeTitleDisplayMode = .never
-        hidesBottomBarWhenPushed = true
+        view.backgroundColor = Configuration.Color.Semantic.defaultViewBackground
 
         if let host = emptyView {
             spinner.bringSubviewToFront(host)
         }
 
-        configureDataSource()
-        configure(viewModel: viewModel)
+        bind(viewModel: viewModel)
     }
 
-    func configure(viewModel: WalletConnectSessionsViewModel) {
-        title = viewModel.natigationTitle
+    private func bind(viewModel: WalletConnectSessionsViewModel) {
+        let input = WalletConnectSessionsViewModelInput()
+        let output = viewModel.transform(input: input)
 
-        viewModel.stateSubject
-            .receive(on: RunLoop.main)
-            .sink { [weak self] state in
-                self?.endLoading()
-
-                switch state {
+        output.viewState
+            .sink { [weak self, spinner, navigationItem] viewState in
+                navigationItem.title = viewState.title
+                self?.dataSource.apply(viewState.snapshot, animatingDifferences: viewState.animatingDifferences)
+                switch viewState.state {
                 case .waitingForSessionConnection:
-                    self?.spinner.startAnimating()
+                    spinner.startAnimating()
                 case .sessions:
-                    self?.spinner.stopAnimating()
+                    spinner.stopAnimating()
                 }
-            }.store(in: &cancelable)
 
-        viewModel.sessionsSnapshot
-            .sink { [weak self] snapshot in
-                self?.dataSource.apply(snapshot, animatingDifferences: false)
                 self?.endLoading()
             }.store(in: &cancelable)
-    }
-
-    @objc private func qrCodeButtonSelected(_ sender: UIBarButtonItem) {
-        delegate?.qrCodeSelected(in: self)
     }
 }
 
@@ -155,7 +131,7 @@ extension WalletConnectSessionsViewController: UITableViewDelegate {
             completionHandler(true)
         }
 
-        hideAction.backgroundColor = R.color.danger()
+        hideAction.backgroundColor = Colors.appRed
         hideAction.image = R.image.hideToken()
         let configuration = UISwipeActionsConfiguration(actions: [hideAction])
         configuration.performsFirstActionWithFullSwipe = true

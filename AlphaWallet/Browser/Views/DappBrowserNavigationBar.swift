@@ -4,14 +4,14 @@ import UIKit
 import AlphaWalletFoundation
 
 protocol DappBrowserNavigationBarDelegate: AnyObject {
-    func didTyped(text: String, inNavigationBar navigationBar: DappBrowserNavigationBar)
-    func didEnter(text: String, inNavigationBar navigationBar: DappBrowserNavigationBar)
-    func didTapChangeServer(inNavigationBar navigationBar: DappBrowserNavigationBar)
-    func didTapBack(inNavigationBar navigationBar: DappBrowserNavigationBar)
-    func didTapForward(inNavigationBar navigationBar: DappBrowserNavigationBar)
-    func didTapMore(sender: UIView, inNavigationBar navigationBar: DappBrowserNavigationBar)
-    func didTapClose(inNavigationBar navigationBar: DappBrowserNavigationBar)
-    func didTapHome(sender: UIView, inNavigationBar navigationBar: DappBrowserNavigationBar)
+    func didTyped(text: String, in navigationBar: DappBrowserNavigationBar)
+    func didEnter(text: String, in navigationBar: DappBrowserNavigationBar)
+    func didTapChangeServer(in navigationBar: DappBrowserNavigationBar)
+    func didTapBack(in navigationBar: DappBrowserNavigationBar)
+    func didTapForward(in navigationBar: DappBrowserNavigationBar)
+    func didTapMore(sender: UIView, in navigationBar: DappBrowserNavigationBar)
+    func didTapClose(in navigationBar: DappBrowserNavigationBar)
+    func didTapHome(sender: UIView, in navigationBar: DappBrowserNavigationBar)
 }
 
 private enum State {
@@ -57,7 +57,9 @@ final class DappBrowserNavigationBar: UINavigationBar {
         cancelEditingButton.setContentHuggingPriority(.defaultHigh, for: .horizontal)
         cancelEditingButton.isHidden = true
         cancelEditingButton.clipsToBounds = true
-        cancelEditingButton.backgroundColor = Colors.appWhite
+        cancelEditingButton.backgroundColor = .clear
+        cancelEditingButton.setTitleColor(Configuration.Color.Semantic.defaultForegroundText, for: .highlighted)
+        cancelEditingButton.setTitleColor(Configuration.Color.Semantic.defaultForegroundText, for: .normal)
 
         return cancelEditingButton
     }()
@@ -86,10 +88,9 @@ final class DappBrowserNavigationBar: UINavigationBar {
         textField.placeholder = R.string.localizable.browserUrlTextfieldPlaceholder()
         textField.keyboardType = .webSearch
         textField.borderStyle = .none
-        textField.backgroundColor = .white
+        textField.backgroundColor = Configuration.Color.Semantic.textFieldBackground
         textField.layer.borderWidth = DataEntry.Metric.borderThickness
-        textField.backgroundColor = DataEntry.Color.searchTextFieldBackground
-        textField.layer.borderColor = UIColor.clear.cgColor
+        textField.layer.borderColor = Colors.clear.cgColor
         textField.cornerRadius = DataEntry.Metric.cornerRadius
 
         return textField
@@ -101,7 +102,7 @@ final class DappBrowserNavigationBar: UINavigationBar {
         backButton.tintColor = Configuration.Color.Semantic.navigationbarPrimaryFont
         backButton.adjustsImageWhenHighlighted = true
         backButton.setImage(R.image.toolbarBack(), for: .normal)
-
+        
         return backButton
     }()
     private let forwardButton: UIButton = {
@@ -239,32 +240,32 @@ final class DappBrowserNavigationBar: UINavigationBar {
 
     @objc private func goBackAction() {
         cancelEditing()
-        navigationBarDelegate?.didTapBack(inNavigationBar: self)
+        navigationBarDelegate?.didTapBack(in: self)
     }
 
     @objc private func goForwardAction() {
         cancelEditing()
-        navigationBarDelegate?.didTapForward(inNavigationBar: self)
+        navigationBarDelegate?.didTapForward(in: self)
     }
 
     @objc private func moreAction(_ sender: UIView) {
         cancelEditing()
-        navigationBarDelegate?.didTapMore(sender: sender, inNavigationBar: self)
+        navigationBarDelegate?.didTapMore(sender: sender, in: self)
     }
 
     @objc private func homeAction(_ sender: UIView) {
         cancelEditing()
-        navigationBarDelegate?.didTapHome(sender: sender, inNavigationBar: self)
+        navigationBarDelegate?.didTapHome(sender: sender, in: self)
     }
 
     @objc private func changeServerAction(_ sender: UIView) {
         cancelEditing()
-        navigationBarDelegate?.didTapChangeServer(inNavigationBar: self)
+        navigationBarDelegate?.didTapChangeServer(in: self)
     }
 
     @objc private func closeAction(_ sender: UIView) {
         cancelEditing()
-        navigationBarDelegate?.didTapClose(inNavigationBar: self)
+        navigationBarDelegate?.didTapClose(in: self)
     }
 
     //TODO this might get triggered immediately if we use a physical keyboard. Verify
@@ -323,28 +324,39 @@ final class DappBrowserNavigationBar: UINavigationBar {
     }
 }
 
+extension DappBrowserNavigationBar: NavigationBarPresentable {
+    func willPush() {
+        setBrowserBar(hidden: true)
+    }
+
+    func willPop() {
+        setBrowserBar(hidden: false)
+    }
+
+}
+
 extension DappBrowserNavigationBar: UITextFieldDelegate {
 
     func textFieldDidEndEditing(_ textField: UITextField) {
-        textField.layer.borderColor = UIColor.clear.cgColor
-        textField.backgroundColor = DataEntry.Color.searchTextFieldBackground
+        textField.layer.borderColor = Colors.clear.cgColor
+        textField.backgroundColor = Configuration.Color.Semantic.textFieldBackground
 
         textField.dropShadow(color: .clear, radius: DataEntry.Metric.shadowRadius)
     }
 
     func textFieldDidBeginEditing(_ textField: UITextField) {
-        textField.backgroundColor = Colors.appWhite
-        textField.layer.borderColor = DataEntry.Color.textFieldShadowWhileEditing.cgColor
+        textField.backgroundColor = Configuration.Color.Semantic.textFieldBackground
+        textField.layer.borderColor = Configuration.Color.Semantic.textFieldShadowWhileEditing.cgColor
 
-        textField.dropShadow(color: DataEntry.Color.textFieldShadowWhileEditing, radius: DataEntry.Metric.shadowRadius)
+        textField.dropShadow(color: Configuration.Color.Semantic.textFieldShadowWhileEditing, radius: DataEntry.Metric.shadowRadius)
     }
 
     private func queue(typedText text: String) {
-        navigationBarDelegate?.didTyped(text: text, inNavigationBar: self)
+        navigationBarDelegate?.didTyped(text: text, in: self)
     }
 
     func textFieldShouldReturn(_ textField: UITextField) -> Bool {
-        navigationBarDelegate?.didEnter(text: textField.text ?? "", inNavigationBar: self)
+        navigationBarDelegate?.didEnter(text: textField.text ?? "", in: self)
         textField.resignFirstResponder()
         return true
     }

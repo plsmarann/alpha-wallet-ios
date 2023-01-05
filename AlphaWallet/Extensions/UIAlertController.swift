@@ -4,6 +4,7 @@
 import Foundation
 import UIKit
 import class PromiseKit.Promise
+import Combine
 import AlphaWalletFoundation
 
 enum PopoverPresentationControllerSource {
@@ -75,10 +76,10 @@ extension UIAlertController {
             break
         }
         alertButtonTitles.forEach { title in
-            let alertStyle = alertButtonStyles[alertButtonTitles.index(of: title)!]
+            let alertStyle = alertButtonStyles[alertButtonTitles.firstIndex(of: title)!]
             let action = UIAlertAction(title: title, style: alertStyle, handler: { action in
                 if completion != nil {
-                    completion!(alertButtonTitles.index(of: action.title!)!)
+                    completion!(alertButtonTitles.firstIndex(of: action.title!)!)
                 }
             })
             alertController.addAction(action)
@@ -115,23 +116,26 @@ extension UIAlertController {
 }
 
 extension UIAlertController {
-    static func promptToUseUnresolvedExplorerURL(customChain: WalletAddEthereumChainObject, chainId: Int, viewController: UIViewController) -> Promise<Bool> {
-        let (promise, seal) = Promise<Bool>.pending()
-        let message = R.string.localizable.addCustomChainWarningNoBlockchainExplorerUrl()
-        let alertController = UIAlertController.alertController(title: R.string.localizable.warning(), message: message, style: .alert, in: viewController)
-        let continueAction = UIAlertAction(title: R.string.localizable.continue(), style: .destructive, handler: { _ in
-            seal.fulfill(true)
-        })
+    static func promptToUseUnresolvedExplorerURL(customChain: WalletAddEthereumChainObject, chainId: Int, viewController: UIViewController) -> AnyPublisher<Bool, Never> {
+        return AnyPublisher<Bool, Never>.create { seal in
+            let message = R.string.localizable.addCustomChainWarningNoBlockchainExplorerUrl()
+            let alertController = UIAlertController.alertController(title: R.string.localizable.warning(), message: message, style: .alert, in: viewController)
+            let continueAction = UIAlertAction(title: R.string.localizable.continue(), style: .destructive, handler: { _ in
+                seal.send(true)
+                seal.send(completion: .finished)
+            })
 
-        let cancelAction = UIAlertAction(title: R.string.localizable.cancel(), style: .cancel, handler: { _ in
-            seal.fulfill(false)
-        })
+            let cancelAction = UIAlertAction(title: R.string.localizable.cancel(), style: .cancel, handler: { _ in
+                seal.send(false)
+                seal.send(completion: .finished)
+            })
 
-        alertController.addAction(continueAction)
-        alertController.addAction(cancelAction)
+            alertController.addAction(continueAction)
+            alertController.addAction(cancelAction)
 
-        viewController.present(alertController, animated: true)
+            viewController.present(alertController, animated: true)
 
-        return promise
+            return AnyCancellable { }
+        }
     }
 }

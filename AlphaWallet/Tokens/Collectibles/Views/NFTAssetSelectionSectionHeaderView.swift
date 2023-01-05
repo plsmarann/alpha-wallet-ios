@@ -8,10 +8,10 @@
 import UIKit
 import AlphaWalletFoundation
 
-protocol NFTAssetSelectionSectionHeaderViewDelegate: class {
+protocol NFTAssetSelectionSectionHeaderViewDelegate: AnyObject {
     func didSelectAll(in view: NFTAssetSelectionViewController.NFTAssetSelectionSectionHeaderView)
 }
-protocol SelectionPositioningView: class {
+protocol SelectionPositioningView: AnyObject {
     var positioningView: UIView { get }
 }
 
@@ -43,11 +43,11 @@ extension NFTAssetSelectionViewController {
             addSubview(topSeparatorView)
 
             NSLayoutConstraint.activate([
-                selectAllAssetsView.anchorsConstraint(to: self, edgeInsets: .init(top: GroupedTable.Metric.cellSeparatorHeight, left: 0, bottom: GroupedTable.Metric.cellSeparatorHeight, right: 0)),
+                selectAllAssetsView.anchorsConstraint(to: self, edgeInsets: .init(top: DataEntry.Metric.TableView.groupedTableCellSeparatorHeight, left: 0, bottom: DataEntry.Metric.TableView.groupedTableCellSeparatorHeight, right: 0)),
 
                 topSeparatorView.centerXAnchor.constraint(equalTo: centerXAnchor),
                 topSeparatorView.widthAnchor.constraint(equalTo: widthAnchor),
-                topSeparatorView.heightAnchor.constraint(equalToConstant: GroupedTable.Metric.cellSeparatorHeight),
+                topSeparatorView.heightAnchor.constraint(equalToConstant: DataEntry.Metric.TableView.groupedTableCellSeparatorHeight),
                 topSeparatorView.bottomAnchor.constraint(equalTo: bottomAnchor)
             ])
         }
@@ -69,12 +69,12 @@ extension NFTAssetSelectionViewController {
     struct NFTAssetSelectionSectionHeaderViewModel {
         let text: String
         var selectAllAssetsViewModel: SelectAllAssetsViewModel
-        var separatorColor: UIColor = GroupedTable.Color.cellSeparator
-        var backgroundColor: UIColor = Colors.appWhite
+        var separatorColor: UIColor = Configuration.Color.Semantic.tableViewSeparator
+        var backgroundColor: UIColor = Configuration.Color.Semantic.defaultViewBackground
         let tokenHolder: TokenHolder
         var isSelectAllHidden: Bool = false
 
-        init(tokenHolder: TokenHolder, backgroundColor: UIColor = Colors.appWhite) {
+        init(tokenHolder: TokenHolder, backgroundColor: UIColor = Configuration.Color.Semantic.defaultViewBackground) {
             self.tokenHolder = tokenHolder
             self.text = tokenHolder.name
             self.backgroundColor = backgroundColor

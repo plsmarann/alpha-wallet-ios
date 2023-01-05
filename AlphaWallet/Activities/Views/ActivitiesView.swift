@@ -10,7 +10,7 @@ import BigInt
 import StatefulViewController
 import AlphaWalletFoundation
 
-protocol ActivitiesViewDelegate: class {
+protocol ActivitiesViewDelegate: AnyObject {
     func didPressActivity(activity: Activity, in view: ActivitiesView)
     func didPressTransaction(transaction: TransactionInstance, in view: ActivitiesView)
 }
@@ -18,7 +18,18 @@ protocol ActivitiesViewDelegate: class {
 class ActivitiesView: UIView {
     private var viewModel: ActivitiesViewModel
     private let sessions: ServerDictionary<WalletSession>
-    private let tableView = UITableView(frame: .zero, style: .grouped)
+    private lazy var tableView: UITableView = {
+        let tableView = UITableView.grouped
+        tableView.register(ActivityViewCell.self)
+        tableView.register(DefaultActivityItemViewCell.self)
+        tableView.register(TransactionTableViewCell.self)
+        tableView.register(GroupActivityViewCell.self)
+        tableView.delegate = self
+        tableView.dataSource = self
+        tableView.estimatedRowHeight = DataEntry.Metric.anArbitraryRowHeightSoAutoSizingCellsWorkIniOS10
+
+        return tableView
+    }()
     private let keystore: Keystore
     private let wallet: Wallet
     private let analytics: AnalyticsLogger
@@ -35,21 +46,10 @@ class ActivitiesView: UIView {
         super.init(frame: .zero)
         translatesAutoresizingMaskIntoConstraints = false
 
-        tableView.register(ActivityViewCell.self)
-        tableView.register(DefaultActivityItemViewCell.self)
-        tableView.register(TransactionViewCell.self)
-        tableView.register(GroupActivityViewCell.self)
-        tableView.translatesAutoresizingMaskIntoConstraints = false
-        tableView.delegate = self
-        tableView.dataSource = self
-        tableView.separatorStyle = .singleLine
-        tableView.backgroundColor = viewModel.backgroundColor
-        tableView.estimatedRowHeight = Metrics.anArbitraryRowHeightSoAutoSizingCellsWorkIniOS10
-
         addSubview(tableView)
 
         NSLayoutConstraint.activate([
-            tableView.anchorsConstraint(to: self)
+            tableView.anchorsIgnoringBottomSafeArea(to: self)
         ])
 
         emptyView = EmptyView.activitiesEmptyView()
@@ -178,9 +178,9 @@ extension ActivitiesView: UITableViewDataSource {
                 cell.configure(viewModel: .init(activity: activity))
                 return cell
             } else {
-                let cell: TransactionViewCell = tableView.dequeueReusableCell(for: indexPath)
+                let cell: TransactionTableViewCell = tableView.dequeueReusableCell(for: indexPath)
                 let session = sessions[transaction.server]
-                cell.configure(viewModel: .init(transactionRow: .item(transaction: transaction, operation: operation), chainState: session.chainState, wallet: session.account, server: transaction.server))
+                cell.configure(viewModel: .init(transactionRow: .item(transaction: transaction, operation: operation), chainState: session.chainState, wallet: session.account))
                 return cell
             }
         case .standaloneTransaction(transaction: let transaction, let activity):
@@ -189,9 +189,9 @@ extension ActivitiesView: UITableViewDataSource {
                 cell.configure(viewModel: .init(activity: activity))
                 return cell
             } else {
-                let cell: TransactionViewCell = tableView.dequeueReusableCell(for: indexPath)
+                let cell: TransactionTableViewCell = tableView.dequeueReusableCell(for: indexPath)
                 let session = sessions[transaction.server]
-                cell.configure(viewModel: .init(transactionRow: .standalone(transaction), chainState: session.chainState, wallet: session.account, server: transaction.server))
+                cell.configure(viewModel: .init(transactionRow: .standalone(transaction), chainState: session.chainState, wallet: session.account))
                 return cell
             }
         case .standaloneActivity(activity: let activity):

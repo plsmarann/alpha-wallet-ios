@@ -15,7 +15,7 @@ extension UIControl {
 }
 
 extension Publishers {
-    struct Control: Publisher {
+    class Control: Publisher {
         typealias Output = Void
         typealias Failure = Never
 
@@ -89,9 +89,7 @@ extension Publisher {
     ///
     /// - Returns: A publisher of a tuple of the previous and current elements from the upstream publisher.
     func withPrevious() -> AnyPublisher<(previous: Output?, current: Output), Failure> {
-// swiftlint:disable syntactic_sugar
         scan(Optional<(Output?, Output)>.none) { ($0?.1, $1) }
-// swiftlint:enable syntactic_sugar
             .compactMap { $0 }
             .eraseToAnyPublisher()
     }
@@ -109,5 +107,57 @@ extension Publisher {
     /// - Returns: A publisher of a tuple of the previous and current elements from the upstream publisher.
     func withPrevious(_ initialPreviousValue: Output) -> AnyPublisher<(previous: Output, current: Output), Failure> {
         scan((initialPreviousValue, initialPreviousValue)) { ($0.1, $1) }.eraseToAnyPublisher()
+    }
+}
+
+extension UIView {
+
+    func publisher<G>(for gestureRecognizer: G) -> UIGestureRecognizer.Publisher<G> where G: UIGestureRecognizer {
+        UIGestureRecognizer.Publisher(gestureRecognizer: gestureRecognizer, view: self)
+    }
+}
+
+extension UIGestureRecognizer {
+
+    struct Publisher<G>: Combine.Publisher where G: UIGestureRecognizer {
+
+        typealias Output = G
+        typealias Failure = Never
+
+        let gestureRecognizer: G
+        let view: UIView
+
+        func receive<S>(subscriber: S) where S: Subscriber, Failure == S.Failure, Output == S.Input {
+            subscriber.receive(
+                subscription: Subscription(subscriber: subscriber, gestureRecognizer: gestureRecognizer, on: view)
+            )
+        }
+    }
+
+    class Subscription<G: UIGestureRecognizer, S: Subscriber>: Combine.Subscription where S.Input == G, S.Failure == Never {
+
+        var subscriber: S?
+        let gestureRecognizer: G
+        let view: UIView
+
+        init(subscriber: S, gestureRecognizer: G, on view: UIView) {
+            self.subscriber = subscriber
+            self.gestureRecognizer = gestureRecognizer
+            self.view = view
+            gestureRecognizer.addTarget(self, action: #selector(handle))
+            view.addGestureRecognizer(gestureRecognizer)
+        }
+
+        @objc private func handle(_ gesture: UIGestureRecognizer) {
+            _ = subscriber?.receive(gestureRecognizer)
+        }
+
+        func cancel() {
+            view.removeGestureRecognizer(gestureRecognizer)
+        }
+
+        func request(_ demand: Subscribers.Demand) {
+            //no-op
+        }
     }
 }

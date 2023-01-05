@@ -6,7 +6,7 @@ import AlphaWalletFoundation
 
 protocol ServersCoordinatorDelegate: AnyObject {
     func didSelectServer(selection: ServerSelection, in coordinator: ServersCoordinator)
-    func didSelectDismiss(in coordinator: ServersCoordinator)
+    func didClose(in coordinator: ServersCoordinator)
 }
 
 class ServersCoordinator: Coordinator {
@@ -31,25 +31,19 @@ class ServersCoordinator: Coordinator {
             .avalanche,
             .avalanche_testnet,
             .mumbai_testnet,
+            .optimismGoerli,
+            .arbitrumGoerli,
             .optimistic,
-            .optimisticKovan,
+            .cronosMainnet,
             .cronosTestnet,
             .arbitrum,
-            .arbitrumRinkeby,
             .klaytnCypress,
             .klaytnBaobabTestnet,
-            .phi2,
-            .phi,
             //Need to update Covalent.NetworkProvider.isSupport() if we enable .ioTeX and/or .ioTeXTestnet
             //.ioTeX,
             //.ioTeXTestnet,
-            .candle,
             .palm,
             .palmTestnet,
-            .ropsten,
-            .kovan,
-            .rinkeby,
-            .sokol
         ] + RPCServer.customServers
     }
 
@@ -107,57 +101,6 @@ extension ServersCoordinator: ServersViewControllerDelegate {
     }
 
     func didClose(in viewController: ServersViewController) {
-        delegate?.didSelectDismiss(in: self)
-    }
-}
-
-private class ServersCoordinatorBridgeToPromise {
-
-    private let navigationController: UINavigationController
-    private let (promiseToReturn, seal) = Promise<ServerSelection>.pending()
-    private var retainCycle: ServersCoordinatorBridgeToPromise?
-
-    init(_ navigationController: UINavigationController, coordinator: Coordinator, viewModel: ServersViewModel) {
-        self.navigationController = navigationController
-
-        retainCycle = self
-
-        let newCoordinator = ServersCoordinator(viewModel: viewModel, navigationController: navigationController)
-        newCoordinator.delegate = self
-        coordinator.addCoordinator(newCoordinator)
-
-        promiseToReturn.ensure {
-            // ensure we break the retain cycle
-            coordinator.removeCoordinator(newCoordinator)
-            self.retainCycle = nil
-        }.cauterize()
-
-        newCoordinator.start()
-    }
-
-    var promise: Promise<ServerSelection> {
-        return promiseToReturn
-    }
-}
-
-extension ServersCoordinatorBridgeToPromise: ServersCoordinatorDelegate {
-
-    func didSelectServer(selection: ServerSelection, in coordinator: ServersCoordinator) {
-        navigationController.popViewController(animated: true) {
-            self.seal.fulfill(selection)
-        }
-    }
-
-    func didSelectDismiss(in coordinator: ServersCoordinator) {
-        navigationController.popViewController(animated: true) {
-            self.seal.reject(PMKError.cancelled)
-        }
-    }
-}
-
-extension ServersCoordinator {
-    static func promise(_ navigationController: UINavigationController, viewModel: ServersViewModel, coordinator: Coordinator) -> Promise<ServerSelection> {
-        let bridge = ServersCoordinatorBridgeToPromise(navigationController, coordinator: coordinator, viewModel: viewModel)
-        return bridge.promise
+        delegate?.didClose(in: self)
     }
 }

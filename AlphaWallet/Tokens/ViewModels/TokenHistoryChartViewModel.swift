@@ -10,72 +10,94 @@ import Combine
 import Charts
 import AlphaWalletFoundation
 
+struct TokenHistoryChartViewModelInput {
+    let selection: AnyPublisher<Int, Never>
+}
+
+struct TokenHistoryChartViewModelOutput {
+    let viewState: AnyPublisher<TokenHistoryChartViewModel.ViewState, Never>
+}
+
 class TokenHistoryChartViewModel {
-    private var selectedHistoryIndexSubject: CurrentValueSubject<Int, Never> = .init(0)
-    private let chartHistories: AnyPublisher<[ChartHistory], Never>
+    private let chartHistories: AnyPublisher<[ChartHistoryPeriod: ChartHistory], Never>
     private let coinTicker: AnyPublisher<CoinTicker?, Never>
-    private var chartDataForSelectedIndex: AnyPublisher<[ChartDataEntry]?, Never> {
-        chartHistories.combineLatest(selectedHistoryIndexSubject)
-            .map { chartHistories, index in
-                if let history = chartHistories[safe: index], !history.prices.isEmpty {
-                    return history.prices.map { ChartDataEntry(x: $0.timestamp, y: $0.value) }
-                } else {
-                    return nil
-                }
-            }.eraseToAnyPublisher()
-    }
+    private let currencyService: CurrencyService
 
-    var lineChartDataSet: AnyPublisher<LineChartDataSet?, Never> {
-        chartDataForSelectedIndex.combineLatest(coinTicker).map { [weak self] entries, ticker -> LineChartDataSet? in
-            guard let strongSelf = self else { return nil }
-
-            return entries.flatMap { entries in
-                let set = LineChartDataSet(entries: entries, label: "")
-                set.axisDependency = .left
-                set.setColor(strongSelf.chartSetColorForTicker(ticker: ticker))
-                set.drawCirclesEnabled = false
-                set.lineWidth = 2
-                set.fillAlpha = 1
-                set.drawFilledEnabled = true
-                set.fill = strongSelf.setGradientFill
-                set.highlightColor = strongSelf.chartSelectionColorForTicker(ticker: ticker)
-                set.drawCircleHoleEnabled = false
-
-                return set
-            }
-        }.eraseToAnyPublisher()
-    }
     var periodTitles: [String] = ChartHistoryPeriod.allCases.map { $0.title }
-    var separatorBackgroundColor: UIColor = Colors.darkGray.withAlphaComponent(0.5)
-    var selectedHistoryIndex: Int {
-        selectedHistoryIndexSubject.value
+    var initialSelectionIndex: Int { return 0 }
+    var setGradientFill: Fill? {
+        return ColorFill(color: Colors.clear)
     }
 
-    init(chartHistories: AnyPublisher<[ChartHistory], Never>, coinTicker: AnyPublisher<CoinTicker?, Never>) {
+    init(chartHistories: AnyPublisher<[ChartHistoryPeriod: ChartHistory], Never>, coinTicker: AnyPublisher<CoinTicker?, Never>, currencyService: CurrencyService) {
         self.chartHistories = chartHistories
         self.coinTicker = coinTicker
-    } 
-
-    func set(selectedHistoryIndex: Int) {
-        self.selectedHistoryIndexSubject.send(selectedHistoryIndex)
+        self.currencyService = currencyService
     }
 
-    var setGradientFill: Fill? {
-        return Fill.fillWithCGColor(UIColor.clear.cgColor)
+    func transform(input: TokenHistoryChartViewModelInput) -> TokenHistoryChartViewModelOutput {
+        let selection = input.selection
+            .merge(with: Just(initialSelectionIndex))
+            .compactMap { ChartHistoryPeriod(index: $0) }
+
+        let lineDataSets = Publishers.CombineLatest(chartHistories, coinTicker)
+            .map { chartHistories, ticker -> [ChartHistoryPeriod: LineChartDataSet] in
+                return chartHistories.compactMapValues { history in
+                    if !history.prices.isEmpty {
+                        let chartEntries = history.prices.map { ChartDataEntry(x: $0.timestamp, y: $0.value) }
+                        return self.buildLineChartDataSet(for: chartEntries, ticker: ticker)
+                    } else {
+                        return nil
+                    }
+                }
+            }.receive(on: RunLoop.main)
+
+        let currency = coinTicker
+            .compactMap { [currencyService] in $0?.currency ?? currencyService.currency }
+
+        let viewState = Publishers.CombineLatest3(selection, lineDataSets, currency)
+            .map { ViewState(currency: $2, lineChartDataSet: $1[$0]) }
+            .eraseToAnyPublisher()
+
+        return .init(viewState: viewState)
+    }
+
+    private func buildLineChartDataSet(for entries: [ChartDataEntry], ticker: CoinTicker?) -> LineChartDataSet {
+        let set = LineChartDataSet(entries: entries, label: "")
+        set.axisDependency = .left
+        set.setColor(chartSetColorForTicker(ticker: ticker))
+        set.drawCirclesEnabled = false
+        set.lineWidth = 2
+        set.fillAlpha = 1
+        set.drawFilledEnabled = true
+        set.fill = setGradientFill
+        set.highlightColor = chartSelectionColorForTicker(ticker: ticker)
+        set.drawCircleHoleEnabled = false
+
+        return set
     }
 
     private func chartSetColorForTicker(ticker: CoinTicker?) -> UIColor {
         gradientColorForTicker(ticker: ticker)
     }
+
     private func chartSelectionColorForTicker(ticker: CoinTicker?) -> UIColor {
         gradientColorForTicker(ticker: ticker)
     }
+
     private func gradientColorForTicker(ticker: CoinTicker?) -> UIColor {
-        switch EthCurrencyHelper(ticker: ticker).change24h {
+        switch TickerHelper(ticker: ticker).change24h {
         case .appreciate, .none:
             return Colors.appActionButtonGreen
         case .depreciate:
             return Colors.appRed
         }
+    }
+}
+
+extension TokenHistoryChartViewModel {
+    struct ViewState {
+        let currency: Currency
+        let lineChartDataSet: LineChartDataSet?
     }
 }

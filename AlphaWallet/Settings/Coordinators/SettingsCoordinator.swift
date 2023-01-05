@@ -9,13 +9,13 @@ enum RestartReason {
     case walletChange
     case changeLocalization
     case serverChange
+    case currencyChange
 }
 
-protocol SettingsCoordinatorDelegate: class, CanOpenURL {
+protocol SettingsCoordinatorDelegate: AnyObject, CanOpenURL {
     func didRestart(with account: Wallet, in coordinator: SettingsCoordinator, reason: RestartReason)
     func didCancel(in coordinator: SettingsCoordinator)
     func didPressShowWallet(in coordinator: SettingsCoordinator)
-    func assetDefinitionsOverrideViewController(for: SettingsCoordinator) -> UIViewController?
     func showConsole(in coordinator: SettingsCoordinator)
     func restartToReloadServersQueued(in coordinator: SettingsCoordinator)
 }
@@ -36,33 +36,52 @@ class SettingsCoordinator: Coordinator {
         return sessions.anyValue.account
     }
     private let lock: Lock
+    private let currencyService: CurrencyService
+    private let tokenScriptOverridesFileManager: TokenScriptOverridesFileManager
+    private let networkService: NetworkService
+    private let promptBackup: PromptBackup
 
     let navigationController: UINavigationController
     weak var delegate: SettingsCoordinatorDelegate?
     var coordinators: [Coordinator] = []
 
     lazy var rootViewController: SettingsViewController = {
-        let viewModel = SettingsViewModel(account: account, keystore: keystore, lock: lock, config: config, analytics: analytics, domainResolutionService: domainResolutionService)
+        let viewModel = SettingsViewModel(
+            account: account,
+            lock: lock,
+            config: config,
+            analytics: analytics,
+            domainResolutionService: domainResolutionService,
+            promptBackup: promptBackup)
+
         let controller = SettingsViewController(viewModel: viewModel)
         controller.delegate = self
+        controller.navigationItem.largeTitleDisplayMode = .always
+
         return controller
     }()
 
-    init(
-        navigationController: UINavigationController = .withOverridenBarAppearence(),
-        keystore: Keystore,
-        config: Config,
-        sessions: ServerDictionary<WalletSession>,
-        restartQueue: RestartTaskQueue,
-        promptBackupCoordinator: PromptBackupCoordinator,
-        analytics: AnalyticsLogger,
-        walletConnectCoordinator: WalletConnectCoordinator,
-        walletBalanceService: WalletBalanceService,
-        blockscanChatService: BlockscanChatService,
-        blockiesGenerator: BlockiesGenerator,
-        domainResolutionService: DomainResolutionServiceType,
-        lock: Lock
-    ) {
+    init(navigationController: UINavigationController = .withOverridenBarAppearence(),
+         keystore: Keystore,
+         config: Config,
+         sessions: ServerDictionary<WalletSession>,
+         restartQueue: RestartTaskQueue,
+         promptBackupCoordinator: PromptBackupCoordinator,
+         analytics: AnalyticsLogger,
+         walletConnectCoordinator: WalletConnectCoordinator,
+         walletBalanceService: WalletBalanceService,
+         blockscanChatService: BlockscanChatService,
+         blockiesGenerator: BlockiesGenerator,
+         domainResolutionService: DomainResolutionServiceType,
+         lock: Lock,
+         currencyService: CurrencyService,
+         tokenScriptOverridesFileManager: TokenScriptOverridesFileManager,
+         networkService: NetworkService,
+         promptBackup: PromptBackup) {
+
+        self.promptBackup = promptBackup
+        self.networkService = networkService
+        self.tokenScriptOverridesFileManager = tokenScriptOverridesFileManager
         self.navigationController = navigationController
         self.lock = lock
         self.keystore = keystore
@@ -76,6 +95,7 @@ class SettingsCoordinator: Coordinator {
         self.blockscanChatService = blockscanChatService
         self.blockiesGenerator = blockiesGenerator
         self.domainResolutionService = domainResolutionService
+        self.currencyService = currencyService
         promptBackupCoordinator.subtlePromptDelegate = self
     }
 
@@ -87,21 +107,9 @@ class SettingsCoordinator: Coordinator {
         delegate?.didRestart(with: wallet, in: self, reason: reason)
     }
 
-    private func showTools(in controller: AdvancedSettingsViewController) {
-        let viewModel = ToolsViewModel(config: config)
-        let controller = ToolsViewController(viewModel: viewModel)
-        controller.delegate = self
-        controller.hidesBottomBarWhenPushed = true
-        navigationController.pushViewController(controller, animated: true)
-    }
-
     func showBlockscanChatUnreadCount(_ count: Int?) {
         rootViewController.configure(blockscanChatUnreadCount: count)
     }
-}
-
-extension SettingsCoordinator: SupportViewControllerDelegate {
-
 }
 
 extension SettingsCoordinator: RenameWalletViewControllerDelegate {
@@ -111,11 +119,23 @@ extension SettingsCoordinator: RenameWalletViewControllerDelegate {
     }
 }
 
+extension SettingsCoordinator: LockCreatePasscodeCoordinatorDelegate {
+    func didClose(in coordinator: LockCreatePasscodeCoordinator) {
+        removeCoordinator(coordinator)
+    }
+}
+
 extension SettingsCoordinator: SettingsViewControllerDelegate {
+
+    func createPasswordSelected(in controller: SettingsViewController) {
+        let coordinator = LockCreatePasscodeCoordinator(navigationController: navigationController, lock: lock)
+        addCoordinator(coordinator)
+        coordinator.delegate = self
+        coordinator.start()
+    }
 
     func nameWalletSelected(in controller: SettingsViewController) {
         let viewModel = RenameWalletViewModel(account: account.address, analytics: analytics, domainResolutionService: domainResolutionService)
-
         let viewController = RenameWalletViewController(viewModel: viewModel)
         viewController.delegate = self
         viewController.navigationItem.largeTitleDisplayMode = .never
@@ -133,24 +153,24 @@ extension SettingsCoordinator: SettingsViewControllerDelegate {
     }
 
     func showSeedPhraseSelected(in controller: SettingsViewController) {
-        switch account.type {
-        case .real(let account):
-            let coordinator = ShowSeedPhraseCoordinator(navigationController: navigationController, keystore: keystore, account: account)
-            coordinator.delegate = self
-            coordinator.start()
-            addCoordinator(coordinator)
-        case .watch:
-            break
-        }
+        guard case .real(let account) = account.type else { return }
+
+        let coordinator = ShowSeedPhraseCoordinator(
+            navigationController: navigationController,
+            keystore: keystore,
+            account: account)
+        
+        addCoordinator(coordinator)
+        coordinator.delegate = self
+        coordinator.start()
     }
 
     func helpSelected(in controller: SettingsViewController) {
-        let viewController = SupportViewController(analytics: analytics)
-        viewController.delegate = self
-        viewController.navigationItem.largeTitleDisplayMode = .never
-        viewController.hidesBottomBarWhenPushed = true
+        let coordinator = SupportCoordinator(navigationController: navigationController, analytics: analytics)
+        coordinator.delegate = self
+        addCoordinator(coordinator)
 
-        navigationController.pushViewController(viewController, animated: true)
+        coordinator.start()
     }
 
     func changeWalletSelected(in controller: SettingsViewController) {
@@ -162,7 +182,9 @@ extension SettingsCoordinator: SettingsViewControllerDelegate {
             viewModel: .init(configuration: .changeWallets, animatedPresentation: true),
             walletBalanceService: walletBalanceService,
             blockiesGenerator: blockiesGenerator,
-            domainResolutionService: domainResolutionService)
+            domainResolutionService: domainResolutionService,
+            promptBackup: promptBackup)
+        
         coordinator.delegate = self
         coordinator.start()
         addCoordinator(coordinator)
@@ -173,19 +195,29 @@ extension SettingsCoordinator: SettingsViewControllerDelegate {
     }
 
     func backupWalletSelected(in controller: SettingsViewController) {
-        switch account.type {
-        case .real:
-            let coordinator = BackupCoordinator(navigationController: navigationController, keystore: keystore, account: account, analytics: analytics)
-            coordinator.delegate = self
-            coordinator.start()
-            addCoordinator(coordinator)
-        case .watch:
-            break
-        }
+        guard case .real = account.type else { return }
+
+        let coordinator = BackupCoordinator(
+            navigationController: navigationController,
+            keystore: keystore,
+            account: account,
+            analytics: analytics,
+            promptBackup: promptBackup)
+
+        coordinator.delegate = self
+        coordinator.start()
+        addCoordinator(coordinator)
     }
 
     func activeNetworksSelected(in controller: SettingsViewController) {
-        let coordinator = EnabledServersCoordinator(navigationController: navigationController, selectedServers: config.enabledServers, restartQueue: restartQueue, analytics: analytics, config: config)
+        let coordinator = EnabledServersCoordinator(
+            navigationController: navigationController,
+            selectedServers: config.enabledServers,
+            restartQueue: restartQueue,
+            analytics: analytics,
+            config: config,
+            networkService: networkService)
+
         coordinator.delegate = self
         coordinator.start()
         addCoordinator(coordinator)
@@ -196,12 +228,20 @@ extension SettingsCoordinator: SettingsViewControllerDelegate {
         let controller = AdvancedSettingsViewController(viewModel: viewModel)
         controller.delegate = self
         controller.hidesBottomBarWhenPushed = true
+        controller.navigationItem.largeTitleDisplayMode = .never
+
         navigationController.pushViewController(controller, animated: true)
     }
 }
 
 extension SettingsCoordinator: ShowSeedPhraseCoordinatorDelegate {
     func didCancel(in coordinator: ShowSeedPhraseCoordinator) {
+        removeCoordinator(coordinator)
+    }
+}
+
+extension SettingsCoordinator: SupportCoordinatorDelegate {
+    func didClose(in coordinator: SupportCoordinator) {
         removeCoordinator(coordinator)
     }
 }
@@ -221,11 +261,6 @@ extension SettingsCoordinator: CanOpenURL {
 }
 
 extension SettingsCoordinator: AccountsCoordinatorDelegate {
-
-    func didFinishBackup(account: AlphaWallet.Address, in coordinator: AccountsCoordinator) {
-        promptBackupCoordinator.markBackupDone()
-        promptBackupCoordinator.showHideCurrentPrompt()
-    }
 
     func didAddAccount(account: Wallet, in coordinator: AccountsCoordinator) {
         //no-op
@@ -281,20 +316,24 @@ extension SettingsCoordinator: PromptBackupCoordinatorSubtlePromptDelegate {
 }
 
 extension SettingsCoordinator: BackupCoordinatorDelegate {
-    func didCancel(coordinator: BackupCoordinator) {
+    func didCancel(in coordinator: BackupCoordinator) {
         removeCoordinator(coordinator)
     }
 
     func didFinish(account: AlphaWallet.Address, in coordinator: BackupCoordinator) {
-        promptBackupCoordinator.markBackupDone()
-        promptBackupCoordinator.showHideCurrentPrompt()
         removeCoordinator(coordinator)
     }
 }
 
 extension SettingsCoordinator: AdvancedSettingsViewControllerDelegate {
     func moreSelected(in controller: AdvancedSettingsViewController) {
-        showTools(in: controller)
+        let viewModel = ToolsViewModel(config: config)
+        let viewController = ToolsViewController(viewModel: viewModel)
+        viewController.delegate = self
+        viewController.hidesBottomBarWhenPushed = true
+        viewController.navigationItem.largeTitleDisplayMode = .never
+
+        navigationController.pushViewController(viewController, animated: true)
     }
 
     func clearBrowserCacheSelected(in controller: AdvancedSettingsViewController) {
@@ -305,10 +344,11 @@ extension SettingsCoordinator: AdvancedSettingsViewControllerDelegate {
     }
 
     func tokenScriptSelected(in controller: AdvancedSettingsViewController) {
-        guard let controller = delegate?.assetDefinitionsOverrideViewController(for: self) else { return }
-        controller.navigationItem.largeTitleDisplayMode = .never
+        let coordinator = AssetDefinitionStoreCoordinator(tokenScriptOverridesFileManager: tokenScriptOverridesFileManager, navigationController: navigationController)
+        coordinator.delegate = self
+        addCoordinator(coordinator)
 
-        navigationController.pushViewController(controller, animated: true)
+        coordinator.start()
     }
 
     func changeLanguageSelected(in controller: AdvancedSettingsViewController) {
@@ -321,7 +361,10 @@ extension SettingsCoordinator: AdvancedSettingsViewControllerDelegate {
     }
 
     func changeCurrencySelected(in controller: AdvancedSettingsViewController) {
-
+        let coordinator = ChangeCurrencyCoordinator(navigationController: navigationController, currencyService: currencyService)
+        coordinator.delegate = self
+        addCoordinator(coordinator)
+        coordinator.start()
     }
 
     func analyticsSelected(in controller: AdvancedSettingsViewController) {
@@ -330,9 +373,16 @@ extension SettingsCoordinator: AdvancedSettingsViewControllerDelegate {
         navigationController.pushViewController(controller, animated: true)
     }
 
+    func crashReporterSelected(in controller: AdvancedSettingsViewController) {
+        let viewModel = CrashReporterViewModel(config: config)
+        let controller = CrashReporterViewController(viewModel: viewModel)
+        navigationController.pushViewController(controller, animated: true)
+    }
+
     func usePrivateNetworkSelected(in controller: AdvancedSettingsViewController) {
         let viewModel = ChooseSendPrivateTransactionsProviderViewModel(config: config)
         let controller = ChooseSendPrivateTransactionsProviderViewController(viewModel: viewModel)
+        controller.navigationItem.largeTitleDisplayMode = .never
 
         navigationController.pushViewController(controller, animated: true)
     }
@@ -352,6 +402,23 @@ extension SettingsCoordinator: AdvancedSettingsViewControllerDelegate {
 
 }
 
+extension SettingsCoordinator: ChangeCurrencyCoordinatorDelegate {
+    func didChangeCurrency(in coordinator: ChangeCurrencyCoordinator, currency: AlphaWalletFoundation.Currency) {
+        removeCoordinator(coordinator)
+        restart(for: account, reason: .currencyChange)
+    }
+
+    func didClose(in coordinator: ChangeCurrencyCoordinator) {
+        removeCoordinator(coordinator)
+    }
+}
+
+extension SettingsCoordinator: AssetDefinitionStoreCoordinatorDelegate {
+    func didClose(in coordinator: AssetDefinitionStoreCoordinator) {
+        removeCoordinator(coordinator)
+    }
+}
+
 extension SettingsCoordinator: PingInfuraCoordinatorDelegate {
     func didPing(in coordinator: PingInfuraCoordinator) {
         removeCoordinator(coordinator)
@@ -369,7 +436,11 @@ extension SettingsCoordinator: CheckTransactionStateCoordinatorDelegate {
 }
 
 extension SettingsCoordinator: ExportJsonKeystoreCoordinatorDelegate {
-    func didComplete(coordinator: ExportJsonKeystoreCoordinator) {
+    func didCancel(in coordinator: ExportJsonKeystoreCoordinator) {
+        removeCoordinator(coordinator)
+    }
+
+    func didComplete(in coordinator: ExportJsonKeystoreCoordinator) {
         removeCoordinator(coordinator)
     }
 }
@@ -386,7 +457,7 @@ extension SettingsCoordinator: ClearDappBrowserCacheCoordinatorDelegate {
 
 extension SettingsCoordinator: ToolsViewControllerDelegate {
     func checkTransactionStateSelected(in controller: ToolsViewController) {
-        let coordinator = CheckTransactionStateCoordinator(navigationController: navigationController, config: config)
+        let coordinator = CheckTransactionStateCoordinator(navigationController: navigationController, config: config, analytics: analytics)
         addCoordinator(coordinator)
         coordinator.delegate = self
         coordinator.start()

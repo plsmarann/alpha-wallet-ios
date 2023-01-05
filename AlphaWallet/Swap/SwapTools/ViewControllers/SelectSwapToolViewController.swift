@@ -14,18 +14,16 @@ final class SelectSwapToolViewController: UIViewController {
     private let viewModel: SelectSwapToolViewModel
 
     private lazy var tableView: UITableView = {
-        let tableView = UITableView(frame: .zero, style: .grouped)
+        let tableView = UITableView.grouped
         tableView.register(SelectableSwapToolTableViewCell.self)
         tableView.estimatedRowHeight = DataEntry.Metric.TableView.estimatedRowHeight
-        tableView.tableFooterView = UIView.tableFooterToRemoveEmptyCellSeparators()
         tableView.separatorInset = .zero
-        tableView.translatesAutoresizingMaskIntoConstraints = false
-        tableView.backgroundColor = GroupedTable.Color.background
-
+        tableView.delegate = self
+        
         return tableView
     }()
-    private lazy var dataSource: SelectSwapToolViewModel.ToolsDiffableDataSource = makeDataSource()
-    private let appear = PassthroughSubject<Void, Never>()
+    private lazy var dataSource: SelectSwapToolViewModel.DataSource = makeDataSource()
+    private let willAppear = PassthroughSubject<Void, Never>()
     private let disappear = PassthroughSubject<Void, Never>()
     private let selection = PassthroughSubject<SelectSwapToolViewModel.SwapToolSelection, Never>()
     private var cancelable = Set<AnyCancellable>()
@@ -34,10 +32,11 @@ final class SelectSwapToolViewController: UIViewController {
         self.viewModel = viewModel
         super.init(nibName: nil, bundle: nil)
 
-        tableView.delegate = self
         view.addSubview(tableView)
-        NSLayoutConstraint.activate([tableView.anchorsConstraint(to: view)])
-        view.backgroundColor = viewModel.backgroundColor
+        NSLayoutConstraint.activate([
+            tableView.anchorsIgnoringBottomSafeArea(to: view)
+        ])
+
         emptyView = EmptyView.swapToolsEmptyView()
     }
     
@@ -47,29 +46,31 @@ final class SelectSwapToolViewController: UIViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
+
+        view.backgroundColor = Configuration.Color.Semantic.defaultViewBackground
         bind(viewModel: viewModel)
     }
 
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
-        appear.send(())
+        willAppear.send(())
     }
 
     private func bind(viewModel: SelectSwapToolViewModel) {
-        let appear = appear
+        let willAppear = willAppear
             .handleEvents(receiveOutput: { [weak self] _ in self?.startLoading() })
             .eraseToAnyPublisher()
 
         let input = SelectSwapToolViewModelInput(
-            appear: appear,
+            willAppear: willAppear,
             disappear: disappear.eraseToAnyPublisher(),
             selection: selection.eraseToAnyPublisher())
 
         let output = viewModel.transform(input: input)
         output.viewState
-            .sink { [weak self] state in
-                self?.navigationItem.title = state.title
-                self?.dataSource.apply(state.tools, animatingDifferences: false)
+            .sink { [weak self, navigationItem, dataSource] state in
+                navigationItem.title = state.title
+                dataSource.apply(state.snapshot, animatingDifferences: false)
                 self?.endLoading()
             }.store(in: &cancelable)
     }
@@ -117,8 +118,8 @@ extension SelectSwapToolViewController: UITableViewDelegate {
 }
 
 extension SelectSwapToolViewController {
-    private func makeDataSource() -> SelectSwapToolViewModel.ToolsDiffableDataSource {
-        SelectSwapToolViewModel.ToolsDiffableDataSource(tableView: tableView) { tableView, indexPath, viewModel -> SelectableSwapToolTableViewCell in
+    private func makeDataSource() -> SelectSwapToolViewModel.DataSource {
+        SelectSwapToolViewModel.DataSource(tableView: tableView) { tableView, indexPath, viewModel -> SelectableSwapToolTableViewCell in
             let cell: SelectableSwapToolTableViewCell = tableView.dequeueReusableCell(for: indexPath)
             cell.configure(viewModel: viewModel)
 

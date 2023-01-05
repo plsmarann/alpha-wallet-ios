@@ -4,48 +4,51 @@ import Foundation
 import UIKit
 import AlphaWalletFoundation
 
-class DappViewCellViewModel {
-    let dapp: Bookmark
-    var imageUrl: URL?
+struct DappViewCellViewModel: Hashable {
+    let bookmark: BookmarkObject
+
+    var imageUrl: URL? {
+        Favicon.get(for: bookmark.url)
+    }
+
     var title: String {
-        return dapp.title
+        bookmark.title
+    }
+
+    var domainName: String {
+        bookmark.url?.host ?? ""
+    }
+
+    init(bookmark: BookmarkObject) {
+        self.bookmark = bookmark
     }
 
     var fallbackImage: UIImage? {
         return R.image.iconsTokensPlaceholder()
     }
 
-    var domainName: String {
-        return URL(string: dapp.url)?.host ?? ""
-    }
-
-    init(dapp: Bookmark) {
-        self.dapp = dapp
-        self.imageUrl = Favicon.get(for: URL(string: dapp.url))
-    }
-
     var backgroundColor: UIColor {
-        return Colors.appWhite
+        return Configuration.Color.Semantic.defaultViewBackground
     }
 
     var imageViewShadowColor: UIColor {
-        return Metrics.DappsHome.Icon.shadowColor
+        return Configuration.Color.Semantic.shadow
     }
 
     var imageViewShadowOffset: CGSize {
-        return Metrics.DappsHome.Icon.shadowOffset
+        return DataEntry.Metric.DappsHome.Icon.shadowOffset
     }
 
     var imageViewShadowOpacity: Float {
-        return Metrics.DappsHome.Icon.shadowOpacity
+        return DataEntry.Metric.DappsHome.Icon.shadowOpacity
     }
 
     var imageViewShadowRadius: CGFloat {
-        return Metrics.DappsHome.Icon.shadowRadius
+        return DataEntry.Metric.DappsHome.Icon.shadowRadius
     }
 
     var titleColor: UIColor {
-        return UIColor(red: 77, green: 77, blue: 77)
+        return Configuration.Color.Semantic.defaultTitleText
     }
 
     var titleFont: UIFont {
@@ -53,7 +56,7 @@ class DappViewCellViewModel {
     }
 
     var domainNameColor: UIColor {
-        return Colors.appBackground
+        return Configuration.Color.Semantic.defaultViewBackground
     }
 
     var domainNameFont: UIFont {

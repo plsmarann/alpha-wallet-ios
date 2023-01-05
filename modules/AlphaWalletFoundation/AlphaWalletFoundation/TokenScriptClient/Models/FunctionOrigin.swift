@@ -22,6 +22,7 @@ public enum FunctionError: LocalizedError {
     }
 }
 
+// swiftlint:disable type_body_length
 public struct FunctionOrigin {
     public enum FunctionType {
         case functionCall(functionName: String, inputs: [AssetFunctionCall.Argument], output: AssetFunctionCall.ReturnType)
@@ -285,8 +286,8 @@ public struct FunctionOrigin {
             functionCallMetaData = metadata
             value = formValue(withTokenId: tokenId, attributeAndValues: attributeAndValues, localRefs: localRefs, server: server, account: session.account) ?? 0
         }
-        //TODO feels ike everything can just be in `.tokenScript`. But have to check dapp, it includes other parameters like gas
-        return (UnconfirmedTransaction(transactionType: .tokenScript(token), value: BigInt(value), recipient: nil, contract: originContractOrRecipientAddress, data: payload),
+        //TODO feels like everything can just be in `.tokenScript`. But have to check dapp, it includes other parameters like gas
+        return (UnconfirmedTransaction(transactionType: .prebuilt(token.server), value: value, recipient: nil, contract: originContractOrRecipientAddress, data: payload),
                 functionCallMetaData)
     }
 
@@ -356,6 +357,7 @@ public struct FunctionOrigin {
             return Subscribable<AssetInternalValue>(nil)
         }
 
-        return assetAttributeProvider.getValue(forAttributeId: attributeId, tokenId: tokenId, functionCall: functionCall)
+        return assetAttributeProvider.getValue(forAttributeId: attributeId, functionCall: functionCall)
     }
 }
+// swiftlint:enable type_body_length

@@ -3,9 +3,6 @@
 import UIKit
 import AlphaWalletFoundation
 
-private struct NoContractDetailsDetected: Error {
-}
-
 protocol AddHideTokensCoordinatorDelegate: AnyObject {
     func didClose(in coordinator: AddHideTokensCoordinator)
 }
@@ -17,16 +14,25 @@ class AddHideTokensCoordinator: Coordinator {
     private let importToken: ImportToken
     private lazy var viewModel = AddHideTokensViewModel(tokenCollection: tokenCollection, tokensFilter: tokensFilter, importToken: importToken, config: config)
     private lazy var rootViewController: AddHideTokensViewController = {
-        return .init(viewModel: viewModel)
+        let viewController = AddHideTokensViewController(viewModel: viewModel)
+        viewController.hidesBottomBarWhenPushed = true
+        viewController.delegate = self
+        viewController.navigationItem.largeTitleDisplayMode = .never
+        viewController.navigationItem.rightBarButtonItem = UIBarButtonItem.addButton(self, selector: #selector(addTokenButtonSelected))
+
+        return viewController
     }()
 
     private let config: Config
     private let tokenCollection: TokenCollection
     private let tokensFilter: TokensFilter
+    private let wallet: Wallet
+
     var coordinators: [Coordinator] = []
     weak var delegate: AddHideTokensCoordinatorDelegate?
 
-    init(tokensFilter: TokensFilter, tokenCollection: TokenCollection, analytics: AnalyticsLogger, domainResolutionService: DomainResolutionServiceType, navigationController: UINavigationController, config: Config, importToken: ImportToken) {
+    init(tokensFilter: TokensFilter, wallet: Wallet, tokenCollection: TokenCollection, analytics: AnalyticsLogger, domainResolutionService: DomainResolutionServiceType, navigationController: UINavigationController, config: Config, importToken: ImportToken) {
+        self.wallet = wallet
         self.config = config
         self.tokenCollection = tokenCollection
         self.analytics = analytics
@@ -37,9 +43,12 @@ class AddHideTokensCoordinator: Coordinator {
     }
 
     func start() {
-        rootViewController.delegate = self
         navigationController.pushViewController(rootViewController, animated: true)
-    } 
+    }
+
+    @objc private func addTokenButtonSelected(_ sender: UIBarButtonItem) {
+        didPressAddToken(in: rootViewController, with: "")
+    }
 }
 
 extension AddHideTokensCoordinator: NewTokenCoordinatorDelegate {
@@ -66,6 +75,7 @@ extension AddHideTokensCoordinator: AddHideTokensViewControllerDelegate {
         }
         let coordinator = NewTokenCoordinator(
             analytics: analytics,
+            wallet: wallet,
             navigationController: navigationController,
             config: config,
             importToken: importToken,

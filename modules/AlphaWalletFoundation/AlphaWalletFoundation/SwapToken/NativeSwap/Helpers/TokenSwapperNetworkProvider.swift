@@ -8,7 +8,6 @@
 import Foundation
 import Combine
 import SwiftyJSON
-import Alamofire
 import BigInt
 import AlphaWalletCore
 
@@ -22,13 +21,18 @@ public protocol TokenSwapperNetworkProvider {
 
 public final class LiQuestTokenSwapperNetworkProvider: TokenSwapperNetworkProvider {
     private static let baseUrl = URL(string: "https://li.quest")!
-    public init() {}
+    private let networkService: NetworkService
+    private let decoder = JSONDecoder()
+
+    public init(networkService: NetworkService) {
+        self.networkService = networkService
+    }
 
     public func fetchSupportedTools() -> AnyPublisher<[SwapTool], SwapError> {
-        Alamofire.request(ToolsRequest()).validate()
-            .responseDataPublisher()
-            .tryMap { jsonData, _ -> [SwapTool] in
-                if let response: SwapToolsResponse = try? JSONDecoder().decode(SwapToolsResponse.self, from: jsonData) {
+        networkService
+            .dataTaskPublisher(ToolsRequest())
+            .tryMap { [decoder] data, _ -> [SwapTool] in
+                if let response: SwapToolsResponse = try? decoder.decode(SwapToolsResponse.self, from: data) {
                     return response.tools
                 } else {
                     throw SwapError.invalidJson
@@ -38,10 +42,10 @@ public final class LiQuestTokenSwapperNetworkProvider: TokenSwapperNetworkProvid
     }
 
     public func fetchSwapRoutes(fromToken: TokenToSwap, toToken: TokenToSwap, slippage: String, fromAmount: BigUInt, exchanges: [String]) -> AnyPublisher<[SwapRoute], SwapError> {
-        return Alamofire.request(RoutesRequest(fromToken: fromToken, toToken: toToken, slippage: slippage, fromAmount: fromAmount, exchanges: exchanges)).validate()
-            .responseDataPublisher()
-            .tryMap { jsonData, _ -> [SwapRoute] in
-                if let response: SwapRouteReponse = try? JSONDecoder().decode(SwapRouteReponse.self, from: jsonData) {
+        return networkService
+            .dataTaskPublisher(RoutesRequest(fromToken: fromToken, toToken: toToken, slippage: slippage, fromAmount: fromAmount, exchanges: exchanges))
+            .tryMap { [decoder] data, _ -> [SwapRoute] in
+                if let response: SwapRouteReponse = try? decoder.decode(SwapRouteReponse.self, from: data) {
                     return response.routes
                 } else {
                     throw SwapError.invalidJson
@@ -51,35 +55,35 @@ public final class LiQuestTokenSwapperNetworkProvider: TokenSwapperNetworkProvid
     }
 
     public func fetchSupportedChains() -> AnyPublisher<[RPCServer], PromiseError> {
-        return Alamofire.request(SupportedChainsRequest()).validate()
-            .responseJSONPublisher()
-            .map { rawJson, _ -> [RPCServer] in
-                let chains = JSON(rawJson)["chains"].arrayValue
+        return networkService
+            .dataTaskPublisher(SupportedChainsRequest())
+            .map { data, _ -> [RPCServer] in
+                let chains = JSON(data)["chains"].arrayValue
                 return chains.compactMap { each in return RPCServer(chainIdOptional: each["id"].intValue) }
-            }.eraseToAnyPublisher()
+            }.mapError { PromiseError(error: $0) }
+            .eraseToAnyPublisher()
     }
 
     public func fetchSupportedTokens(for server: RPCServer) -> AnyPublisher<SwapPairs, PromiseError> {
-        return Alamofire.request(SupportedTokensRequest(server: server))
-            .responseDataPublisher()
-            .map { jsonData, _ -> SwapPairs in
-                if let connections: Swap.Connections = try? JSONDecoder().decode(Swap.Connections.self, from: jsonData) {
+        return networkService
+            .dataTaskPublisher(SupportedTokensRequest(server: server))
+            .map { [decoder] data, _ -> SwapPairs in
+                if let connections: Swap.Connections = try? decoder.decode(Swap.Connections.self, from: data) {
                     return SwapPairs(connections: connections)
                 } else {
                     return SwapPairs(connections: .init(connections: []))
                 }
-            }.eraseToAnyPublisher()
+            }.mapError { PromiseError(error: $0) }
+            .eraseToAnyPublisher()
     }
 
     public func fetchSwapQuote(fromToken: TokenToSwap, toToken: TokenToSwap, wallet: AlphaWallet.Address, slippage: String, fromAmount: BigUInt, exchange: String) -> AnyPublisher<SwapQuote, SwapError> {
-        let request = SwapQuoteRequest(fromToken: fromToken, toToken: toToken, wallet: wallet, slippage: slippage, fromAmount: fromAmount, exchange: exchange)
-        return Alamofire.request(request)
-            .responseJSONPublisher()
-            .tryMap { rawJson, _ -> SwapQuote in
-                guard let data = try? JSONSerialization.data(withJSONObject: rawJson) else { throw SwapError.invalidJson }
-                if let swapQuote = try? JSONDecoder().decode(SwapQuote.self, from: data) {
+        return networkService
+            .dataTaskPublisher(SwapQuoteRequest(fromToken: fromToken, toToken: toToken, wallet: wallet, slippage: slippage, fromAmount: fromAmount, exchange: exchange))
+            .tryMap { [decoder] data, _ -> SwapQuote in
+                if let swapQuote = try? decoder.decode(SwapQuote.self, from: data) {
                     return swapQuote
-                } else if let error = try? JSONDecoder().decode(SwapQuote.Error.self, from: data) {
+                } else if let error = try? decoder.decode(SwapQuote.Error.self, from: data) {
                     throw SwapError.unableToBuildSwapUnsignedTransaction(message: error.message)
                 } else {
                     throw SwapError.unableToBuildSwapUnsignedTransactionFromSwapProvider
@@ -106,6 +110,7 @@ fileprivate extension LiQuestTokenSwapperNetworkProvider {
             components.path = "/v1/tools"
             return try URLRequest(url: components.asURL(), method: .get)
         }
+        
     }
 
     struct RoutesRequest: URLRequestConvertible {
@@ -184,6 +189,7 @@ fileprivate extension LiQuestTokenSwapperNetworkProvider {
             components.path = "/v1/chains"
             return try URLRequest(url: components.asURL(), method: .get)
         }
+        
     }
 }
 

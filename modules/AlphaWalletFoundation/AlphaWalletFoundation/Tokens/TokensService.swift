@@ -18,10 +18,8 @@ public protocol TokenProvidable {
 }
 
 public protocol TokenAddable {
-    func add(tokenUpdates updates: [TokenUpdate])
-    @discardableResult func addCustom(tokens: [ERCToken], shouldUpdateBalance: Bool) -> [Token]
     @discardableResult func addOrUpdate(tokensOrContracts: [TokenOrContract]) -> [Token]
-    @discardableResult func addOrUpdate(_ actions: [AddOrUpdateTokenAction]) -> Bool?
+    @discardableResult func addOrUpdate(with actions: [AddOrUpdateTokenAction]) -> [Token]
 }
 
 public protocol TokenAutoDetectable {
@@ -47,8 +45,8 @@ public protocol TokensServiceTests {
 public protocol PipelineTests: CoinTickersFetcherTests { }
 
 public protocol TokenUpdatable {
-    func update(token: TokenIdentifiable, value: TokenUpdateAction)
-    @discardableResult func updateToken(primaryKey: String, action: TokenUpdateAction) -> Bool?
+    func update(token: TokenIdentifiable, value: TokenFieldUpdate)
+    @discardableResult func updateToken(primaryKey: String, action: TokenFieldUpdate) -> Bool?
 }
 
 public protocol TokensService: TokensState, TokenProvidable, TokenAddable, TokenHidable, TokenAutoDetectable, TokenBalanceRefreshable, TokensServiceTests, TokenUpdatable, DetectedContractsProvideble {

@@ -14,18 +14,16 @@ final class SelectSwapRouteViewController: UIViewController {
     private let viewModel: SelectSwapRouteViewModel
 
     private lazy var tableView: UITableView = {
-        let tableView = UITableView(frame: .zero, style: .grouped)
+        let tableView = UITableView.grouped
         tableView.register(SelectableSwapRouteTableViewCell.self)
         tableView.estimatedRowHeight = DataEntry.Metric.TableView.estimatedRowHeight
-        tableView.tableFooterView = UIView.tableFooterToRemoveEmptyCellSeparators()
         tableView.separatorInset = .zero
-        tableView.translatesAutoresizingMaskIntoConstraints = false
-        tableView.backgroundColor = GroupedTable.Color.background
+        tableView.delegate = self
 
         return tableView
     }()
-    private lazy var dataSource: SelectSwapRouteViewModel.RoutesDiffableDataSource = makeDataSource()
-    private let appear = PassthroughSubject<Void, Never>()
+    private lazy var dataSource: SelectSwapRouteViewModel.DataSource = makeDataSource()
+    private let willAppear = PassthroughSubject<Void, Never>()
     private let selection = PassthroughSubject<IndexPath, Never>()
     private var cancelable = Set<AnyCancellable>()
 
@@ -39,10 +37,9 @@ final class SelectSwapRouteViewController: UIViewController {
         self.viewModel = viewModel
         super.init(nibName: nil, bundle: nil)
 
-        tableView.delegate = self
         view.addSubview(tableView)
         NSLayoutConstraint.activate([tableView.anchorsConstraint(to: view)])
-        view.backgroundColor = viewModel.backgroundColor
+
         emptyView = EmptyView.swapToolsEmptyView()
     }
 
@@ -52,28 +49,29 @@ final class SelectSwapRouteViewController: UIViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
+
+        view.backgroundColor = Configuration.Color.Semantic.defaultViewBackground
+
         bind(viewModel: viewModel)
     }
 
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
-        appear.send(())
+        willAppear.send(())
     }
 
     private func bind(viewModel: SelectSwapRouteViewModel) {
-        let appear = appear
+        let willAppear = willAppear
             .handleEvents(receiveOutput: { [weak self] _ in self?.startLoading() })
             .eraseToAnyPublisher()
 
-        let input = SelectSwapRouteViewModelInput(
-            appear: appear,
-            selection: selection.eraseToAnyPublisher())
+        let input = SelectSwapRouteViewModelInput(willAppear: willAppear, selection: selection.eraseToAnyPublisher())
 
         let output = viewModel.transform(input: input)
         output.viewState
-            .sink { [weak self] state in
-                self?.navigationItem.title = state.title
-                self?.dataSource.apply(state.routes, animatingDifferences: false)
+            .sink { [weak self, navigationItem, dataSource] state in
+                navigationItem.title = state.title
+                dataSource.apply(state.snapshot, animatingDifferences: false)
                 self?.endLoading()
             }.store(in: &cancelable)
     }
@@ -105,8 +103,8 @@ extension SelectSwapRouteViewController: UITableViewDelegate {
 }
 
 extension SelectSwapRouteViewController {
-    private func makeDataSource() -> SelectSwapRouteViewModel.RoutesDiffableDataSource {
-        SelectSwapRouteViewModel.RoutesDiffableDataSource(tableView: tableView) { tableView, indexPath, viewModel -> SelectableSwapRouteTableViewCell in
+    private func makeDataSource() -> SelectSwapRouteViewModel.DataSource {
+        SelectSwapRouteViewModel.DataSource(tableView: tableView) { tableView, indexPath, viewModel -> SelectableSwapRouteTableViewCell in
             let cell: SelectableSwapRouteTableViewCell = tableView.dequeueReusableCell(for: indexPath)
             cell.configure(viewModel: viewModel)
 

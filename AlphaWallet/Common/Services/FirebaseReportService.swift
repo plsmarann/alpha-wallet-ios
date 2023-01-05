@@ -4,8 +4,8 @@
 //
 //  Created by Vladyslav Shepitko on 03.02.2021.
 //
-
-import Firebase
+import FirebaseCore
+import FirebaseCrashlytics
 import AlphaWalletFoundation
 
 extension AlphaWallet {
@@ -14,11 +14,19 @@ extension AlphaWallet {
 
         //NOTE: to avoid warning `The default Firebase app has not yet been configured. FirebaseApp.configure()`, moving code to init method have no affect
         static var instance: FirebaseCrashlyticsReporter = {
-            if let options = R.file.googleServiceInfoPlist().flatMap({ FirebaseOptions(contentsOfFile: $0.path) }) {
-                if !isRunningTests() && isAlphaWallet() {
+            //TODO use a shared instance of `Config` instead, or does it not matter?
+            var config = Config()
+            if config.sendCrashReportingEnabled == nil {
+                config.sendCrashReportingEnabled = true
+            }
+
+            let file = isRunningTests() ? R.file.googleServiceInfoTestsPlist() : R.file.googleServiceInfoPlist()
+            if let options = file.flatMap({ FirebaseOptions(contentsOfFile: $0.path) }) {
+                if isAlphaWallet() && config.isSendCrashReportingEnabled {
                     FirebaseApp.configure(options: options)
                 }
             }
+
             return FirebaseCrashlyticsReporter()
         }()
 

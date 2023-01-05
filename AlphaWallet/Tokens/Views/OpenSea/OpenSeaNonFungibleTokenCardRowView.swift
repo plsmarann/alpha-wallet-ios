@@ -36,7 +36,7 @@ class OpenSeaNonFungibleTokenCardRowView: UIView, TokenCardRowViewProtocol {
             atBottom: UIView.spacer(height: 16)
     )
     private let outerHorizontalMargin = CGFloat(21)
-    private let backgroundCornerRadius = Metrics.CornerRadius.box
+    private let backgroundCornerRadius = DataEntry.Metric.CornerRadius.box
     private let horizontalSubtitleStackView: UIStackView = [].asStackView(alignment: .center)
     private let verticalSubtitleStackView: UIStackView = [].asStackView(axis: .vertical, alignment: .leading)
     //TODO Name is too-specific for generation and cooldown, but the icons really are for those. We can rename (or remove this TODO once we are clean whether the icons are shown if the values displayed aren't generation/cooldown
@@ -118,17 +118,6 @@ class OpenSeaNonFungibleTokenCardRowView: UIView, TokenCardRowViewProtocol {
                 NSLayoutConstraint.deactivate(checkboxRelatedConstraintsWhenShown)
                 NSLayoutConstraint.activate(checkboxRelatedConstraintsWhenHidden)
             }
-        }
-    }
-    var additionalHeightToCompensateForAutoLayout: CGFloat {
-        guard let attributedText = descriptionLabel.attributedText else { return 0 }
-        let rect = attributedText.boundingRect(with: .init(width: descriptionLabelWidth, height: 1000), options: .usesLineFragmentOrigin, context: nil)
-        let size = rect.size
-        //Hackish: Add a bit of allowance. Otherwise it's good for CryptoKitties, but there's no enough space for Chibi Fighters' title
-        if size.height > 0 {
-            return size.height + 10
-        } else {
-            return 0
         }
     }
     //Just to adhere to protocol
@@ -237,7 +226,7 @@ class OpenSeaNonFungibleTokenCardRowView: UIView, TokenCardRowViewProtocol {
         mainVerticalStackView.translatesAutoresizingMaskIntoConstraints = false
         background.addSubview(mainVerticalStackView)
 
-        // TODO extract constant. Maybe StyleLayout.sideMargin
+        // TODO extract constant. Maybe DataEntry.Metric.sideMargin
         checkboxRelatedConstraintsWhenShown.append(checkboxImageView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: OpenSeaNonFungibleTokenCardRowView.xMargin))
         checkboxRelatedConstraintsWhenShown.append(checkboxImageView.centerYAnchor.constraint(equalTo: centerYAnchor))
         checkboxRelatedConstraintsWhenShown.append(background.leadingAnchor.constraint(equalTo: checkboxImageView.trailingAnchor, constant: OpenSeaNonFungibleTokenCardRowView.xMargin))

@@ -4,27 +4,23 @@ import Foundation
 import UIKit
 import AlphaWalletFoundation
 
-struct BrowserHistoryCellViewModel {
-    let history: History
+struct BrowserHistoryCellViewModel: Hashable {
+    let history: BrowserHistoryRecord
 
-    var backgroundColor: UIColor {
-        return Colors.appWhite
+    var imageUrl: URL? { return Favicon.get(for: history.url) }
+    var name: String { return history.title }
+    var url: String { return history.url.absoluteString }
+
+    init(history: BrowserHistoryRecord) {
+        self.history = history
     }
 
-    var imageUrl: URL? {
-        return Favicon.get(for: URL(string: history.url))
+    var backgroundColor: UIColor {
+        return Configuration.Color.Semantic.defaultViewBackground
     }
 
     var fallbackImage: UIImage? {
         return R.image.iconsTokensPlaceholder()
-    }
-
-    var name: String {
-        return history.title
-    }
-
-    var url: String {
-        return history.url
     }
 
     var nameFont: UIFont {
@@ -44,18 +40,18 @@ struct BrowserHistoryCellViewModel {
     }
 
     var imageViewShadowColor: UIColor {
-        return Metrics.DappsHome.Icon.shadowColor
+        return Configuration.Color.Semantic.shadow
     }
 
     var imageViewShadowOffset: CGSize {
-        return Metrics.DappsHome.Icon.shadowOffset
+        return DataEntry.Metric.DappsHome.Icon.shadowOffset
     }
 
     var imageViewShadowOpacity: Float {
-        return Metrics.DappsHome.Icon.shadowOpacity
+        return DataEntry.Metric.DappsHome.Icon.shadowOpacity
     }
 
     var imageViewShadowRadius: CGFloat {
-        return Metrics.DappsHome.Icon.shadowRadius
+        return DataEntry.Metric.DappsHome.Icon.shadowRadius
     }
 }

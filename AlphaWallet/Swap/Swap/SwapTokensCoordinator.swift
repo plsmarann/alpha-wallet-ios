@@ -36,7 +36,10 @@ final class SwapTokensCoordinator: Coordinator {
     private let configurator: SwapOptionsConfigurator
     private lazy var tokenSelectionProvider = SwapTokenSelectionProvider(configurator: configurator)
     private lazy var approveSwapProvider: ApproveSwapProvider = {
-        let provider = ApproveSwapProvider(configurator: configurator, analytics: analytics)
+        let provider = ApproveSwapProvider(
+            configurator: configurator,
+            analytics: analytics)
+
         provider.delegate = self
         return provider
     }()
@@ -45,10 +48,22 @@ final class SwapTokensCoordinator: Coordinator {
     private let domainResolutionService: DomainResolutionServiceType
     private var transactionConfirmationResult: ConfirmResult? = .none
     private let tokensFilter: TokensFilter
+    private let networkService: NetworkService
+
     var coordinators: [Coordinator] = []
     weak var delegate: SwapTokensCoordinatorDelegate?
 
-    init(navigationController: UINavigationController, configurator: SwapOptionsConfigurator, keystore: Keystore, analytics: AnalyticsLogger, domainResolutionService: DomainResolutionServiceType, assetDefinitionStore: AssetDefinitionStore, tokenCollection: TokenCollection, tokensFilter: TokensFilter) {
+    init(navigationController: UINavigationController,
+         configurator: SwapOptionsConfigurator,
+         keystore: Keystore,
+         analytics: AnalyticsLogger,
+         domainResolutionService: DomainResolutionServiceType,
+         assetDefinitionStore: AssetDefinitionStore,
+         tokenCollection: TokenCollection,
+         tokensFilter: TokensFilter,
+         networkService: NetworkService) {
+
+        self.networkService = networkService
         self.tokensFilter = tokensFilter
         self.assetDefinitionStore = assetDefinitionStore
         self.tokenCollection = tokenCollection
@@ -65,25 +80,34 @@ final class SwapTokensCoordinator: Coordinator {
     }
 
     @objc private func swapConfiguratinSelected(_ sender: UIBarButtonItem) {
-        let coordinator = SwapOptionsCoordinator(navigationController: navigationController, configurator: configurator)
+        let coordinator = SwapOptionsCoordinator(
+            navigationController: navigationController,
+            configurator: configurator)
+
         coordinator.delegate = self
         addCoordinator(coordinator)
         coordinator.start()
     }
 
     private func showSelectToken() {
-        let coordinator = SelectTokenCoordinator(tokenCollection: tokenCollection, tokensFilter: tokensFilter, navigationController: navigationController, filter: .filter(tokenSelectionProvider))
-        coordinator.configureForSelectionSwapToken()
+        let coordinator = SelectTokenCoordinator(
+            tokenCollection: tokenCollection,
+            tokensFilter: tokensFilter,
+            navigationController: navigationController,
+            filter: .filter(tokenSelectionProvider))
+
+        coordinator.rootViewController.navigationItem.leftBarButtonItem = UIBarButtonItem.logoBarButton()
         coordinator.delegate = self
         addCoordinator(coordinator)
 
         let panel = FloatingPanelController(isPanEnabled: false)
         panel.layout = FullScreenScrollableFloatingPanelLayout()
-        panel.set(contentViewController: coordinator.rootViewController)
+        panel.set(contentViewController: coordinator.navigationController)
+        panel.surfaceView.contentPadding = .init(top: 20, left: 0, bottom: 0, right: 0)
         panel.shouldDismissOnBackdrop = true
         panel.delegate = self
 
-        navigationController.present(panel, animated: true)
+        self.navigationController.present(panel, animated: true)
     }
 }
 
@@ -91,7 +115,8 @@ extension SwapTokensCoordinator: FloatingPanelControllerDelegate {
 
     func floatingPanelDidRemove(_ fpc: FloatingPanelController) {
         guard let coordinator = coordinators.compactMap({ $0 as? SelectTokenCoordinator }).first else { return }
-        coordinator.close()
+
+        removeCoordinator(coordinator)
     }
 }
 
@@ -169,27 +194,57 @@ extension SwapTokensCoordinator: ApproveSwapProviderDelegate {
     }
 
     func promptToSwap(unsignedTransaction: UnsignedSwapTransaction, fromToken: TokenToSwap, fromAmount: BigUInt, toToken: TokenToSwap, toAmount: BigUInt, in provider: ApproveSwapProvider) {
-        do {
-            let (transaction, configuration) = configurator.tokenSwapper.buildSwapTransaction(keystore: keystore, unsignedTransaction: unsignedTransaction, fromToken: fromToken, fromAmount: fromAmount, toToken: toToken, toAmount: toAmount)
 
-            let coordinator = try TransactionConfirmationCoordinator(presentingViewController: navigationController, session: configurator.session, transaction: transaction, configuration: configuration, analytics: analytics, domainResolutionService: domainResolutionService, keystore: keystore, assetDefinitionStore: assetDefinitionStore, tokensService: tokenCollection)
-            addCoordinator(coordinator)
-            coordinator.delegate = self
-            coordinator.start(fromSource: .swap)
-        } catch {
-            UIApplication.shared
-                .presentedViewController(or: navigationController)
-                .displayError(message: error.prettyError)
-        }
+        let (transaction, configuration) = configurator.tokenSwapper.buildSwapTransaction(
+            unsignedTransaction: unsignedTransaction,
+            fromToken: fromToken,
+            fromAmount: fromAmount,
+            toToken: toToken,
+            toAmount: toAmount)
+
+        let coordinator = TransactionConfirmationCoordinator(
+            presentingViewController: navigationController,
+            session: configurator.session,
+            transaction: transaction,
+            configuration: configuration,
+            analytics: analytics,
+            domainResolutionService: domainResolutionService,
+            keystore: keystore,
+            assetDefinitionStore: assetDefinitionStore,
+            tokensService: tokenCollection,
+            networkService: networkService)
+
+        addCoordinator(coordinator)
+        coordinator.delegate = self
+        coordinator.start(fromSource: .swap)
     }
 
     func promptForErc20Approval(token: AlphaWallet.Address, server: RPCServer, owner: AlphaWallet.Address, spender: AlphaWallet.Address, amount: BigUInt, in provider: ApproveSwapProvider) -> Promise<EthereumTransaction.Hash> {
         return firstly {
             Promise.value(token)
-        }.map { token in
-            try Erc20.buildApproveTransaction(token: token, server: server, owner: owner, spender: spender, amount: amount)
-        }.then { [navigationController, keystore, analytics, assetDefinitionStore, configurator, tokenCollection, domainResolutionService] (transaction, configuration) in
-            TransactionConfirmationCoordinator.promise(navigationController, session: configurator.session, coordinator: self, transaction: transaction, configuration: configuration, analytics: analytics, domainResolutionService: domainResolutionService, source: .swapApproval, delegate: self, keystore: keystore, assetDefinitionStore: assetDefinitionStore, tokensService: tokenCollection)
+        }.map { contract in
+            try UnconfirmedTransaction.buildApproveTransaction(
+                contract: contract,
+                server: server,
+                owner: owner,
+                spender: spender,
+                amount: amount)
+        }.then { [navigationController, keystore, analytics, assetDefinitionStore, configurator, tokenCollection, domainResolutionService, networkService] (transaction, configuration) in
+            TransactionConfirmationCoordinator.promise(
+                navigationController,
+                session: configurator.session,
+                coordinator: self,
+                transaction: transaction,
+                configuration: configuration,
+                analytics: analytics,
+                domainResolutionService: domainResolutionService,
+                source: .swapApproval,
+                delegate: self,
+                keystore: keystore,
+                assetDefinitionStore: assetDefinitionStore,
+                tokensService: tokenCollection,
+                networkService: networkService)
+
         }.map { confirmationResult in
             switch confirmationResult {
             case .signedTransaction, .sentRawTransaction:
@@ -276,28 +331,19 @@ extension SwapTokensCoordinator: BuyCryptoDelegate {
     }
 }
 
-extension SwapTokensCoordinator {
-    enum functional {}
-}
+public extension UnconfirmedTransaction {
+    static func buildApproveTransaction(contract: AlphaWallet.Address, server: RPCServer, owner: AlphaWallet.Address, spender: AlphaWallet.Address, amount: BigUInt) throws -> (UnconfirmedTransaction, TransactionType.Configuration) {
+        let configuration: TransactionType.Configuration = .approve
+        let transactionType: TransactionType = .prebuilt(server)
+        let data = (try? Erc20Approve(spender: spender, value: amount).encodedABI()) ?? Data()
 
-fileprivate extension SwapTokensCoordinator.functional {
-    //TODO support ERC721 setApprovalForAll()
-    //TODO unused?
-    static func isTransactionErc20Approval(_ transaction: SentTransaction) -> Bool {
-        let data = transaction.original.data
-        if let function = DecodedFunctionCall(data: data) {
-            switch function.type {
-            case .erc1155SafeTransfer, .erc1155SafeBatchTransfer, .erc20Transfer, .nativeCryptoTransfer, .others:
-                return false
-            case .erc20Approve:
-                return true
-            case .erc721ApproveAll:
-                return false
-            }
-        } else if data.isEmpty {
-            return false
-        } else {
-            return false
-        }
+        let transaction = UnconfirmedTransaction(
+            transactionType: transactionType,
+            value: 0,
+            recipient: nil,
+            contract: contract,
+            data: data)
+
+        return (transaction, configuration)
     }
 }

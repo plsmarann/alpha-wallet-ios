@@ -7,6 +7,7 @@
 
 import UIKit
 import AlphaWalletFoundation
+import Combine
 
 protocol AdvancedSettingsViewControllerDelegate: AnyObject {
     func moreSelected(in controller: AdvancedSettingsViewController)
@@ -15,6 +16,7 @@ protocol AdvancedSettingsViewControllerDelegate: AnyObject {
     func changeLanguageSelected(in controller: AdvancedSettingsViewController)
     func changeCurrencySelected(in controller: AdvancedSettingsViewController)
     func analyticsSelected(in controller: AdvancedSettingsViewController)
+    func crashReporterSelected(in controller: AdvancedSettingsViewController)
     func usePrivateNetworkSelected(in controller: AdvancedSettingsViewController)
     func exportJSONKeystoreSelected(in controller: AdvancedSettingsViewController)
     func featuresSelected(in controller: AdvancedSettingsViewController)
@@ -23,18 +25,15 @@ protocol AdvancedSettingsViewControllerDelegate: AnyObject {
 class AdvancedSettingsViewController: UIViewController {
     private let viewModel: AdvancedSettingsViewModel
     private lazy var tableView: UITableView = {
-        let tableView = UITableView(frame: .zero, style: .grouped)
-        tableView.tableFooterView = UIView.tableFooterToRemoveEmptyCellSeparators()
+        let tableView = UITableView.grouped
         tableView.register(SettingTableViewCell.self)
-        tableView.separatorStyle = .singleLine
-        tableView.separatorColor = Configuration.Color.Semantic.tableViewSeparator
-        tableView.backgroundColor = Configuration.Color.Semantic.tableViewBackground
-        tableView.dataSource = self
         tableView.delegate = self
-        tableView.translatesAutoresizingMaskIntoConstraints = false
 
         return tableView
     }()
+    private let willAppear = PassthroughSubject<Void, Never>()
+    private var cancellable = Set<AnyCancellable>()
+    private lazy var dataSource = makeDataSource()
 
     weak var delegate: AdvancedSettingsViewControllerDelegate?
 
@@ -45,18 +44,21 @@ class AdvancedSettingsViewController: UIViewController {
         view.addSubview(tableView)
 
         NSLayoutConstraint.activate([
-            tableView.anchorsConstraint(to: view)
+            tableView.anchorsIgnoringBottomSafeArea(to: view)
         ])
     }
 
     override func viewDidLoad() {
         super.viewDidLoad()
+
+        view.backgroundColor = Configuration.Color.Semantic.defaultViewBackground
+
         bind(viewModel: viewModel)
     }
 
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
-        tableView.reloadData()
+        willAppear.send(())
     }
 
     required init?(coder aDecoder: NSCoder) {
@@ -64,22 +66,25 @@ class AdvancedSettingsViewController: UIViewController {
     }
 
     private func bind(viewModel: AdvancedSettingsViewModel) {
-        title = viewModel.title
-        navigationItem.largeTitleDisplayMode = viewModel.largeTitleDisplayMode
+        let input = AdvancedSettingsViewModelInput(willAppear: willAppear.eraseToAnyPublisher())
+        let output = viewModel.transform(input: input)
+
+        output.viewState
+            .sink { [dataSource, navigationItem] viewState in
+                navigationItem.title = viewState.title
+                dataSource.apply(viewState.snapshot, animatingDifferences: viewState.animatingDifferences)
+            }.store(in: &cancellable)
     }
 }
 
-extension AdvancedSettingsViewController: UITableViewDataSource {
+fileprivate extension AdvancedSettingsViewController {
+    private func makeDataSource() -> AdvancedSettingsViewModel.DataSource {
+        return AdvancedSettingsViewModel.DataSource(tableView: tableView, cellProvider: { tableView, indexPath, viewModel in
+            let cell: SettingTableViewCell = tableView.dequeueReusableCell(for: indexPath)
+            cell.configure(viewModel: viewModel)
 
-    func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
-        return viewModel.numberOfRows
-    }
-
-    func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
-        let cell: SettingTableViewCell = tableView.dequeueReusableCell(for: indexPath)
-        cell.configure(viewModel: viewModel.viewModel(for: indexPath))
-
-        return cell
+            return cell
+        })
     }
 }
 
@@ -119,6 +124,8 @@ extension AdvancedSettingsViewController: UITableViewDelegate {
             delegate?.changeCurrencySelected(in: self)
         case .analytics:
             delegate?.analyticsSelected(in: self)
+        case .crashReporter:
+            delegate?.crashReporterSelected(in: self)
         case .usePrivateNetwork:
             delegate?.usePrivateNetworkSelected(in: self)
         case .exportJSONKeystore:

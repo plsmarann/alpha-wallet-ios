@@ -5,40 +5,95 @@ import BigInt
 import Combine
 import AlphaWalletFoundation
 
-protocol EnterSellTokensCardPriceQuantityViewControllerDelegate: class, CanOpenURL {
+protocol EnterSellTokensCardPriceQuantityViewControllerDelegate: AnyObject, CanOpenURL {
     func didEnterSellTokensPriceQuantity(token: Token, tokenHolder: TokenHolder, ethCost: Ether, in viewController: EnterSellTokensCardPriceQuantityViewController)
     func didPressViewInfo(in viewController: EnterSellTokensCardPriceQuantityViewController)
 }
 
 class EnterSellTokensCardPriceQuantityViewController: UIViewController, TokenVerifiableStatusViewController {
     private let analytics: AnalyticsLogger
-    private let roundedBackground = RoundedBackground()
-    private let scrollView = UIScrollView()
-    private let header = TokensCardViewControllerTitleHeader()
-    private let pricePerTokenLabel = UILabel()
-	private let quantityLabel = UILabel()
-    private let quantityStepper = NumberStepper()
-    private let ethCostLabelLabel = UILabel()
-    private let ethCostLabel = UILabel()
-    private let dollarCostLabelLabel = UILabel()
-    private let dollarCostLabel = PaddedLabel()
+    private let pricePerTokenLabel: UILabel = {
+        let label = UILabel()
+        label.translatesAutoresizingMaskIntoConstraints = false
+        label.textAlignment = .left
+        label.textColor = Configuration.Color.Semantic.defaultForegroundText
+        label.font = Fonts.regular(size: 10)
+
+        return label
+    }()
+    private let quantityLabel: UILabel = {
+        let label = UILabel()
+        label.translatesAutoresizingMaskIntoConstraints = false
+        label.textAlignment = .left
+        label.textColor = Configuration.Color.Semantic.defaultForegroundText
+        label.font = Fonts.regular(size: 10)
+
+        return label
+    }()
+    private let quantityStepper: NumberStepper = {
+        let quantityStepper = NumberStepper()
+        quantityStepper.translatesAutoresizingMaskIntoConstraints = false
+        quantityStepper.minimumValue = 1
+        quantityStepper.value = 1
+
+        return quantityStepper
+    }()
+    private let ethCostLabelLabel: UILabel = {
+        let label = UILabel()
+        label.translatesAutoresizingMaskIntoConstraints = false
+        label.textAlignment = .center
+        label.textColor = Configuration.Color.Semantic.defaultForegroundText
+        label.font = Fonts.semibold(size: 21)
+
+        return label
+    }()
+    private let ethCostLabel: UILabel = {
+        let label = UILabel()
+        label.translatesAutoresizingMaskIntoConstraints = false
+        label.textAlignment = .center
+        label.textColor = Configuration.Color.Semantic.defaultForegroundText
+        label.font = Fonts.semibold(size: 21)
+
+        return label
+    }()
+    private let dollarCostLabelLabel: UILabel = {
+        let label = UILabel()
+        label.translatesAutoresizingMaskIntoConstraints = false
+        label.textAlignment = .center
+        label.textColor = Configuration.Color.Semantic.defaultForegroundText
+        label.font = Fonts.regular(size: 10)
+
+        return label
+    }()
+    private let dollarCostLabel: PaddedLabel = {
+        let label = PaddedLabel()
+        label.translatesAutoresizingMaskIntoConstraints = false
+        label.textAlignment = .center
+        label.textColor = Configuration.Color.Semantic.alternativeText
+        label.layer.masksToBounds = true
+        label.font = Fonts.semibold(size: 21)
+
+        return label
+    }()
+
     private let tokenRowView: TokenRowView & UIView
     private let buttonsBar = HorizontalButtonsBar(configuration: .primary(buttons: 1))
-    private var viewModel: EnterSellTokensCardPriceQuantityViewControllerViewModel
+    private var viewModel: EnterSellTokensCardPriceQuantityViewModel
     private var totalEthCost: Ether {
-        if let ethCostPerToken = Ether(string: pricePerTokenField.ethCost) {
-            let quantity = Int(quantityStepper.value)
-            return ethCostPerToken * quantity
-        } else {
+        switch pricePerTokenField.cryptoValue {
+        case .notSet:
             return .zero
+        case .allFunds(let amount):
+            return .init(bigInt: Decimal(amount).toBigInt(decimals: server.decimals) ?? .zero)
+        case .amount(let amount):
+            return .init(bigInt: Decimal(amount).toBigInt(decimals: server.decimals) ?? .zero)
         }
     }
 
     private var totalDollarCost: String {
-        if let dollarCostPerToken = pricePerTokenField.dollarCost {
-            let quantity = NSDecimalNumber(value: quantityStepper.value)
-            let value = dollarCostPerToken.multiplying(by: quantity)
-            return StringFormatter().currency(with: value, and: "USD")
+        if let dollarCostPerToken = pricePerTokenField.fiatValue {
+            let quantity = Double(quantityStepper.value)
+            return StringFormatter().currency(with: dollarCostPerToken * quantity, currency: currencyService.currency)
         } else {
             return ""
         }
@@ -51,22 +106,37 @@ class EnterSellTokensCardPriceQuantityViewController: UIViewController, TokenVer
         return viewModel.token.server
     }
     let assetDefinitionStore: AssetDefinitionStore
-    lazy var pricePerTokenField = AmountTextField(tokenObject: viewModel.ethToken)
+    lazy var pricePerTokenField: AmountTextField = {
+        let textField = AmountTextField(token: viewModel.ethToken)
+        textField.selectCurrencyButton.hasToken = true
+        textField.isAlternativeAmountEnabled = false
+        textField.isAllFundsEnabled = false
+
+        return textField
+    }()
     let paymentFlow: PaymentFlow
     weak var delegate: EnterSellTokensCardPriceQuantityViewControllerDelegate?
     private let walletSession: WalletSession
     private var cancelable = Set<AnyCancellable>()
     private let service: TokenViewModelState
-// swiftlint:disable function_body_length
-    init(
-            analytics: AnalyticsLogger,
-            paymentFlow: PaymentFlow,
-            viewModel: EnterSellTokensCardPriceQuantityViewControllerViewModel,
-            assetDefinitionStore: AssetDefinitionStore,
-            walletSession: WalletSession,
-            keystore: Keystore,
-            service: TokenViewModelState
-    ) {
+    private let containerView: ScrollableStackView = {
+        let containerView = ScrollableStackView()
+        containerView.stackView.axis = .vertical
+        containerView.stackView.alignment = .center
+
+        return containerView
+    }()
+    private let currencyService: CurrencyService
+
+    init(analytics: AnalyticsLogger,
+         paymentFlow: PaymentFlow,
+         viewModel: EnterSellTokensCardPriceQuantityViewModel,
+         assetDefinitionStore: AssetDefinitionStore,
+         walletSession: WalletSession,
+         keystore: Keystore,
+         service: TokenViewModelState,
+         currencyService: CurrencyService) {
+        self.currencyService = currencyService
         self.service = service
         self.analytics = analytics
         self.paymentFlow = paymentFlow
@@ -86,42 +156,13 @@ class EnterSellTokensCardPriceQuantityViewController: UIViewController, TokenVer
 
         updateNavigationRightBarButtons(withTokenScriptFileStatus: nil)
 
-        roundedBackground.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(roundedBackground)
-
-        scrollView.translatesAutoresizingMaskIntoConstraints = false
-        roundedBackground.addSubview(scrollView)
-
+        view.addSubview(containerView)
         tokenRowView.translatesAutoresizingMaskIntoConstraints = false
-        scrollView.addSubview(tokenRowView)
-
-        pricePerTokenLabel.translatesAutoresizingMaskIntoConstraints = false
-        quantityLabel.translatesAutoresizingMaskIntoConstraints = false
-        ethCostLabelLabel.translatesAutoresizingMaskIntoConstraints = false
-        dollarCostLabelLabel.translatesAutoresizingMaskIntoConstraints = false
-        dollarCostLabel.translatesAutoresizingMaskIntoConstraints = false
-        pricePerTokenField.translatesAutoresizingMaskIntoConstraints = false
-        pricePerTokenField.selectCurrencyButton.hasToken = true
-
-        let etherToken: Token = MultipleChainsTokensDataStore.functional.etherToken(forServer: walletSession.server)
-        service.tokenViewModelPublisher(for: etherToken)
-            .map { $0?.balance.ticker.flatMap { NSDecimalNumber(value: $0.price_usd) } }
-            .sink { [weak pricePerTokenField] value in
-                pricePerTokenField?.cryptoToDollarRate = value
-            }.store(in: &cancelable)
-
-        pricePerTokenField.delegate = self
-        ethCostLabel.translatesAutoresizingMaskIntoConstraints = false
-        quantityStepper.translatesAutoresizingMaskIntoConstraints = false
-        quantityStepper.minimumValue = 1
-        quantityStepper.value = 1
-        quantityStepper.addTarget(self, action: #selector(quantityChanged), for: .valueChanged)
 
         let col0 = [
             pricePerTokenLabel,
             .spacer(height: 4),
-            pricePerTokenField,
-            pricePerTokenField.alternativeAmountLabel,
+            pricePerTokenField.defaultLayout(),
         ].asStackView(axis: .vertical)
         col0.translatesAutoresizingMaskIntoConstraints = false
 
@@ -136,20 +177,16 @@ class EnterSellTokensCardPriceQuantityViewController: UIViewController, TokenVer
         ].asStackView(axis: .vertical)
         col1.translatesAutoresizingMaskIntoConstraints = false
 
-        let choicesStackView = [col0, .spacerWidth(10), col1].asStackView()
-        choicesStackView.translatesAutoresizingMaskIntoConstraints = false
+        let separator1 = UIView.separator()
+        let separator2 = UIView.separator()
 
-        let separator1 = UIView()
-        separator1.backgroundColor = UIColor(red: 230, green: 230, blue: 230)
-
-        let separator2 = UIView()
-        separator2.backgroundColor = UIColor(red: 230, green: 230, blue: 230)
-
-        let stackView = [
-            header,
+        containerView.stackView.addArrangedSubviews([
+            .spacer(height: 18),
             tokenRowView,
-            .spacer(height: 20),
-            choicesStackView,
+            .spacer(height: 18),
+            col0,
+            .spacerWidth(10),
+            col1,
             .spacer(height: 18),
             ethCostLabelLabel,
             .spacer(height: 10),
@@ -162,70 +199,68 @@ class EnterSellTokensCardPriceQuantityViewController: UIViewController, TokenVer
             dollarCostLabelLabel,
             .spacer(height: 10),
             dollarCostLabel,
-        ].asStackView(axis: .vertical, alignment: .center)
-        stackView.translatesAutoresizingMaskIntoConstraints = false
-        scrollView.addSubview(stackView)
+        ])
 
-        let footerBar = UIView()
-        footerBar.translatesAutoresizingMaskIntoConstraints = false
-        footerBar.backgroundColor = .clear
-        roundedBackground.addSubview(footerBar)
+        let footerBar = ButtonsBarBackgroundView(buttonsBar: buttonsBar, separatorHeight: 0.0)
+        view.addSubview(containerView)
+        view.addSubview(footerBar)
 
-        footerBar.addSubview(buttonsBar)
+        let xOffset: CGFloat = 16
 
         NSLayoutConstraint.activate([
-			header.heightAnchor.constraint(equalToConstant: 90),
-
-			quantityStepper.heightAnchor.constraint(equalToConstant: 50),
-
-            sameHeightAsPricePerTokenAlternativeAmountLabelPlaceholder.heightAnchor.constraint(equalTo: pricePerTokenField.alternativeAmountLabel.heightAnchor),
+            quantityStepper.heightAnchor.constraint(equalToConstant: 50),
 
             tokenRowView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             tokenRowView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
 
-            separator1.heightAnchor.constraint(equalToConstant: 1),
             separator1.leadingAnchor.constraint(equalTo: tokenRowView.background.leadingAnchor),
             separator1.trailingAnchor.constraint(equalTo: tokenRowView.background.trailingAnchor),
 
-            separator2.heightAnchor.constraint(equalToConstant: 1),
             separator2.leadingAnchor.constraint(equalTo: tokenRowView.background.leadingAnchor),
             separator2.trailingAnchor.constraint(equalTo: tokenRowView.background.trailingAnchor),
 
-            pricePerTokenField.leadingAnchor.constraint(equalTo: tokenRowView.background.leadingAnchor),
-            quantityStepper.rightAnchor.constraint(equalTo: tokenRowView.background.rightAnchor),
+            quantityStepper.widthAnchor.constraint(equalTo: containerView.widthAnchor),
+            pricePerTokenField.widthAnchor.constraint(equalTo: containerView.widthAnchor),
 
-            stackView.leadingAnchor.constraint(equalTo: scrollView.leadingAnchor),
-            stackView.trailingAnchor.constraint(equalTo: scrollView.trailingAnchor),
-            stackView.topAnchor.constraint(equalTo: scrollView.topAnchor),
-            stackView.bottomAnchor.constraint(equalTo: scrollView.bottomAnchor),
+            containerView.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor, constant: xOffset),
+            containerView.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor, constant: -xOffset),
+            containerView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
+            containerView.bottomAnchor.constraint(equalTo: footerBar.topAnchor),
 
-            buttonsBar.leadingAnchor.constraint(equalTo: footerBar.leadingAnchor),
-            buttonsBar.trailingAnchor.constraint(equalTo: footerBar.trailingAnchor),
-            buttonsBar.topAnchor.constraint(equalTo: footerBar.topAnchor),
-            buttonsBar.heightAnchor.constraint(equalToConstant: HorizontalButtonsBar.buttonsHeight),
-
-            footerBar.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            footerBar.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            footerBar.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -HorizontalButtonsBar.buttonsHeight - HorizontalButtonsBar.marginAtBottomScreen),
-            footerBar.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-
-            scrollView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            scrollView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            scrollView.topAnchor.constraint(equalTo: view.topAnchor),
-            scrollView.bottomAnchor.constraint(equalTo: footerBar.topAnchor),
-
-            pricePerTokenField.widthAnchor.constraint(equalTo: quantityStepper.widthAnchor),
-            pricePerTokenField.heightAnchor.constraint(equalTo: quantityStepper.heightAnchor),
-        ] + roundedBackground.createConstraintsWithContainer(view: view))
+            footerBar.anchorsConstraint(to: view),
+        ])
     }
-// swiftlint:enable function_body_length
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+
+        service.tokenViewModelPublisher(for: viewModel.ethToken)
+            .map { [currencyService] tokenViewModel -> AmountTextFieldViewModel.CurrencyRate in
+                guard let ticker = tokenViewModel?.balance.ticker else { return .init(value: nil, currency: currencyService.currency) }
+
+                return AmountTextFieldViewModel.CurrencyRate(value: ticker.price_usd, currency: ticker.currency)
+            }.sink { [weak pricePerTokenField] value in
+                pricePerTokenField?.viewModel.cryptoToFiatRate.value = value
+            }.store(in: &cancelable)
+
+        pricePerTokenField.delegate = self
+
+        quantityStepper.addTarget(self, action: #selector(quantityChanged), for: .valueChanged)
+
+        view.backgroundColor = Configuration.Color.Semantic.defaultViewBackground
+
+        buttonsBar.configure()
+
+        let nextButton = buttonsBar.buttons[0]
+        nextButton.setTitle(R.string.localizable.aWalletNextButtonTitle(), for: .normal)
+        nextButton.addTarget(self, action: #selector(nextButtonTapped), for: .touchUpInside)
+    }
 
     required init?(coder aDecoder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
     }
 
-    @objc
-    func nextButtonTapped() {
+    @objc private func nextButtonTapped() {
         guard quantityStepper.value > 0 else {
             let tokenTypeName = XMLHandler(token: viewModel.token, assetDefinitionStore: assetDefinitionStore).getNameInPluralForm()
             UIAlertController.alert(title: "",
@@ -239,10 +274,13 @@ class EnterSellTokensCardPriceQuantityViewController: UIViewController, TokenVer
 
         let noPrice: Bool
         //We must use `Ether(string:)` because the input string might not always use a decimal point as the decimal separator. It might use a decimal comma. E.g. "1.2" or "1,2" depending on locale
-        if let price = Double(Ether(string: pricePerTokenField.ethCost)?.unformattedDescription ?? "") {
-            noPrice = price.isZero
-        } else {
+        switch pricePerTokenField.cryptoValue {
+        case .notSet:
             noPrice = true
+        case .allFunds(let amount):
+            noPrice = amount == .zero
+        case .amount(let amount):
+            noPrice = amount == .zero
         }
 
         guard !noPrice else {
@@ -269,61 +307,27 @@ class EnterSellTokensCardPriceQuantityViewController: UIViewController, TokenVer
         configure(viewModel: viewModel)
     }
 
-    func configure(viewModel newViewModel: EnterSellTokensCardPriceQuantityViewControllerViewModel? = nil) {
+    func configure(viewModel newViewModel: EnterSellTokensCardPriceQuantityViewModel? = nil) {
         if let newViewModel = newViewModel {
             viewModel = newViewModel
         }
         updateNavigationRightBarButtons(withTokenScriptFileStatus: tokenScriptFileStatus)
 
-        view.backgroundColor = viewModel.backgroundColor
-
-        header.configure(title: viewModel.headerTitle)
+        navigationItem.title = viewModel.headerTitle
 
         tokenRowView.configure(tokenHolder: viewModel.tokenHolder)
-
-        pricePerTokenLabel.textAlignment = .center
-        pricePerTokenLabel.textColor = viewModel.choiceLabelColor
-        pricePerTokenLabel.font = viewModel.choiceLabelFont
         pricePerTokenLabel.text = viewModel.pricePerTokenLabelText
-
-        ethCostLabelLabel.textAlignment = .center
-        ethCostLabelLabel.textColor = viewModel.ethCostLabelLabelColor
-        ethCostLabelLabel.font = viewModel.ethCostLabelLabelFont
         ethCostLabelLabel.text = viewModel.ethCostLabelLabelText
-
-        ethCostLabel.textAlignment = .center
-        ethCostLabel.textColor = viewModel.ethCostLabelColor
-        ethCostLabel.font = viewModel.ethCostLabelFont
         ethCostLabel.text = viewModel.ethCostLabelText
-
-        dollarCostLabelLabel.textAlignment = .center
-        dollarCostLabelLabel.textColor = viewModel.dollarCostLabelLabelColor
-        dollarCostLabelLabel.font = viewModel.dollarCostLabelLabelFont
         dollarCostLabelLabel.text = R.string.localizable.aWalletTokenSellDollarCostLabelTitle()
         dollarCostLabelLabel.isHidden = viewModel.hideDollarCost
-
-        dollarCostLabel.textAlignment = .center
-        dollarCostLabel.textColor = viewModel.dollarCostLabelColor
-        dollarCostLabel.font = viewModel.dollarCostLabelFont
         dollarCostLabel.text = viewModel.dollarCostLabelText
-        dollarCostLabel.backgroundColor = viewModel.dollarCostLabelBackgroundColor
-        dollarCostLabel.layer.masksToBounds = true
         dollarCostLabel.isHidden = viewModel.hideDollarCost
-
-        quantityLabel.textAlignment = .center
-        quantityLabel.textColor = viewModel.choiceLabelColor
-        quantityLabel.font = viewModel.choiceLabelFont
         quantityLabel.text = viewModel.quantityLabelText
 
         quantityStepper.maximumValue = viewModel.maxValue
 
         tokenRowView.stateLabel.isHidden = true
-
-        buttonsBar.configure()
-
-        let nextButton = buttonsBar.buttons[0]
-        nextButton.setTitle(R.string.localizable.aWalletNextButtonTitle(), for: .normal)
-        nextButton.addTarget(self, action: #selector(nextButtonTapped), for: .touchUpInside)
     }
 
     private func getTokenHolderFromQuantity() -> TokenHolder {
@@ -370,7 +374,7 @@ extension EnterSellTokensCardPriceQuantityViewController: AmountTextFieldDelegat
 class PaddedLabel: UILabel {
     override init(frame: CGRect) {
         super.init(frame: frame)
-        cornerRadius = Metrics.CornerRadius.textbox
+        cornerRadius = DataEntry.Metric.CornerRadius.textbox
     }
 
     required init?(coder aDecoder: NSCoder) {

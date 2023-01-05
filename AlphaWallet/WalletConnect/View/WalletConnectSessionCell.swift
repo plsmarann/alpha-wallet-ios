@@ -30,12 +30,12 @@ class WalletConnectSessionCell: UITableViewCell {
     private let nameLabel = UILabel()
     private let urlLabel = UILabel()
     private let iconImageView: RoundedImageView = {
-        let imageView = RoundedImageView(size: .init(width: 40, height: 40))
+        let imageView = RoundedImageView(size: DataEntry.Metric.Cell.imageSize)
         return imageView
     }()
 
     private let serverIconImageView: RoundedImageView = {
-        let imageView = RoundedImageView(size: .init(width: Metrics.tokenChainOverlayDimension, height: Metrics.tokenChainOverlayDimension))
+        let imageView = RoundedImageView(size: DataEntry.Metric.ChainOverlay.size)
         return imageView
     }()
 
@@ -46,12 +46,7 @@ class WalletConnectSessionCell: UITableViewCell {
             nameLabel,
             urlLabel
         ].asStackView(axis: .vertical)
-        let stackView = [
-            .spacerWidth(Table.Metric.plainLeftMargin),
-            iconImageView,
-            .spacerWidth(12),
-            cell0
-        ].asStackView(axis: .horizontal, alignment: .center)
+        let stackView = [.spacerWidth(5), iconImageView, .spacerWidth(12), cell0 ].asStackView(axis: .horizontal, alignment: .center)
         stackView.translatesAutoresizingMaskIntoConstraints = false
         contentView.addSubview(stackView)
         contentView.addSubview(serverIconImageView)
@@ -60,7 +55,7 @@ class WalletConnectSessionCell: UITableViewCell {
             serverIconImageView.centerXAnchor.constraint(equalTo: iconImageView.leadingAnchor, constant: 8),
             serverIconImageView.centerYAnchor.constraint(equalTo: iconImageView.bottomAnchor, constant: -8),
             //NOTE: using edge insets to avoid braking constraints
-            stackView.anchorsConstraint(to: contentView, edgeInsets: .init(top: 20, left: StyleLayout.sideMargin, bottom: 20, right: StyleLayout.sideMargin))
+            stackView.anchorsConstraint(to: contentView, edgeInsets: DataEntry.Metric.Cell.insets)
         ])
     }
 

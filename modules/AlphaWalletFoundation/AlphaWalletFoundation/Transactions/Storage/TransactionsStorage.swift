@@ -6,7 +6,7 @@ import Combine
 
 open class TransactionDataStore {
     //TODO if we move this to instance-side, we have to be careful it's the same instance we are accessing, otherwise we wouldn't find the pending transaction information when we need it
-    public static var pendingTransactionsInformation: [String: (server: RPCServer, data: Data, transactionType: TransactionType, gasPrice: BigInt)] = .init()
+    public static var pendingTransactionsInformation: [String: (server: RPCServer, data: Data, transactionType: TransactionType, gasPrice: BigUInt)] = .init()
 
     private let store: RealmStore
 
@@ -30,27 +30,11 @@ open class TransactionDataStore {
         return results
     }
 
-    public func transactionsChangeset(forFilter filter: TransactionsFilterStrategy, servers: [RPCServer]) -> AnyPublisher<ChangeSet<[TransactionInstance]>, Never> {
-        let predicate: NSPredicate
-        switch filter {
-        case .filter(let filter, let tokenObject):
-            predicate = NSCompoundPredicate(andPredicateWithSubpredicates: [
-                TransactionDataStore.functional.nonEmptyIdTransactionPredicate(server: tokenObject.server),
-                filter.predicate
-            ])
-        case .predicate(let p):
-            predicate = NSCompoundPredicate(andPredicateWithSubpredicates: [
-                TransactionDataStore.functional.nonEmptyIdTransactionPredicate(servers: servers),
-                p
-            ])
-        case .all:
-            predicate = TransactionDataStore.functional.nonEmptyIdTransactionPredicate(servers: servers)
-        }
-
+    public func transactionsChangeset(filter: TransactionsFilterStrategy, servers: [RPCServer]) -> AnyPublisher<ChangeSet<[TransactionInstance]>, Never> {
         var publisher: AnyPublisher<ChangeSet<[TransactionInstance]>, Never>!
         store.performSync { realm in
             publisher = realm.objects(Transaction.self)
-                .filter(predicate)
+                .filter(filter.predicate(servers: servers))
                 .sorted(byKeyPath: "date", ascending: false)
                 .changesetPublisher
                 .freeze()
@@ -70,31 +54,42 @@ open class TransactionDataStore {
         return publisher
     }
 
-    public func transactions(forFilter filter: TransactionsFilterStrategy, servers: [RPCServer], oldestBlockNumber: Int? = nil) -> [TransactionInstance] {
-        //NOTE: Allow pending transactions othewise it willn't appear as activity
-        let isPendingTransction = NSPredicate(format: "blockNumber == 0")
-        let oldestBlockNumberPredicate = oldestBlockNumber.flatMap {
-            [
-                NSCompoundPredicate(orPredicateWithSubpredicates: [TransactionDataStore.functional.blockNumberPredicate(blockNumber: $0), isPendingTransction])
-            ]
-        } ?? []
+    public func transactionPublisher(for transactionId: String, server: RPCServer) -> AnyPublisher<TransactionInstance?, DataStoreError> {
+        let publisher: CurrentValueSubject<TransactionInstance?, DataStoreError> = .init(nil)
+        var notificationToken: NotificationToken?
 
-        let predicate: NSPredicate
-        switch filter {
-        case .filter(let filter, let tokenObject):
-            predicate = NSCompoundPredicate(andPredicateWithSubpredicates: [
-                TransactionDataStore.functional.nonEmptyIdTransactionPredicate(server: tokenObject.server),
-                filter.predicate
-            ] + oldestBlockNumberPredicate)
-        case .all:
-            predicate = NSCompoundPredicate(andPredicateWithSubpredicates: [
-                TransactionDataStore.functional.nonEmptyIdTransactionPredicate(servers: servers)
-            ] + oldestBlockNumberPredicate)
-        case .predicate(let p):
-            predicate = p
+        store.performSync { realm in
+            let primaryKey = Transaction.generatePrimaryKey(for: transactionId, server: server)
+            guard let transaction = realm.object(ofType: Transaction.self, forPrimaryKey: primaryKey) else {
+                publisher.send(completion: .failure(DataStoreError.objectNotFound))
+                return
+            }
+
+            publisher.send(TransactionInstance(transaction: transaction))
+
+            notificationToken = transaction.observe { change in
+                switch change {
+                case .change(let object, _):
+                    guard let token = object as? Transaction else { return }
+                    publisher.send(TransactionInstance(transaction: transaction))
+                case .deleted:
+                    publisher.send(completion: .failure(.objectDeleted))
+                case .error(let e):
+                    publisher.send(completion: .failure(.general(error: e)))
+                }
+            }
         }
 
+        return publisher
+            .handleEvents(receiveCancel: {
+                notificationToken?.invalidate()
+            }).eraseToAnyPublisher()
+    }
+
+    public func transactions(forFilter filter: TransactionsFilterStrategy, servers: [RPCServer], oldestBlockNumber: Int? = nil) -> [TransactionInstance] {
+        let predicate: NSPredicate = filter.predicate(servers: servers, oldestBlockNumber: oldestBlockNumber)
         var transactions: [TransactionInstance] = []
+
         store.performSync { realm in
             transactions = realm.objects(Transaction.self)
                 .filter(predicate)
@@ -163,24 +158,6 @@ open class TransactionDataStore {
         return transaction
     }
 
-    public func firstTransactions(forServer server: RPCServer) -> TransactionInstance? {
-        let predicate = TransactionDataStore
-            .functional
-            .nonEmptyIdTransactionPredicate(server: server)
-
-        var transaction: TransactionInstance?
-
-        store.performSync { realm in
-            transaction = realm.objects(Transaction.self)
-                .filter(predicate)
-                .sorted(byKeyPath: "date", ascending: false)
-                .map { TransactionInstance(transaction: $0) }
-                .first
-        }
-
-        return transaction
-    }
-
     public func transaction(withTransactionId transactionId: String, forServer server: RPCServer) -> TransactionInstance? {
         let predicate = TransactionDataStore
             .functional
@@ -201,6 +178,8 @@ open class TransactionDataStore {
 
         store.performSync { realm in
             let objects = transactions.compactMap { realm.object(ofType: Transaction.self, forPrimaryKey: $0.primaryKey) }
+            guard !objects.isEmpty else { return }
+
             try? realm.safeWrite {
                 realm.delete(objects)
             }
@@ -229,19 +208,24 @@ open class TransactionDataStore {
         var transactionsToReturn: [TransactionInstance] = []
 
         store.performSync { realm in
-            transactionsToReturn = self.filterTransactionsToNotOverrideERC20Transactions(transactions, realm: realm)
+            transactionsToReturn = self.filterTransactionsToNotOverrideErc20Transactions(transactions, realm: realm)
             guard !transactionsToReturn.isEmpty else { return }
 
             let transactionsToCommit = transactionsToReturn.map { Transaction(object: $0) }
             try? realm.safeWrite {
-                realm.add(transactionsToCommit, update: .all)
+                for each in transactionsToCommit {
+                    if let tx = realm.object(ofType: Transaction.self, forPrimaryKey: each.primaryKey) {
+                        realm.delete(tx.localizedOperations)
+                    }
+                    realm.add(each, update: .all)
+                }
             }
         }
         return transactionsToReturn
     }
 
     //We pull transactions data from the normal transactions API as well as ERC20 event log. For the same transaction, we only want data from the latter. Otherwise the UI will show the cell display switching between data from the 2 source as we fetch (or re-fetch)
-    private func filterTransactionsToNotOverrideERC20Transactions(_ transactions: [TransactionInstance], realm: Realm) -> [TransactionInstance] {
+    private func filterTransactionsToNotOverrideErc20Transactions(_ transactions: [TransactionInstance], realm: Realm) -> [TransactionInstance] {
         return transactions.filter { each in
             if each.isERC20Interaction {
                 return true
@@ -258,25 +242,19 @@ open class TransactionDataStore {
     @discardableResult public func add(transactions: [TransactionInstance]) -> [TransactionInstance] {
         guard !transactions.isEmpty else { return [] }
 
-        let transactionsToAdd = transactions.map { Transaction(object: $0) }
+        let transactionsToCommit = transactions.map { Transaction(object: $0) }
         store.performSync { realm in
             try? realm.safeWrite {
-                realm.add(transactionsToAdd, update: .all)
+                for each in transactionsToCommit {
+                    if let tx = realm.object(ofType: Transaction.self, forPrimaryKey: each.primaryKey) {
+                        realm.delete(tx.localizedOperations)
+                    }
+                    realm.add(each, update: .all)
+                }
             }
         }
 
         return transactions
-    }
-
-    public func delete(_ transactions: [TransactionInstance]) {
-        guard !transactions.isEmpty else { return }
-
-        store.performSync { realm in
-            try? realm.safeWrite {
-                let transactionsToDelete = transactions.compactMap { realm.object(ofType: Transaction.self, forPrimaryKey: $0.primaryKey) }
-                realm.delete(transactionsToDelete)
-            }
-        }
     }
 
     public func removeTransactions(for states: [TransactionState], servers: [RPCServer]) {

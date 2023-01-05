@@ -6,47 +6,69 @@ import Foundation
 import UIKit
 import StatefulViewController
 import AlphaWalletFoundation
+import Combine
 
 protocol BrowserHistoryViewControllerDelegate: AnyObject {
-    func didSelect(history: History, inViewController controller: BrowserHistoryViewController)
-    func clearHistory(inViewController viewController: BrowserHistoryViewController)
+    func didSelect(history: BrowserHistoryRecord, in viewController: BrowserHistoryViewController)
     func dismissKeyboard(inViewController viewController: BrowserHistoryViewController)
 }
 
 final class BrowserHistoryViewController: UIViewController {
-    private let store: HistoryStore
-    private let tableView = UITableView(frame: .zero, style: .grouped)
-    private var viewModel: HistoriesViewModel
-    lazy private var headerView = BrowserHistoryViewControllerHeaderView()
-
-    weak var delegate: BrowserHistoryViewControllerDelegate?
-
-    init(store: HistoryStore) {
-        self.store = store
-        self.viewModel = HistoriesViewModel(store: store)
-
-        super.init(nibName: nil, bundle: nil)
-
-        tableView.translatesAutoresizingMaskIntoConstraints = false
+    private lazy var tableView: UITableView = {
+        let tableView = UITableView.grouped
         tableView.delegate = self
-        tableView.dataSource = self
         tableView.tableHeaderView = headerView
         tableView.separatorStyle = .none
         tableView.register(BrowserHistoryCell.self)
+
+        return tableView
+    }()
+    private let viewModel: BrowserHistoryViewModel
+    private lazy var headerView = BrowserHistoryHeaderView()
+    private lazy var dataSource = makeDataSource()
+    private var cancelable = Set<AnyCancellable>()
+    private let deleteRecord = PassthroughSubject<BrowserHistoryViewModel.DeleteRecordAction, Never>()
+
+    weak var delegate: BrowserHistoryViewControllerDelegate?
+
+    init(viewModel: BrowserHistoryViewModel) {
+        self.viewModel = viewModel
+
+        super.init(nibName: nil, bundle: nil)
+
         view.addSubview(tableView)
         emptyView = {
             let emptyView = DappsHomeEmptyView()
-            let headerViewModel = DappsHomeHeaderViewViewModel(title: R.string.localizable.dappBrowserBrowserHistory())
+            let headerViewModel = BrowserHomeHeaderViewModel(title: R.string.localizable.dappBrowserBrowserHistory())
             emptyView.configure(viewModel: .init(headerViewViewModel: headerViewModel, title: R.string.localizable.browserNoHistoryLabelTitle()))
             return emptyView
         }()
 
         NSLayoutConstraint.activate([
-            tableView.anchorsConstraint(to: view),
+            tableView.anchorsIgnoringBottomSafeArea(to: view),
         ])
 
         NotificationCenter.default.addObserver(self, selector: #selector(keyboardWillShow), name: UIResponder.keyboardWillShowNotification, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(keyboardWillHide), name: UIResponder.keyboardWillHideNotification, object: nil)
+    }
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+
+        view.backgroundColor = Configuration.Color.Semantic.defaultViewBackground
+        buildTableViewHeader()
+        bind(viewModel: viewModel)
+    }
+
+    private func bind(viewModel: BrowserHistoryViewModel) {
+        let input = BrowserHistoryViewModelInput(deleteRecord: deleteRecord.eraseToAnyPublisher())
+        let output = viewModel.transform(input: input)
+
+        output.viewState
+            .sink { [dataSource, weak self] viewState in
+                dataSource.apply(viewState.snapshot, animatingDifferences: viewState.animatingDifferences)
+                self?.endLoading()
+            }.store(in: &cancelable)
     }
 
     required init?(coder aDecoder: NSCoder) {
@@ -65,27 +87,8 @@ final class BrowserHistoryViewController: UIViewController {
         }
     }
 
-    override func viewWillAppear(_ animated: Bool) {
-        super.viewWillAppear(animated)
-        setupInitialViewState()
-
-        fetch()
-    }
-
-    func fetch() {
-        tableView.reloadData()
-    }
-
-    func configure(viewModel: HistoriesViewModel) {
-        tableView.backgroundColor = Colors.appWhite
-
-        resizeTableViewHeader()
-        tableView.reloadData()
-        endLoading()
-    }
-
-    private func resizeTableViewHeader() {
-        let headerViewModel = DappsHomeHeaderViewViewModel(title: R.string.localizable.dappBrowserBrowserHistory())
+    private func buildTableViewHeader() {
+        let headerViewModel = BrowserHomeHeaderViewModel(title: R.string.localizable.dappBrowserBrowserHistory())
         headerView.delegate = self
         headerView.configure(viewModel: headerViewModel)
         let fittingSize = headerView.systemLayoutSizeFitting(.init(width: tableView.frame.size.width, height: 1000))
@@ -96,11 +99,11 @@ final class BrowserHistoryViewController: UIViewController {
 
 extension BrowserHistoryViewController: StatefulViewController {
     func hasContent() -> Bool {
-        return viewModel.hasContent
+        return dataSource.snapshot().numberOfItems > 0
     }
 }
 
-extension BrowserHistoryViewController: UITableViewDataSource {
+extension BrowserHistoryViewController: UITableViewDelegate {
     //Hide the header
     func tableView(_ tableView: UITableView, heightForHeaderInSection section: Int) -> CGFloat {
         .leastNormalMagnitude
@@ -116,64 +119,68 @@ extension BrowserHistoryViewController: UITableViewDataSource {
     func tableView(_ tableView: UITableView, viewForFooterInSection section: Int) -> UIView? {
         nil
     }
-    func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
-        return viewModel.numberOfRows
-    }
 
-    func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
-        let cell: BrowserHistoryCell = tableView.dequeueReusableCell(for: indexPath)
-        cell.configure(viewModel: .init(history: viewModel.item(for: indexPath)))
-        return cell
-    }
-}
-
-extension BrowserHistoryViewController: UITableViewDelegate {
     func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         tableView.deselectRow(at: indexPath, animated: true)
         delegate?.dismissKeyboard(inViewController: self)
-        let history = viewModel.item(for: indexPath)
-        delegate?.didSelect(history: history, inViewController: self)
+
+        delegate?.didSelect(history: dataSource.item(at: indexPath).history, in: self)
     }
 
-    func tableView(_ tableView: UITableView, canEditRowAt indexPath: IndexPath) -> Bool {
-        return true
-    }
-
-    func tableView(_ tableView: UITableView, commit editingStyle: UITableViewCell.EditingStyle, forRowAt indexPath: IndexPath) {
-        if editingStyle == .delete {
-            let history = viewModel.item(for: indexPath)
-            confirm(
-                    title: R.string.localizable.browserHistoryConfirmDeleteTitle(),
-                    message: history.url,
-                    okTitle: R.string.localizable.removeButtonTitle(),
-                    okStyle: .destructive
-            ) { [weak self] result in
+    func tableView(_ tableView: UITableView, trailingSwipeActionsConfigurationForRowAt indexPath: IndexPath) -> UISwipeActionsConfiguration? {
+        let title = R.string.localizable.removeButtonTitle()
+        let deleteAction = UIContextualAction(style: .destructive, title: title) { [dataSource, deleteRecord] _, _, completion in
+            let history = dataSource.item(at: indexPath).history
+            self.confirm(title: R.string.localizable.browserHistoryConfirmDeleteTitle(), message: history.url.absoluteString, okTitle: R.string.localizable.removeButtonTitle(), okStyle: .destructive) { result in
                 switch result {
                 case .success:
-                    self?.store.delete(histories: [history])
-                    //TODO improve animation
-                    self?.tableView.reloadData()
-                    self?.endLoading()
-                case .failure: break
+                    deleteRecord.send(.record(history))
+
+                    var snapshot = dataSource.snapshot()
+                    let item = dataSource.item(at: indexPath)
+                    snapshot.deleteItems([item])
+
+                    dataSource.apply(snapshot, animatingDifferences: true)
+
+                    completion(true)
+                case .failure:
+                    completion(false)
                 }
             }
         }
+
+        deleteAction.backgroundColor = Colors.appRed
+        deleteAction.image = R.image.hideToken()
+
+        let configuration = UISwipeActionsConfiguration(actions: [deleteAction])
+        configuration.performsFirstActionWithFullSwipe = true
+
+        return configuration
     }
 }
 
-extension BrowserHistoryViewController: BrowserHistoryViewControllerHeaderViewDelegate {
-    func didTapClearAll(inHeaderView headerView: BrowserHistoryViewControllerHeaderView) {
+extension BrowserHistoryViewController: BrowserHistoryHeaderViewDelegate {
+    func didTapClearAll(in headerView: BrowserHistoryHeaderView) {
         UIAlertController.alert(
                 title: R.string.localizable.dappBrowserClearHistory(),
                 message: R.string.localizable.dappBrowserClearHistoryPrompt(),
                 alertButtonTitles: [R.string.localizable.clearButtonTitle(), R.string.localizable.cancel()],
                 alertButtonStyles: [.destructive, .cancel],
                 viewController: self,
-                completion: { [weak self] buttonIndex in
-                    guard let strongSelf = self else { return }
-                    if buttonIndex == 0 {
-                        strongSelf.delegate?.clearHistory(inViewController: strongSelf)
-                    }
+                completion: { [deleteRecord] buttonIndex in
+                    guard buttonIndex == 0 else { return }
+                    deleteRecord.send(.all)
                 })
+    }
+}
+
+fileprivate extension BrowserHistoryViewController {
+    private func makeDataSource() -> BrowserHistoryViewModel.DataSource {
+        return BrowserHistoryViewModel.DataSource(tableView: tableView, cellProvider: { tableView, indexPath, viewModel in
+            let cell: BrowserHistoryCell = tableView.dequeueReusableCell(for: indexPath)
+            cell.configure(viewModel: viewModel)
+
+            return cell
+        })
     }
 }

@@ -10,7 +10,7 @@ import Combine
 import AlphaWalletFoundation
 
 struct SelectTokenViewModelInput {
-    let appear: AnyPublisher<Void, Never>
+    let willAppear: AnyPublisher<Void, Never>
     let fetch: AnyPublisher<Void, Never>
 }
 
@@ -22,14 +22,12 @@ final class SelectTokenViewModel {
     private let filter: WalletFilter
     private let tokenCollection: TokenCollection
     private var cancelable = Set<AnyCancellable>()
-    private var selectedToken: TokenViewModel?
     private var filteredTokens: [TokenViewModel] = []
     private let tokensFilter: TokensFilter
     private let whenFilterHasChanged: AnyPublisher<Void, Never>
 
     var headerBackgroundColor: UIColor = Configuration.Color.Semantic.tableViewHeaderBackground
     var title: String = R.string.localizable.assetsSelectAssetTitle()
-    var backgroundColor: UIColor = Configuration.Color.Semantic.tableViewBackground
 
     init(tokenCollection: TokenCollection, tokensFilter: TokensFilter, filter: WalletFilter) {
         self.tokenCollection = tokenCollection
@@ -46,7 +44,6 @@ final class SelectTokenViewModel {
 
     func selectTokenViewModel(at indexPath: IndexPath) -> Token? {
         let token = filteredTokens[indexPath.row]
-        selectedToken = token
 
         return tokenCollection.token(for: token.contractAddress, server: token.server)
     }
@@ -54,12 +51,12 @@ final class SelectTokenViewModel {
     func transform(input: SelectTokenViewModelInput) -> SelectTokenViewModelOutput {
         let _loadingState: CurrentValueSubject<LoadingState, Never> = .init(.idle)
 
-        let whenAppearOrFetchOrFilterHasChanged = input.appear.merge(with: input.fetch, whenFilterHasChanged)
+        let whenAppearOrFetchOrFilterHasChanged = input.willAppear.merge(with: input.fetch, whenFilterHasChanged)
             .handleEvents(receiveOutput: { [_loadingState] in
                 _loadingState.send(.beginLoading)
             }).flatMap { [tokenCollection] _ in tokenCollection.tokenViewModels.first() }
 
-        let viewModels = tokenCollection.tokenViewModels.merge(with: whenAppearOrFetchOrFilterHasChanged)
+        let snapshot = tokenCollection.tokenViewModels.merge(with: whenAppearOrFetchOrFilterHasChanged)
             .map { [tokensFilter, filter] tokens -> [TokenViewModel] in
                 let displayedTokens = tokensFilter.filterTokens(tokens: tokens, filter: filter)
                 return tokensFilter.sortDisplayedTokens(tokens: displayedTokens)
@@ -73,40 +70,42 @@ final class SelectTokenViewModel {
                     break
                 }
             }).removeDuplicates()
+            .map { self.buildSnapshot(for: $0) }
             .eraseToAnyPublisher()
 
         let loadingState = _loadingState
             .removeDuplicates()
             .eraseToAnyPublisher()
         
-        let viewState = Publishers.CombineLatest(viewModels, loadingState)
-            .map { SelectTokenViewModel.ViewState(views: $0.0, loadingState: $0.1) }
+        let viewState = Publishers.CombineLatest(snapshot, loadingState)
+            .map { SelectTokenViewModel.ViewState(snapshot: $0.0, loadingState: $0.1, title: self.title) }
             .eraseToAnyPublisher()
 
         return .init(viewState: viewState)
     }
 
+    private func buildSnapshot(for viewModels: [SelectTokenViewModel.ViewModelType]) -> SelectTokenViewModel.Snapshot {
+        var snapshot = NSDiffableDataSourceSnapshot<SelectTokenViewModel.Section, SelectTokenViewModel.ViewModelType>()
+        snapshot.appendSections([.tokens])
+        snapshot.appendItems(viewModels, toSection: .tokens)
+
+        return snapshot
+    }
+
     private func buildViewModels(for tokens: [TokenViewModel]) -> [SelectTokenViewModel.ViewModelType] {
         return tokens.map { token -> SelectTokenViewModel.ViewModelType in
-            let accessoryType = accessoryType(for: token)
             switch token.type {
             case .nativeCryptocurrency:
-                let viewModel = EthTokenViewCellViewModel(token: token, accessoryType: accessoryType)
+                let viewModel = EthTokenViewCellViewModel(token: token)
                 return .nativeCryptocurrency(viewModel)
             case .erc20:
-                let viewModel = FungibleTokenViewCellViewModel(token: token, accessoryType: accessoryType)
+                let viewModel = FungibleTokenViewCellViewModel(token: token)
                 return .fungible(viewModel)
             case .erc721, .erc721ForTickets, .erc875, .erc1155:
-                let viewModel = NonFungibleTokenViewCellViewModel(token: token, accessoryType: accessoryType)
+                let viewModel = NonFungibleTokenViewCellViewModel(token: token)
                 return .nonFungible(viewModel)
             }
         }
-    }
-
-    private func accessoryType(for token: TokenViewModel) -> UITableViewCell.AccessoryType {
-        guard let selectedToken = selectedToken else { return .none }
-
-        return selectedToken == token ? .checkmark : .none
     }
 }
 
@@ -126,10 +125,12 @@ extension SelectTokenViewModel {
         case beginLoading
         case endLoading
     }
+    typealias Snapshot = NSDiffableDataSourceSnapshot<SelectTokenViewModel.Section, SelectTokenViewModel.ViewModelType>
 
     struct ViewState {
-        let views: [SelectTokenViewModel.ViewModelType]
+        let snapshot: Snapshot
         let loadingState: LoadingState
+        let title: String
     }
 }
 

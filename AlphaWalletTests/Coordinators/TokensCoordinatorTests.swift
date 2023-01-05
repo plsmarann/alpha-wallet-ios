@@ -9,6 +9,15 @@ import AlphaWalletFoundation
 final class FakeSwapTokenService: TokenActionsService {
 }
 
+extension PromptBackupCoordinator {
+    static func make(wallet: Wallet = .make()) -> PromptBackupCoordinator {
+        PromptBackupCoordinator(
+            wallet: wallet,
+            promptBackup: .make(),
+            keystore: FakeEtherKeystore(),
+            analytics: FakeAnalyticsService())
+    }
+}
 class TokensCoordinatorTests: XCTestCase {
 
     func testRootViewController() {
@@ -16,15 +25,18 @@ class TokensCoordinatorTests: XCTestCase {
         sessions[.main] = WalletSession.make()
         let config: Config = .make()
         let tokenActionsService = FakeSwapTokenService()
+        let wallet: Wallet = .make()
         let dep = WalletDataProcessingPipeline.make(wallet: .make(), server: .main)
-
+        let walletAddressesStore = fakeWalletAddressStore(wallets: [wallet], recentlyUsedWallet: .make())
+        let walletBalanceService = FakeMultiWalletBalanceService(wallet: wallet, servers: [.main])
+        
         let coordinator = TokensCoordinator(
             navigationController: FakeNavigationController(),
             sessions: sessions,
             keystore: FakeEtherKeystore(),
             config: config,
-            assetDefinitionStore: AssetDefinitionStore(),
-            promptBackupCoordinator: PromptBackupCoordinator(keystore: FakeEtherKeystore(), wallet: .make(), config: config, analytics: FakeAnalyticsService()),
+            assetDefinitionStore: .make(),
+            promptBackupCoordinator: .make(wallet: wallet),
             analytics: FakeAnalyticsService(),
             nftProvider: FakeNftProvider(),
             tokenActionsService: tokenActionsService,
@@ -36,33 +48,35 @@ class TokensCoordinatorTests: XCTestCase {
             importToken: dep.importToken,
             blockiesGenerator: .make(),
             domainResolutionService: FakeDomainResolutionService(),
-            tokensFilter: .make()
-        )
+            tokensFilter: .make(),
+            currencyService: .make())
+
         coordinator.start()
 
         XCTAssertTrue(coordinator.navigationController.viewControllers[0] is TokensViewController)
     }
 }
 
-class FakeImportToken: ImportToken {
-    convenience init() {
-        let analytics = FakeAnalyticsService()
-        self.init(sessionProvider: FakeSessionsProvider(servers: [.main]), wallet: .make(), tokensDataStore: FakeTokensDataStore(), assetDefinitionStore: .init(), analytics: analytics)
+extension ImportToken {
+    static func make(tokensDataStore: TokensDataStore = FakeTokensDataStore(), wallet: Wallet = .make(), contractDataFetcher: ContractDataFetchable = FakeContractDataFetcher()) -> ImportToken {
+        return .init(tokensDataStore: tokensDataStore, contractDataFetcher: contractDataFetcher)
     }
-        //Adding a token may fail if we lose connectivity while fetching the contract details (e.g. name and balance). So we remove the contract from the hidden list (if it was there) so that the app has the chance to add it automatically upon auto detection at startup
-    override func importToken(for contract: AlphaWallet.Address, server: RPCServer, onlyIfThereIsABalance: Bool = false) -> Promise<Token> {
-        return .init(error: PMKError.badInput)
-    }
+}
 
-    override func importToken(token: ERCToken, shouldUpdateBalance: Bool = true) -> Token {
-        return Token()
-    }
+final class FakeContractDataFetcher: ContractDataFetchable {
+    var contractData: [AddressAndRPCServer: AlphaWalletFoundation.ContractData] = [:]
 
-    override func fetchContractData(for address: AlphaWallet.Address, server: RPCServer, completion: @escaping (ContractData) -> Void) {
-        //no-op
+    func fetchContractData(for contract: AlphaWallet.Address, server: RPCServer, completion: @escaping (ContractData) -> Void) {
+        guard let contractData = contractData[.init(address: contract, server: server)] else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+            completion(contractData)
+        }
     }
+}
 
-    override func fetchTokenOrContract(for contract: AlphaWallet.Address, server: RPCServer, onlyIfThereIsABalance: Bool = false) -> Promise<TokenOrContract> {
-        return .init(error: PMKError.badInput)
+fileprivate extension Token {
+
+    init(ercToken token: ErcToken, shouldUpdateBalance: Bool) {
+        self.init(contract: token.contract, server: token.server, name: token.name, symbol: token.symbol, decimals: token.decimals, value: token.value, isCustom: true, type: token.type, balance: [])
     }
 }

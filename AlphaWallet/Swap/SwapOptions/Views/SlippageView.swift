@@ -36,7 +36,8 @@ class SlippageView: UIView {
         addSubview(stackView)
 
         NSLayoutConstraint.activate([
-            stackView.anchorsConstraint(to: self)
+            stackView.anchorsConstraint(to: self),
+            heightAnchor.constraint(equalToConstant: ScreenChecker.size(big: 44, medium: 44, small: 35))
         ])
 
         bind(viewModel: viewModel)
@@ -78,12 +79,11 @@ class SlippageView: UIView {
         switch each.viewType {
         case .selectionButton:
             let view = SelectableSlippageView()
-            view.widthAnchor.constraint(equalToConstant: 60).isActive = true
+            view.widthAnchor.constraint(equalToConstant: ScreenChecker.size(big: 60, medium: 60, small: 50)).isActive = true
             view.actionButton.publisher(forEvent: .touchUpInside)
                 .map { _ -> SwapSlippage in return each }
-                .sink(receiveValue: { [weak viewModel] value in
-                    viewModel?.set(slippage: value)
-                }).store(in: &cancelable)
+                .sink(receiveValue: { [weak viewModel] value in viewModel?.set(slippage: value) })
+                .store(in: &cancelable)
 
             return .selectableView(view, each: each)
         case .editingTextField:

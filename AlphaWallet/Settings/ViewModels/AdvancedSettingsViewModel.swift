@@ -8,37 +8,44 @@
 import Foundation
 import UIKit
 import AlphaWalletFoundation
+import Combine
 
-struct AdvancedSettingsViewModel {
-    var rows: [AdvancedSettingsRow]
+struct AdvancedSettingsViewModelInput {
+    let willAppear: AnyPublisher<Void, Never>
+}
 
-    let wallet: Wallet
-    let config: Config
+struct AdvancedSettingsViewModelOutput {
+    let viewState: AnyPublisher<AdvancedSettingsViewModel.ViewState, Never>
+}
 
-    let title: String = R.string.localizable.aAdvancedSettingsNavigationTitle()
-    let largeTitleDisplayMode: UINavigationItem.LargeTitleDisplayMode  = .never
-    
+class AdvancedSettingsViewModel {
+    private let wallet: Wallet
+    private let config: Config
+    private (set) var rows: [AdvancedSettingsViewModel.AdvancedSettingsRow] = []
+    private let features: Features = .default
+    let largeTitleDisplayMode: UINavigationItem.LargeTitleDisplayMode = .never
+
     init(wallet: Wallet, config: Config) {
         self.wallet = wallet
         self.config = config
-        
-        let canExportToJSONKeystore = Features.default.isAvailable(.isExportJsonKeystoreEnabled) && wallet.isReal()
-        self.rows = [
-            .clearBrowserCache,
-            .tokenScript,
-            Features.default.isAvailable(.isUsingPrivateNetwork) ? .usePrivateNetwork : nil,
-            Features.default.isAvailable(.isAnalyticsUIEnabled) ? .analytics : nil,
-            Features.default.isAvailable(.isLanguageSwitcherDisabled) ? nil : .changeLanguage,
-            canExportToJSONKeystore ? .exportJSONKeystore : nil,
-            .tools,
-            (Environment.isDebug || Environment.isTestFlight) ? .features : nil,
-        ].compactMap { $0 }
     }
 
-    func viewModel(for indexPath: IndexPath) -> SettingTableViewCellViewModel {
-        let row = rows[indexPath.row]
+    func transform(input: AdvancedSettingsViewModelInput) -> AdvancedSettingsViewModelOutput {
+        let viewState = input.willAppear
+            .map { [wallet, features] _ in AdvancedSettingsViewModel.functional.computeSections(wallet: wallet, features: features) }
+            .handleEvents(receiveOutput: { self.rows = $0 })
+            .map { $0.map { self.buildCellViewModel(for: $0) } }
+            .map { AdvancedSettingsViewModel.SectionViewModel(section: .rows, views: $0) }
+            .map { self.buildSnapshot(for: [$0]) }
+            .map { ViewState(snapshot: $0) }
+            .eraseToAnyPublisher()
+
+        return .init(viewState: viewState)
+    }
+
+    private func buildCellViewModel(for row: AdvancedSettingsViewModel.AdvancedSettingsRow) -> SettingTableViewCellViewModel {
         switch row {
-        case .analytics, .changeCurrency, .changeLanguage, .clearBrowserCache, .tools, .tokenScript, .exportJSONKeystore, .features:
+        case .analytics, .crashReporter, .changeCurrency, .changeLanguage, .clearBrowserCache, .tools, .tokenScript, .exportJSONKeystore, .features:
             return .init(titleText: row.title, subTitleText: nil, icon: row.icon)
         case .usePrivateNetwork:
             let provider = config.sendPrivateTransactionsProvider
@@ -46,22 +53,73 @@ struct AdvancedSettingsViewModel {
         }
     }
 
-    var numberOfRows: Int {
-        return rows.count
+    private func buildSnapshot(for viewModels: [AdvancedSettingsViewModel.SectionViewModel]) -> AdvancedSettingsViewModel.Snapshot {
+        var snapshot = AdvancedSettingsViewModel.Snapshot()
+        let sections = viewModels.map { $0.section }
+        snapshot.appendSections(sections)
+        for each in viewModels {
+            snapshot.appendItems(each.views, toSection: each.section)
+        }
+
+        return snapshot
     }
 }
 
-enum AdvancedSettingsRow: CaseIterable {
-    case tools
-    case clearBrowserCache
-    case tokenScript
-    case changeLanguage
-    case changeCurrency
-    case analytics
-    case usePrivateNetwork
-    case exportJSONKeystore
-    case features
-    
+extension AdvancedSettingsViewModel {
+    class DataSource: UITableViewDiffableDataSource<AdvancedSettingsViewModel.Section, SettingTableViewCellViewModel> {}
+    typealias Snapshot = NSDiffableDataSourceSnapshot<AdvancedSettingsViewModel.Section, SettingTableViewCellViewModel>
+
+    enum functional {}
+
+    enum Section: Int, Hashable, CaseIterable {
+        case rows
+    }
+
+    struct SectionViewModel {
+        let section: AdvancedSettingsViewModel.Section
+        let views: [SettingTableViewCellViewModel]
+    }
+
+    struct ViewState {
+        let title: String = R.string.localizable.aAdvancedSettingsNavigationTitle()
+        let animatingDifferences: Bool = false
+        let snapshot: AdvancedSettingsViewModel.Snapshot
+    }
+
+    enum AdvancedSettingsRow: CaseIterable {
+        case tools
+        case clearBrowserCache
+        case tokenScript
+        case changeLanguage
+        case changeCurrency
+        case analytics
+        case crashReporter
+        case usePrivateNetwork
+        case exportJSONKeystore
+        case features
+    }
+}
+
+extension AdvancedSettingsViewModel.functional {
+    fileprivate static func computeSections(wallet: Wallet, features: Features) -> [AdvancedSettingsViewModel.AdvancedSettingsRow] {
+        let canExportToJSONKeystore = features.isAvailable(.isExportJsonKeystoreEnabled) && wallet.isReal()
+        return [
+            .clearBrowserCache,
+            .tokenScript,
+            features.isAvailable(.isUsingPrivateNetwork) ? .usePrivateNetwork : nil,
+            features.isAvailable(.isAnalyticsUIEnabled) ? .analytics : nil,
+            .crashReporter,
+            features.isAvailable(.isLanguageSwitcherEnabled) ? .changeLanguage: nil,
+            features.isAvailable(.isChangeCurrencyEnabled) ? .changeCurrency : nil,
+            canExportToJSONKeystore ? .exportJSONKeystore : nil,
+            .tools,
+            (Environment.isDebug || Environment.isTestFlight) ? .features : nil,
+        ].compactMap { $0 }
+    }
+}
+
+fileprivate extension AdvancedSettingsViewModel.AdvancedSettingsRow {
+
     var title: String {
         switch self {
         case .tools:
@@ -76,6 +134,8 @@ enum AdvancedSettingsRow: CaseIterable {
             return R.string.localizable.settingsChangeCurrencyTitle()
         case .analytics:
             return R.string.localizable.settingsAnalitycsTitle()
+        case .crashReporter:
+            return R.string.localizable.settingsCrashReporterTitle()
         case .usePrivateNetwork:
             return R.string.localizable.settingsChooseSendPrivateTransactionsProviderButtonTitle()
         case .exportJSONKeystore:
@@ -99,6 +159,8 @@ enum AdvancedSettingsRow: CaseIterable {
             return R.image.settings_currency()!
         case .analytics:
             return R.image.settings_analytics()!
+        case .crashReporter:
+            return R.image.settings_crash_reporter()!
         case .usePrivateNetwork:
             return R.image.iconsSettingsEthermine()!
         case .exportJSONKeystore:

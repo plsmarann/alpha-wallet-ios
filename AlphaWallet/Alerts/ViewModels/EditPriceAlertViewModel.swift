@@ -10,14 +10,14 @@ import AlphaWalletFoundation
 import Combine
 
 struct EditPriceAlertViewModelInput {
-    let appear: AnyPublisher<Void, Never>
+    let willAppear: AnyPublisher<Void, Never>
     let save: AnyPublisher<Void, Never>
-    let cryptoValue: AnyPublisher<String, Never>
+    let amountToSend: AnyPublisher<AmountTextFieldViewModel.FungibleAmount, Never>
 }
 
 struct EditPriceAlertViewModelOutput {
-    let cryptoInitial: AnyPublisher<String, Never>
-    let cryptoToFiatRate: AnyPublisher<NSDecimalNumber?, Never>
+    let cryptoInitial: AnyPublisher<Double, Never>
+    let cryptoToFiatRate: AnyPublisher<AmountTextFieldViewModel.CurrencyRate, Never>
     let marketPrice: AnyPublisher<String, Never>
     let isEnabled: AnyPublisher<Bool, Never>
     let createOrUpdatePriceAlert: AnyPublisher<Result<Void, EditPriceAlertViewModel.EditPriceAlertError>, Never>
@@ -25,19 +25,18 @@ struct EditPriceAlertViewModelOutput {
 
 final class EditPriceAlertViewModel {
     private let configuration: EditPriceAlertViewModel.Configuration
-    private var marketPrice: Double?
+    private var rate: CurrencyRate?
     private var cryptoValue: Double?
     private let tokensService: TokenViewModelState
     private let alertService: PriceAlertServiceType
     private var cancelable = Set<AnyCancellable>()
+    private let currencyService: CurrencyService
 
-    var backgroundColor: UIColor = Colors.appWhite
-    var title: String { configuration.title }
-    var headerTitle: String = R.string.localizable.priceAlertEnterTargetPrice().uppercased()
-    var setAlertTitle: String = R.string.localizable.priceAlertSet()
+    var title: String { configuration.title } 
     let token: Token
 
-    init(configuration: EditPriceAlertViewModel.Configuration, token: Token, tokensService: TokenViewModelState, alertService: PriceAlertServiceType) {
+    init(configuration: EditPriceAlertViewModel.Configuration, token: Token, tokensService: TokenViewModelState, alertService: PriceAlertServiceType, currencyService: CurrencyService) {
+        self.currencyService = currencyService
         self.configuration = configuration
         self.token = token
         self.tokensService = tokensService
@@ -46,37 +45,40 @@ final class EditPriceAlertViewModel {
 
     func transform(input: EditPriceAlertViewModelInput) -> EditPriceAlertViewModelOutput {
         let cryptoToFiatRate = Just(1)
-            .map { value -> NSDecimalNumber? in NSDecimalNumber(value: value) }
+            .map { [currencyService] in AmountTextFieldViewModel.CurrencyRate(value: $0, currency: currencyService.currency) }
             .eraseToAnyPublisher()
 
         let cryptoRate = tokensService.tokenViewModelPublisher(for: token)
-            .map { $0?.balance.ticker?.price_usd }
+            .map { $0.flatMap { $0.balance.ticker.flatMap { CurrencyRate(currency: $0.currency, value: $0.price_usd) } } }
             .share()
-            .handleEvents(receiveOutput: { self.marketPrice = $0 })
-            .map { $0.flatMap { Formatter.fiat.string(from: $0) } }
-            .eraseToAnyPublisher()
+            .handleEvents(receiveOutput: { self.rate = $0 })
+            .map { $0.flatMap { NumberFormatter.fiatShort(currency: $0.currency).string(double: $0.value) } }
 
-        input.cryptoValue
-            .map { Formatter.default.number(from: $0).flatMap { $0.doubleValue } }
-            .sink(receiveValue: { self.cryptoValue = $0 })
+        input.amountToSend
+            .compactMap { amount -> Double? in
+                switch amount {
+                case .amount(let value): return value
+                case .notSet, .allFunds: return nil
+                }
+            }.sink(receiveValue: { self.cryptoValue = $0 })
             .store(in: &cancelable)
 
         let createOrUpdatePriceAlert = input.save
             .map { _ -> (crypto: Double, marketPrice: Double)? in
-                guard let crypto = self.cryptoValue, let marketPrice = self.marketPrice else { return nil }
-                return (crypto: crypto, marketPrice: marketPrice)
+                guard let crypto = self.cryptoValue, let rate = self.rate else { return nil }
+                return (crypto: crypto, marketPrice: rate.value)
             }.map { [alertService, token, configuration] pair -> Result<Void, EditPriceAlertError> in
                 guard let pair = pair else { return .failure(.cryptoOrMarketPriceNotFound) }
 
                 switch configuration {
                 case .create:
                     let alert: PriceAlert = .init(type: .init(value: pair.crypto, marketPrice: pair.marketPrice), token: token, isEnabled: true)
-                    alertService.add(alert: alert)
+                    guard alertService.add(alert: alert) else { return .failure(.alertAlreadyExists) }
+                    return .success(())
                 case .edit(let alert):
                     alertService.update(alert: alert, update: .value(value: pair.crypto, marketPrice: pair.marketPrice))
+                    return .success(())
                 }
-
-                return .success(())
             }.eraseToAnyPublisher()
 
         let marketPrice = cryptoRate
@@ -87,7 +89,7 @@ final class EditPriceAlertViewModel {
             .map { $0 != nil }
             .eraseToAnyPublisher()
 
-        let cryptoInitial = input.appear
+        let cryptoInitial = input.willAppear
             .map { _ in self.configuration.value }
             .eraseToAnyPublisher()
 
@@ -98,6 +100,7 @@ final class EditPriceAlertViewModel {
 extension EditPriceAlertViewModel {
     enum EditPriceAlertError: Error {
         case cryptoOrMarketPriceNotFound
+        case alertAlreadyExists
     }
 
     enum Configuration {
@@ -113,14 +116,14 @@ extension EditPriceAlertViewModel {
             }
         }
 
-        var value: String {
+        var value: Double {
             switch self {
             case .create:
-                return String()
+                return 0
             case .edit(let alert):
                 switch alert.type {
                 case .price(_, let value):
-                    return String(value)
+                    return value
                 }
             }
         }

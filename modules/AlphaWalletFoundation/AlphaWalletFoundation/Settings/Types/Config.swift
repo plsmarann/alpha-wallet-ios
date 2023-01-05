@@ -1,7 +1,7 @@
 // Copyright Stormbird PTE. LTD.
 
 import Foundation
-import ObjectiveC 
+import ObjectiveC
 import Combine
 
 public struct Config {
@@ -21,28 +21,19 @@ public struct Config {
 
     public let development = Development()
 
-    //TODO `currency` was originally a instance-side property, but was refactored out. Maybe better if it it's moved elsewhere
-    public static func getCurrency() -> Currency {
-        let defaults = UserDefaults.standardOrForTests
-
-        //If it is saved currency
-        if let currency = defaults.string(forKey: Keys.currencyID) {
-            return Currency(rawValue: currency)!
+    public var currency: Currency {
+        get {
+            if let currency = defaults.string(forKey: Keys.currency) {
+                return Currency(rawValue: currency)!
+            } else if let currency = Currency.allCases.first(where: { $0.code == Config.locale.currencySymbol }) {
+                return currency
+            } else {
+                return Currency.default
+            }
         }
-        //If the is not saved currency try to use user local currency if it is supported.
-        let availableCurrency = Currency.allValues.first { currency in
-            return currency.rawValue == Config.locale.currencySymbol
+        set {
+            defaults.set(newValue.code, forKey: Keys.currency)
         }
-        if let isAvailableCurrency = availableCurrency {
-            return isAvailableCurrency
-        }
-        //If non of the previous is not working return USD.
-        return Currency.USD
-    }
-
-    public static func setCurrency(_ currency: Currency) {
-        let defaults = UserDefaults.standardOrForTests
-        defaults.set(currency.rawValue, forKey: Keys.currencyID)
     }
 
     //TODO `locale` was originally a instance-side property, but was refactored out. Maybe better if it it's moved elsewhere
@@ -157,7 +148,7 @@ public struct Config {
     public struct Keys {
         static let chainID = "chainID"
         static let isCryptoPrimaryCurrency = "isCryptoPrimaryCurrency"
-        static let currencyID = "currencyID"
+        static let currency = "currencyID"
         static let dAppBrowser = "dAppBrowser"
         //There *is* a trailing space in the key
         static let walletAddressesAlreadyPromptedForBackUp = "walletAddressesAlreadyPromptedForBackUp "
@@ -174,6 +165,7 @@ public struct Config {
         static let customRpcServers = "customRpcServers"
         static let homePageURL = "homePageURL"
         static let sendAnalyticsEnabled = "sendAnalyticsEnabled"
+        static let sendCrashReportingEnabled = "sendCrashReportingEnabled"
     }
 
     public let defaults: UserDefaults
@@ -197,6 +189,23 @@ public struct Config {
             }
 
             defaults.set(newValue, forKey: Keys.sendAnalyticsEnabled)
+        }
+    }
+
+    public var isSendCrashReportingEnabled: Bool {
+        sendCrashReportingEnabled ?? false
+    }
+
+    public var sendCrashReportingEnabled: Bool? {
+        get {
+            guard let value = defaults.value(forKey: Keys.sendCrashReportingEnabled) as? Bool else {
+                return nil
+            }
+
+            return value
+        }
+        set {
+            defaults.set(newValue, forKey: Keys.sendCrashReportingEnabled)
         }
     }
 
@@ -224,7 +233,8 @@ public struct Config {
                     //TODO remote log. Why is this possible? Note it's not nil (which is possible for new installs)
                     return Constants.defaultEnabledServers
                 } else {
-                    let servers: [RPCServer] = chainIds.map { .init(chainID: $0) }.filter { $0.conflictedServer == nil }
+                    //Remove duplicates. Useful for the occasion where users have enabled a chain, then we disable that chain in an update and the user might now end up with the Ethereum mainnet twice (default when we can't find a chain that we removed) in their enabled list
+                    let servers: [RPCServer] = Array(Set(chainIds.map { .init(chainID: $0) }.filter { $0.conflictedServer == nil }))
                     //TODO remove filter after some time as every user should have upgraded and no longer has a mix of mainnet and testnet enabled at the same time. We could have done this filtering one-time per wallet outside of here, but doing it here is more localized
                     if servers.contains(where: { $0.isTestnet }) && servers.contains(where: { !$0.isTestnet }) {
                         let filteredServers = servers.filter { !$0.isTestnet }

@@ -4,9 +4,6 @@ import Foundation
 import UIKit
 
 struct VerifySeedPhraseViewModel {
-    var backgroundColor: UIColor {
-        return Colors.appWhite
-    }
 
     var title: String {
         return R.string.localizable.walletsVerifySeedPhraseTitle()
@@ -42,7 +39,7 @@ struct VerifySeedPhraseViewModel {
 
     //Make it the same as the background. Trick to maintain the height of the error label even when there's no error by putting some dummy text. The dummy text must still make sense for accessibility
     var noErrorColor: UIColor {
-        return backgroundColor
+        return Configuration.Color.Semantic.defaultViewBackground
     }
 
     var errorFont: UIFont {
@@ -59,7 +56,7 @@ struct VerifySeedPhraseViewModel {
     }
 
     var subtitleColor: UIColor {
-        return Screen.Backup.subtitleColor
+        return Configuration.Color.Semantic.defaultSubtitleText
     }
 
     var subtitleFont: UIFont {

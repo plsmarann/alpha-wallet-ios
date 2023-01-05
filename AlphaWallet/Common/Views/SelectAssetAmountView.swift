@@ -8,7 +8,7 @@
 import UIKit
 
 struct SelectTokenCardAmountViewModel {
-    var backgroundColor: UIColor = Colors.appWhite
+    var backgroundColor: UIColor = Configuration.Color.Semantic.defaultViewBackground
     private let availableAmount: Int
     private(set) var counter: Int = 0
 
@@ -83,7 +83,7 @@ private class TokenCardSelectionAmountHeaderView: UIView {
     }
 }
 
-protocol SelectTokenCardAmountViewDelegate: class {
+protocol SelectTokenCardAmountViewDelegate: AnyObject {
     func valueDidChange(in view: SelectTokenCardAmountView)
 }
 
@@ -110,7 +110,7 @@ class SelectTokenCardAmountView: UIView {
     private (set) var countLabel: UILabel = {
         let label = UILabel()
         label.translatesAutoresizingMaskIntoConstraints = false
-        label.font = DataEntry.Font.accessory
+        label.font = Configuration.Font.accessory
         label.textAlignment = .center
 
         return label
@@ -185,12 +185,12 @@ class SelectTokenCardAmountView: UIView {
     }
 }
 
-protocol SingleTokenCardAmountSelectionToolbarViewDelegate: class {
+protocol SingleTokenCardAmountSelectionToolbarViewDelegate: AnyObject {
     func closeSelected(in: SingleTokenCardAmountSelectionToolbarView)
 }
 
 struct SingleTokenCardAmountSelectionToolbarViewModel {
-    var backgroundColor: UIColor = Colors.appWhite
+    var backgroundColor: UIColor = Configuration.Color.Semantic.defaultViewBackground
     let availableAmount: Int
 
     var counter: Int {
@@ -207,7 +207,7 @@ struct SingleTokenCardAmountSelectionToolbarViewModel {
     var attributedTitleString: NSAttributedString {
         return .init(string: "Select Amount (max. \(availableAmount))", attributes: [
             .font: Fonts.semibold(size: 17),
-            .foregroundColor: Colors.black
+            .foregroundColor: Configuration.Color.Semantic.defaultForegroundText
         ])
     }
 }

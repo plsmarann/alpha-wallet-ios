@@ -64,6 +64,15 @@ extension UIView {
         ]
     }
 
+    func anchorsIgnoringBottomSafeArea(to view: UIView, edgeInsets: UIEdgeInsets = .zero) -> [NSLayoutConstraint] {
+        return [
+            leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor, constant: edgeInsets.left),
+            trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor, constant: -edgeInsets.right),
+            topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: edgeInsets.top),
+            bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -edgeInsets.bottom),
+        ]
+    }
+
     func anchorsConstraintSafeArea(to view: UIView, edgeInsets: UIEdgeInsets = .zero) -> [NSLayoutConstraint] {
         return [
             leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor, constant: edgeInsets.left),
@@ -76,7 +85,7 @@ extension UIView {
     func anchorsConstraint(to view: UIView, margin: CGFloat) -> [NSLayoutConstraint] {
         return anchorsConstraint(to: view, edgeInsets: .init(top: margin, left: margin, bottom: margin, right: margin))
     }
-
+    
     static func spacer(height: CGFloat = 1, backgroundColor: UIColor = .clear, flexible: Bool = false) -> UIView {
         let view = UIView(frame: .zero)
         view.translatesAutoresizingMaskIntoConstraints = false
@@ -153,16 +162,11 @@ extension UIView {
     func adjusted(adjusment: CGFloat = 15) -> UIView {
         return [.spacerWidth(adjusment), self, .spacerWidth(adjusment)].asStackView()
     }
+}
 
-    func embededWithSeparator(top: CGFloat = 1, bottom: CGFloat = 1, color: UIColor = GroupedTable.Color.cellSeparator) -> UIView {
-        let stackView = [
-            .spacer(height: top, backgroundColor: color),
-            self,
-            .spacer(height: bottom, backgroundColor: color)
-        ].asStackView(axis: .vertical)
-        stackView.translatesAutoresizingMaskIntoConstraints = false
-
-        return stackView
+extension UIView {
+    static func separator(height: CGFloat = 1) -> UIView {
+        return spacer(height: height, backgroundColor: Configuration.Color.Semantic.tableViewSeparator)
     }
 }
 
@@ -231,7 +235,7 @@ extension UIView {
         return [
             centerXAnchor.constraint(equalTo: superView.centerXAnchor),
             widthAnchor.constraint(equalTo: superView.widthAnchor),
-            heightAnchor.constraint(equalToConstant: GroupedTable.Metric.cellSeparatorHeight),
+            heightAnchor.constraint(equalToConstant: DataEntry.Metric.TableView.groupedTableCellSeparatorHeight),
             topAnchor.constraint(equalTo: superView.topAnchor)
         ]
     }
@@ -240,7 +244,7 @@ extension UIView {
         return [
             centerXAnchor.constraint(equalTo: superView.centerXAnchor),
             widthAnchor.constraint(equalTo: superView.widthAnchor),
-            heightAnchor.constraint(equalToConstant: GroupedTable.Metric.cellSeparatorHeight),
+            heightAnchor.constraint(equalToConstant: DataEntry.Metric.TableView.groupedTableCellSeparatorHeight),
             bottomAnchor.constraint(equalTo: superView.bottomAnchor)
         ]
     }

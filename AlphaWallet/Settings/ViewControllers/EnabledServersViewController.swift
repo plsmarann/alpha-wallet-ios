@@ -9,15 +9,10 @@ protocol EnabledServersViewControllerDelegate: AnyObject {
 }
 
 class EnabledServersViewController: UIViewController {
-    private let roundedBackground = RoundedBackground()
     private let headers = (mainnet: EnableServersHeaderView(), testnet: EnableServersHeaderView())
     private lazy var tableView: UITableView = {
-        let tableView = UITableView(frame: .zero, style: .grouped)
-        tableView.translatesAutoresizingMaskIntoConstraints = false
+        let tableView = UITableView.grouped
         tableView.delegate = self
-        tableView.separatorStyle = .singleLine
-        tableView.backgroundColor = Configuration.Color.Semantic.searchbarBackground
-        tableView.tableFooterView = UIView.tableFooterToRemoveEmptyCellSeparators()
         tableView.register(RPCDisplaySelectableTableViewCell.self)
         tableView.dataSource = self
         tableView.isEditing = false
@@ -32,20 +27,17 @@ class EnabledServersViewController: UIViewController {
         self.viewModel = viewModel
         super.init(nibName: nil, bundle: nil)
 
-        roundedBackground.backgroundColor = Configuration.Color.Semantic.tableViewBackground
-        view.addSubview(roundedBackground)
-        roundedBackground.addSubview(tableView)
+        view.addSubview(tableView)
 
         NSLayoutConstraint.activate([
-            tableView.leadingAnchor.constraint(equalTo: roundedBackground.leadingAnchor),
-            tableView.trailingAnchor.constraint(equalTo: roundedBackground.trailingAnchor),
-            tableView.topAnchor.constraint(equalTo: roundedBackground.topAnchor),
-            tableView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-        ] + roundedBackground.createConstraintsWithContainer(view: view))
+            tableView.anchorsIgnoringBottomSafeArea(to: view)
+        ])
     }
 
     override func viewDidLoad() {
         super.viewDidLoad()
+        
+        view.backgroundColor = Configuration.Color.Semantic.defaultViewBackground
         configure(viewModel: viewModel)
     }
 
@@ -105,6 +97,7 @@ extension EnabledServersViewController: UITableViewDelegate, UITableViewDataSour
             headerView = headers.mainnet
             headerView.configure(mode: .mainnet, isEnabled: viewModel.mode == .mainnet)
         }
+
         headerView.delegate = self
         return headerView
     }
@@ -135,6 +128,7 @@ extension EnabledServersViewController: UITableViewDelegate, UITableViewDataSour
     func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         tableView.deselectRow(at: indexPath, animated: true)
         viewModel.selectServer(indexPath: indexPath)
+        configure(viewModel: viewModel)
         tableView.reloadData()
         //Even if no servers is selected, we don't attempt to disable the back button here since calling code will take care of ignore the change server "request" when there are no servers selected. We don't want to disable the back button because users can't cancel the operation
     }
@@ -144,15 +138,16 @@ extension EnabledServersViewController: UITableViewDelegate, UITableViewDataSour
         guard server.isCustom else { return nil }
         let deleteAction = UIContextualAction(style: .destructive, title: R.string.localizable.delete()) { _, _, complete in
             self.confirmDelete(server: server)
+            self.configure(viewModel: self.viewModel)
             complete(true)
         }
 
         deleteAction.image = R.image.close()?.withRenderingMode(.alwaysTemplate)
-        deleteAction.backgroundColor = R.color.danger()
+        deleteAction.backgroundColor = Colors.appRed
 
-        let editAction = UIContextualAction(style: .normal, title: R.string.localizable.editButtonTitle()) { _, _, complete
-            in
+        let editAction = UIContextualAction(style: .normal, title: R.string.localizable.editButtonTitle()) { _, _, complete in
             self.edit(server: server)
+            self.configure(viewModel: self.viewModel)
             complete(true)
         }
 
@@ -168,6 +163,7 @@ extension EnabledServersViewController: EnableServersHeaderViewDelegate {
         switch (headerView.mode, newValue) {
         case (.mainnet, true), (.testnet, false):
             viewModel.switchMode(to: .mainnet)
+            self.configure(viewModel: self.viewModel)
             tableView.reloadData()
             tableView.reloadSections(viewModel.sectionIndices, with: .automatic)
         case (.mainnet, false), (.testnet, true):
@@ -190,12 +186,14 @@ extension EnabledServersViewController: PopNotifiable {
 extension EnabledServersViewController: PromptViewControllerDelegate {
     func actionButtonTapped(inController controller: PromptViewController) {
         viewModel.switchMode(to: .testnet)
+        configure(viewModel: viewModel)
         //Animation breaks section headers. No idea why. So don't animate
         tableView.reloadData()
     }
 
-    func controllerDismiss(_ controller: PromptViewController) {
+    func didClose(in controller: PromptViewController) {
         headers.mainnet.configure(mode: .mainnet, isEnabled: true)
         headers.testnet.configure(mode: .testnet, isEnabled: false)
+        configure(viewModel: viewModel)
     }
 }

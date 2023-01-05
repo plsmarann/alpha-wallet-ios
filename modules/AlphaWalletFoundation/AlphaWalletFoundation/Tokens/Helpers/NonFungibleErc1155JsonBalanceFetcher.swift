@@ -13,50 +13,48 @@ import BigInt
 import PromiseKit
 import SwiftyJSON
 
+protocol NonFungibleErc1155JsonBalanceFetcherDelegate: AnyObject {
+    func addTokens(tokensToAdd: [ErcToken]) -> Promise<Void>
+}
+
 //TODO: think about the name, remove queue later, replace with any publisher
-public class NonFungibleErc1155JsonBalanceFetcher {
+class NonFungibleErc1155JsonBalanceFetcher {
     typealias TokenIdMetaData = (contract: AlphaWallet.Address, tokenId: BigUInt, jsonAndItsSource: NonFungibleBalanceAndItsSource<JsonString>)
 
-    private let nonFungibleJsonBalanceFetcher: NonFungibleJsonBalanceFetcher
+    private let jsonFromTokenUri: JsonFromTokenUri
     private let erc1155TokenIdsFetcher: Erc1155TokenIdsFetcher
     private let erc1155BalanceFetcher: Erc1155BalanceFetcher
-    private let account: Wallet
-    private let queue: DispatchQueue
-    private let server: RPCServer
-    private let tokensService: TokenProvidable & TokenAddable
-    private let analytics: AnalyticsLogger
-    private let assetDefinitionStore: AssetDefinitionStore
+    private let queue = DispatchQueue(label: "org.alphawallet.swift.nonFungibleErc1155JsonBalanceFetcher")
 
-    public init(assetDefinitionStore: AssetDefinitionStore, analytics: AnalyticsLogger, tokensService: TokenProvidable & TokenAddable, account: Wallet, server: RPCServer, erc1155TokenIdsFetcher: Erc1155TokenIdsFetcher, nonFungibleJsonBalanceFetcher: NonFungibleJsonBalanceFetcher, erc1155BalanceFetcher: Erc1155BalanceFetcher, queue: DispatchQueue) {
-        self.assetDefinitionStore = assetDefinitionStore
-        self.account = account
-        self.server = server
+    private let session: WalletSession
+    private let tokensService: TokenProvidable
+    private let importToken: ImportToken
+    weak var delegate: NonFungibleErc1155JsonBalanceFetcherDelegate?
+
+    init(tokensService: TokenProvidable, session: WalletSession, erc1155TokenIdsFetcher: Erc1155TokenIdsFetcher, jsonFromTokenUri: JsonFromTokenUri, erc1155BalanceFetcher: Erc1155BalanceFetcher, importToken: ImportToken) {
+        self.session = session
         self.erc1155TokenIdsFetcher = erc1155TokenIdsFetcher
-        self.queue = queue
         self.tokensService = tokensService
-        self.nonFungibleJsonBalanceFetcher = nonFungibleJsonBalanceFetcher
-        self.analytics = analytics
+        self.jsonFromTokenUri = jsonFromTokenUri
         self.erc1155BalanceFetcher = erc1155BalanceFetcher
+        self.importToken = importToken
     }
 
-    public func fetchErc1155NonFungibleJsons(enjinTokens: EnjinTokenIdsToSemiFungibles) -> Promise<[AlphaWallet.Address: [NonFungibleBalanceAndItsSource<NonFungibleFromTokenUri>]]> {
-        //Local copies so we don't access the wrong ones during async operation
-
+    func fetchErc1155NonFungibleJsons(enjinTokens: EnjinTokenIdsToSemiFungibles) -> Promise<[AlphaWallet.Address: [NonFungibleBalanceAndItsSource<NonFungibleFromTokenUri>]]> {
         return firstly {
             erc1155TokenIdsFetcher.detectContractsAndTokenIds()
-        }.then(on: queue, { contractsAndTokenIds in
+        }.then(on: queue, { contractsAndTokenIds -> Promise<Erc1155TokenIds.ContractsAndTokenIds> in
             self.addUnknownErc1155ContractsToDatabase(contractsAndTokenIds: contractsAndTokenIds.tokens)
         }).then(on: queue, { contractsAndTokenIds -> Promise<(contractsAndTokenIds: Erc1155TokenIds.ContractsAndTokenIds, tokenIdMetaDatas: [TokenIdMetaData])> in
-                self._fetchErc1155NonFungibleJsons(contractsAndTokenIds: contractsAndTokenIds, enjinTokens: enjinTokens)
-                    .map { (contractsAndTokenIds: contractsAndTokenIds, tokenIdMetaDatas: $0) }
+            self._fetchErc1155NonFungibleJsons(contractsAndTokenIds: contractsAndTokenIds, enjinTokens: enjinTokens)
+                .map { (contractsAndTokenIds: contractsAndTokenIds, tokenIdMetaDatas: $0) }
         }).then(on: queue, { [erc1155BalanceFetcher, queue] (contractsAndTokenIds, tokenIdMetaDatas) -> Promise<[AlphaWallet.Address: [NonFungibleBalanceAndItsSource<NonFungibleFromTokenUri>]]> in
-
             let contractsToTokenIds: [AlphaWallet.Address: [BigInt]] = contractsAndTokenIds
                 .mapValues { tokenIds -> [BigInt] in tokenIds.compactMap { BigInt($0) } }
 
             let promises = contractsToTokenIds.map { contract, tokenIds in
                 erc1155BalanceFetcher
-                    .fetch(contract: contract, tokenIds: Set(tokenIds))
+                    .getErc1155Balance(contract: contract, tokenIds: Set(tokenIds))
                     .map { (contract: contract, balances: $0 ) }
             }
 
@@ -77,76 +75,44 @@ public class NonFungibleErc1155JsonBalanceFetcher {
                 return contractToOpenSeaNonFungiblesWithUpdatedBalances
             })
         })
+
         //TODO: log error remotely
     }
 
     private func _fetchErc1155NonFungibleJsons(contractsAndTokenIds: Erc1155TokenIds.ContractsAndTokenIds, enjinTokens: EnjinTokenIdsToSemiFungibles) -> Promise<[TokenIdMetaData]> {
-        var allGuarantees: [Guarantee<TokenIdMetaData>] = .init()
+        var allGuarantees: [Promise<TokenIdMetaData>] = .init()
         for (contract, tokenIds) in contractsAndTokenIds {
-            let guarantees = tokenIds.map { tokenId -> Guarantee<TokenIdMetaData> in
-                nonFungibleJsonBalanceFetcher.fetchNonFungibleJson(forTokenId: String(tokenId), tokenType: .erc1155, address: contract, enjinTokens: enjinTokens)
+            let guarantees = tokenIds.map { tokenId -> Promise<TokenIdMetaData> in
+                let enjinToken = enjinTokens[TokenIdConverter.toTokenIdSubstituted(string: String(tokenId))]
+                return jsonFromTokenUri.fetchJsonFromTokenUri(forTokenId: String(tokenId), tokenType: .erc1155, address: contract, enjinToken: enjinToken)
                     .map(on: queue, { jsonAndItsUri -> TokenIdMetaData in
                         return (contract: contract, tokenId: tokenId, jsonAndItsSource: jsonAndItsUri)
                     })
             }
+
             allGuarantees.append(contentsOf: guarantees)
         }
-        return when(fulfilled: allGuarantees)
+        
+        return firstly {
+            when(fulfilled: allGuarantees)
+        }
     }
 
     private func addUnknownErc1155ContractsToDatabase(contractsAndTokenIds: Erc1155TokenIds.ContractsAndTokenIds) -> Promise<Erc1155TokenIds.ContractsAndTokenIds> {
         return firstly {
-            fetchUnknownErc1155ContractsDetails(contractsAndTokenIds: contractsAndTokenIds)
-        }.map(on: queue, { [tokensService] tokensToAdd in
-            tokensService.addCustom(tokens: tokensToAdd, shouldUpdateBalance: false)
-
-            return contractsAndTokenIds
-        })
+            importUnknownErc1155Contracts(contractsAndTokenIds: contractsAndTokenIds)
+        }
     }
 
-    private func fetchUnknownErc1155ContractsDetails(contractsAndTokenIds: Erc1155TokenIds.ContractsAndTokenIds) -> Promise<[ERCToken]> {
-        let contractsToAdd: [AlphaWallet.Address] = contractsAndTokenIds.keys.filter { contract in
-            tokensService.token(for: contract, server: server) == nil
-        }
-        guard !contractsToAdd.isEmpty else { return Promise<[ERCToken]>.value(.init()) }
-        let (promise, seal) = Promise<[ERCToken]>.pending()
-        //Can't use `DispatchGroup` because `ContractDataDetector.fetch()` doesn't call `completion` once and only once
-        var contractsProcessed: Set<AlphaWallet.Address> = .init()
-        var erc1155TokensToAdd: [ERCToken] = .init()
-        func markContractProcessed(_ contract: AlphaWallet.Address) {
-            contractsProcessed.insert(contract)
-            if contractsProcessed.count == contractsToAdd.count {
-                seal.fulfill(erc1155TokensToAdd)
+    private func importUnknownErc1155Contracts(contractsAndTokenIds: Erc1155TokenIds.ContractsAndTokenIds) -> Promise<Erc1155TokenIds.ContractsAndTokenIds> {
+        let promises = contractsAndTokenIds.keys.map { importToken.importToken(for: $0, server: session.server, onlyIfThereIsABalance: false) }
+        return firstly {
+            when(resolved: promises)
+        }.map(on: queue, { [session] results -> Erc1155TokenIds.ContractsAndTokenIds in
+            let tokens = results.compactMap { $0.optionalValue }
+            return contractsAndTokenIds.filter { value in
+                tokens.contains(where: { $0.contractAddress == value.key && $0.server == session.server })
             }
-        }
-        for each in contractsToAdd {
-            ContractDataDetector(address: each, account: account, server: server, assetDefinitionStore: assetDefinitionStore, analytics: analytics).fetch { data in
-                switch data {
-                case .name, .symbol, .balance, .decimals:
-                    break
-                case .nonFungibleTokenComplete(let name, let symbol, let balance, let tokenType):
-                    let token = ERCToken(
-                            contract: each,
-                            server: self.server,
-                            name: name,
-                            symbol: symbol,
-                            //Doesn't matter for ERC1155 since it's not used at the token level
-                            decimals: 0,
-                            type: tokenType,
-                            balance: balance
-                    )
-                    erc1155TokensToAdd.append(token)
-                    markContractProcessed(each)
-                case .fungibleTokenComplete:
-                    markContractProcessed(each)
-                case .delegateTokenComplete:
-                    markContractProcessed(each)
-                case .failed:
-                    //TODO we are ignoring `.failed` here because it is called multiple times and we need to wait until `ContractDataDetector.fetch()`'s `completion` is called once and only once
-                    break
-                }
-            }
-        }
-        return promise
+        })
     }
 }

@@ -18,8 +18,9 @@ protocol TransactionConfirmationCoordinatorDelegate: CanOpenURL, SendTransaction
 
 class TransactionConfirmationCoordinator: Coordinator {
     private let configuration: TransactionType.Configuration
-    private lazy var viewModel: TransactionConfirmationViewModel = .init(configurator: configurator, configuration: configuration, assetDefinitionStore: assetDefinitionStore, domainResolutionService: domainResolutionService, tokensService: tokensService)
+
     private lazy var rootViewController: TransactionConfirmationViewController = {
+        let viewModel = TransactionConfirmationViewModel(configurator: configurator, configuration: configuration, assetDefinitionStore: assetDefinitionStore, domainResolutionService: domainResolutionService, tokensService: tokensService)
         let controller = TransactionConfirmationViewController(viewModel: viewModel)
         controller.delegate = self
         return controller
@@ -47,8 +48,8 @@ class TransactionConfirmationCoordinator: Coordinator {
     var coordinators: [Coordinator] = []
     weak var delegate: TransactionConfirmationCoordinatorDelegate?
 
-    init(presentingViewController: UIViewController, session: WalletSession, transaction: UnconfirmedTransaction, configuration: TransactionType.Configuration, analytics: AnalyticsLogger, domainResolutionService: DomainResolutionServiceType, keystore: Keystore, assetDefinitionStore: AssetDefinitionStore, tokensService: TokenViewModelState) throws {
-        configurator = try TransactionConfigurator(session: session, analytics: analytics, transaction: transaction)
+    init(presentingViewController: UIViewController, session: WalletSession, transaction: UnconfirmedTransaction, configuration: TransactionType.Configuration, analytics: AnalyticsLogger, domainResolutionService: DomainResolutionServiceType, keystore: Keystore, assetDefinitionStore: AssetDefinitionStore, tokensService: TokenViewModelState, networkService: NetworkService) {
+        configurator = TransactionConfigurator(session: session, analytics: analytics, transaction: transaction, networkService: networkService)
         self.keystore = keystore
         self.assetDefinitionStore = assetDefinitionStore
         self.configuration = configuration
@@ -173,7 +174,7 @@ extension TransactionConfirmationCoordinator: TransactionConfirmationViewControl
     private func handleSendTransactionError(_ error: Error) {
         switch error {
         case let e as SendTransactionNotRetryableError:
-            let errorViewController = SendTransactionErrorViewController(server: server, analytics: analytics, error: e)
+            let errorViewController = SendTransactionErrorViewController(analytics: analytics, viewModel: .init(server: server, error: e))
             errorViewController.delegate = self
 
             let panel = FloatingPanelController(isPanEnabled: false)
@@ -201,7 +202,7 @@ extension TransactionConfirmationCoordinator: TransactionConfirmationViewControl
 
         let navigationController = NavigationController(rootViewController: controller)
         navigationController.makePresentationFullScreenForiOS13Migration()
-        controller.navigationItem.leftBarButtonItem = .closeBarButton(self, selector: #selector(configureTransactionDidDismiss))
+        controller.navigationItem.rightBarButtonItem = .closeBarButton(self, selector: #selector(configureTransactionDidDismiss))
 
         hostViewController.present(navigationController, animated: true)
 
@@ -228,24 +229,24 @@ extension TransactionConfirmationCoordinator: ConfigureTransactionViewController
 extension TransactionConfirmationCoordinator: TransactionConfiguratorDelegate {
     func configurationChanged(in configurator: TransactionConfigurator) {
         //TODO: improve these few time view updates
-        viewModel.reloadView()
-        viewModel.updateBalance()
+        rootViewController.viewModel.reloadView()
+        rootViewController.viewModel.updateBalance()
     }
 
-    func gasLimitEstimateUpdated(to estimate: BigInt, in configurator: TransactionConfigurator) {
+    func gasLimitEstimateUpdated(to estimate: BigUInt, in configurator: TransactionConfigurator) {
         configureTransactionViewController?.configure(withEstimatedGasLimit: estimate, configurator: configurator)
 
         //TODO: improve these few time view updates
-        viewModel.reloadViewWithGasChanges()
-        viewModel.updateBalance()
+        rootViewController.viewModel.reloadViewWithGasChanges()
+        rootViewController.viewModel.updateBalance()
     }
 
-    func gasPriceEstimateUpdated(to estimate: BigInt, in configurator: TransactionConfigurator) {
+    func gasPriceEstimateUpdated(to estimate: BigUInt, in configurator: TransactionConfigurator) {
         configureTransactionViewController?.configure(withEstimatedGasPrice: estimate, configurator: configurator)
 
         //TODO: improve these few time view updates
-        viewModel.reloadViewWithGasChanges()
-        viewModel.updateBalance()
+        rootViewController.viewModel.reloadViewWithGasChanges()
+        rootViewController.viewModel.updateBalance()
     }
 
     func updateNonce(to nonce: Int, in configurator: TransactionConfigurator) {
@@ -293,8 +294,13 @@ extension TransactionConfirmationCoordinator {
             infoLog("Sent transaction publicly")
         }
         switch configuration {
-        case .sendFungiblesTransaction(_, let amount):
-            analyticsProperties[Analytics.Properties.isAllFunds.rawValue] = amount.isAllFunds
+        case .sendFungiblesTransaction:
+            switch configurator.transaction.transactionType.amount {
+            case .notSet, .none, .amount:
+                analyticsProperties[Analytics.Properties.isAllFunds.rawValue] = false
+            case .allFunds:
+                analyticsProperties[Analytics.Properties.isAllFunds.rawValue] = true
+            }
         case .tokenScriptTransaction, .dappTransaction, .walletConnect, .sendNftTransaction, .claimPaidErc875MagicLink, .speedupTransaction, .cancelTransaction, .swapTransaction, .approve:
             break
         }
@@ -320,8 +326,13 @@ extension TransactionConfirmationCoordinator {
             Analytics.Properties.transactionType.rawValue: transactionType.rawValue,
         ]
         switch configuration {
-        case .sendFungiblesTransaction(_, let amount):
-            analyticsProperties[Analytics.Properties.isAllFunds.rawValue] = amount.isAllFunds
+        case .sendFungiblesTransaction:
+            switch configurator.transaction.transactionType.amount {
+            case .notSet, .none, .amount:
+                analyticsProperties[Analytics.Properties.isAllFunds.rawValue] = false
+            case .allFunds:
+                analyticsProperties[Analytics.Properties.isAllFunds.rawValue] = true
+            }
         case .tokenScriptTransaction, .dappTransaction, .walletConnect, .sendNftTransaction, .claimPaidErc875MagicLink, .speedupTransaction, .cancelTransaction, .swapTransaction, .approve:
             break
         }
@@ -330,20 +341,20 @@ extension TransactionConfirmationCoordinator {
 }
 
 extension TransactionConfirmationCoordinator: SendTransactionErrorViewControllerDelegate {
-    func rectifyErrorButtonTapped(error: SendTransactionNotRetryableError, inController controller: SendTransactionErrorViewController) {
-        controller.dismiss(animated: true) {
+    func rectifyErrorButtonTapped(error: SendTransactionNotRetryableError, in viewController: SendTransactionErrorViewController) {
+        viewController.dismiss(animated: true) {
             self.rectifyTransactionError(error: error)
         }
     }
 
-    func linkTapped(_ url: URL, forError error: SendTransactionNotRetryableError, inController controller: SendTransactionErrorViewController) {
-        controller.dismiss(animated: true) {
+    func linkTapped(_ url: URL, forError error: SendTransactionNotRetryableError, in viewController: SendTransactionErrorViewController) {
+        viewController.dismiss(animated: true) {
             self.delegate?.didPressOpenWebPage(url, in: self.rootViewController)
         }
     }
 
-    func controllerDismiss(_ controller: SendTransactionErrorViewController) {
-        controller.dismiss(animated: true)
+    func didClose(in viewController: SendTransactionErrorViewController) {
+        viewController.dismiss(animated: true)
     }
 }
 

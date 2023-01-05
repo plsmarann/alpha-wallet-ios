@@ -38,9 +38,22 @@ class WalletCoordinator: Coordinator {
     ///Return true if caller should proceed to show UI (`navigationController`)
     @discardableResult func start(_ entryPoint: WalletEntryPoint) -> Bool {
         switch entryPoint {
-        case .importWallet:
+        case .importWallet(let params):
             let controller = ImportWalletViewController(keystore: keystore, analytics: analytics, domainResolutionService: domainResolutionService)
             controller.delegate = self
+            switch params {
+            case .json(let json):
+                controller.set(tabSelection: .keystore)
+                controller.setValueForCurrentField(string: json)
+            case .seedPhase(let seedPhase):
+                controller.set(tabSelection: .mnemonic)
+                controller.setValueForCurrentField(string: seedPhase.joined(separator: " "))
+            case .privateKey(let privateKey):
+                controller.set(tabSelection: .privateKey)
+                controller.setValueForCurrentField(string: privateKey)
+            case .none:
+                break
+            }
             controller.navigationItem.rightBarButtonItem = UIBarButtonItem.cancelBarButton(self, selector: #selector(dismiss))
             navigationController.viewControllers = [controller]
             importWalletViewController = controller
@@ -73,8 +86,7 @@ class WalletCoordinator: Coordinator {
 
     func createInitialWalletIfMissing() {
         if !keystore.hasWallets {
-            let result = keystore.createAccount()
-            switch result {
+            switch keystore.importWallet(type: .newWallet) {
             case .success(let account):
                 keystore.recentlyUsedWallet = account
             case .failure:
@@ -132,7 +144,7 @@ extension WalletCoordinator: ImportWalletViewControllerDelegate {
     func openQRCode(in controller: ImportWalletViewController) {
         guard let wallet = keystore.currentWallet, navigationController.ensureHasDeviceAuthorization() else { return }
         let scanQRCodeCoordinator = ScanQRCodeCoordinator(analytics: analytics, navigationController: navigationController, account: wallet, domainResolutionService: domainResolutionService)
-        let coordinator = QRCodeResolutionCoordinator(config: config, coordinator: scanQRCodeCoordinator, usage: .importWalletOnly, account: wallet, analytics: analytics)
+        let coordinator = QRCodeResolutionCoordinator(config: config, coordinator: scanQRCodeCoordinator, usage: .importWalletOnly, account: wallet)
         coordinator.delegate = self
         addCoordinator(coordinator)
         coordinator.start(fromSource: .importWalletScreen)
@@ -146,52 +158,25 @@ extension WalletCoordinator: ImportWalletViewControllerDelegate {
 
 extension WalletCoordinator: QRCodeResolutionCoordinatorDelegate {
 
-    func coordinator(_ coordinator: QRCodeResolutionCoordinator, didResolveAddress address: AlphaWallet.Address, action: ScanQRCodeAction) {
+    func coordinator(_ coordinator: QRCodeResolutionCoordinator, didResolve qrCodeResolution: QrCodeResolution) {
+        switch qrCodeResolution {
+        case .walletConnectUrl, .transactionType, .url, .string:
+            break
+        case .address(let address, _):
+            importWalletViewController?.set(tabSelection: .watch)
+            importWalletViewController?.setValueForCurrentField(string: address.eip55String)
+        case .json(let json):
+            importWalletViewController?.set(tabSelection: .keystore)
+            importWalletViewController?.setValueForCurrentField(string: json)
+        case .seedPhase(let seedPhase):
+            importWalletViewController?.set(tabSelection: .mnemonic)
+            importWalletViewController?.setValueForCurrentField(string: seedPhase.joined(separator: " "))
+        case .privateKey(let privateKey):
+            importWalletViewController?.set(tabSelection: .privateKey)
+            importWalletViewController?.setValueForCurrentField(string: privateKey)
+        }
+
         removeCoordinator(coordinator)
-
-        importWalletViewController?.set(tabSelection: .watch)
-        importWalletViewController?.setValueForCurrentField(string: address.eip55String)
-    }
-
-    func coordinator(_ coordinator: QRCodeResolutionCoordinator, didResolveTransactionType transactionType: TransactionType, token: Token) {
-        removeCoordinator(coordinator)
-        //no op
-    }
-
-    func coordinator(_ coordinator: QRCodeResolutionCoordinator, didResolveWalletConnectURL url: AlphaWallet.WalletConnect.ConnectionUrl) {
-        removeCoordinator(coordinator)
-        //no op
-    }
-
-    func coordinator(_ coordinator: QRCodeResolutionCoordinator, didResolveString value: String) {
-        removeCoordinator(coordinator)
-        //no op
-    }
-
-    func coordinator(_ coordinator: QRCodeResolutionCoordinator, didResolveURL url: URL) {
-        removeCoordinator(coordinator)
-        //no op
-    }
-
-    func coordinator(_ coordinator: QRCodeResolutionCoordinator, didResolveJSON json: String) {
-        removeCoordinator(coordinator)
-
-        importWalletViewController?.set(tabSelection: .keystore)
-        importWalletViewController?.setValueForCurrentField(string: json)
-    }
-
-    func coordinator(_ coordinator: QRCodeResolutionCoordinator, didResolveSeedPhase seedPhase: [String]) {
-        removeCoordinator(coordinator)
-
-        importWalletViewController?.set(tabSelection: .mnemonic)
-        importWalletViewController?.setValueForCurrentField(string: seedPhase.joined(separator: " "))
-    }
-
-    func coordinator(_ coordinator: QRCodeResolutionCoordinator, didResolvePrivateKey privateKey: String) {
-        removeCoordinator(coordinator)
-
-        importWalletViewController?.set(tabSelection: .privateKey)
-        importWalletViewController?.setValueForCurrentField(string: privateKey)
     }
 
     func didCancel(in coordinator: QRCodeResolutionCoordinator) {
@@ -213,7 +198,7 @@ extension WalletCoordinator: CreateInitialWalletViewControllerDelegate {
 
     func didTapImportWallet(inViewController viewController: CreateInitialWalletViewController) {
         logInitialAction(.import)
-        addWalletWith(entryPoint: .importWallet)
+        addWalletWith(entryPoint: .importWallet(params: nil))
     }
 }
 

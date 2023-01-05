@@ -18,7 +18,7 @@ protocol TokenCardRowViewModelProtocol {
     var contentsBackgroundColor: UIColor { get }
     ///TODO get rid of this at some point
     var isMeetupContract: Bool { get }
-    var tokenScriptHtml: (html: String, hash: Int) { get }
+    var tokenScriptHtml: String { get }
     var hasTokenScriptHtml: Bool { get }
     func subscribeStreetLocalityStateCountry(withBlock block: @escaping (String) -> Void)
     func subscribeBuilding(withBlock block: @escaping (String) -> Void)
@@ -26,15 +26,15 @@ protocol TokenCardRowViewModelProtocol {
 
 extension TokenCardRowViewModelProtocol {
     var contentsBackgroundColor: UIColor {
-        return Colors.appWhite
+        return Configuration.Color.Semantic.defaultViewBackground
     }
 
     var contentsCornerRadius: CGFloat {
-        return Metrics.CornerRadius.box
+        return DataEntry.Metric.CornerRadius.box
     }
 
     var titleColor: UIColor {
-        return Colors.appText
+        return Configuration.Color.Semantic.defaultForegroundText
     }
 
     var countColor: UIColor {
@@ -42,11 +42,11 @@ extension TokenCardRowViewModelProtocol {
     }
 
     var subtitleColor: UIColor {
-        return UIColor(red: 112, green: 112, blue: 112)
+        return Configuration.Color.Semantic.secondary
     }
 
     var iconsColor: UIColor {
-        return Colors.navigationTitleColor
+        return Configuration.Color.Semantic.defaultHeadlineText
     }
 
     var tokenCountFont: UIFont {
@@ -62,11 +62,11 @@ extension TokenCardRowViewModelProtocol {
     }
 
     var stateBackgroundColor: UIColor {
-        return UIColor(red: 151, green: 151, blue: 151)
+        return Configuration.Color.Semantic.tableViewSpecialBackground
     }
 
     var stateColor: UIColor {
-        return .white
+        return Configuration.Color.Semantic.defaultInverseText
     }
 
     var subtitleFont: UIFont {
@@ -77,19 +77,4 @@ extension TokenCardRowViewModelProtocol {
         return Fonts.regular(size: 16)
     }
 
-    var buttonTitleColor: UIColor {
-        return Colors.appWhite
-    }
-
-    var disabledButtonTitleColor: UIColor {
-        return Colors.darkGray
-    }
-
-    var buttonBackgroundColor: UIColor {
-        return Colors.appHighlightGreen
-    }
-
-    var buttonFont: UIFont {
-        return Fonts.regular(size: 20)
-    }
 }
