@@ -52,6 +52,14 @@ final class FakeNetworkService: NetworkService {
     }
 }
 
+extension AnyCAIP10AccountProvidable {
+    static func make(wallets: [Wallet] = [.make()], servers: [RPCServer] = [.main]) -> AnyCAIP10AccountProvidable {
+        let walletAddressesStore = fakeWalletAddressesStore(wallets: wallets)
+        let serversProvidable = BaseServersProvider(config: .make(enabledServers: servers))
+        return AnyCAIP10AccountProvidable(walletAddressesStore: walletAddressesStore, serversProvidable: serversProvidable)
+    }
+}
+
 extension AssetDefinitionStore {
     static func make() -> AssetDefinitionStore {
         return .init(networkService: FakeNetworkService())
@@ -103,7 +111,7 @@ class ActiveWalletViewTests: XCTestCase {
             notificationService: .fake(),
             blockiesGenerator: .make(),
             domainResolutionService: FakeDomainResolutionService(),
-            tokenSwapper: FakeTokenSwapper(),
+            tokenSwapper: TokenSwapper.make(),
             sessionsProvider: dep.sessionsProvider,
             tokenCollection: dep.pipeline,
             importToken: dep.importToken,
@@ -113,7 +121,8 @@ class ActiveWalletViewTests: XCTestCase {
             currencyService: currencyService,
             tokenScriptOverridesFileManager: .fake(),
             networkService: FakeNetworkService(),
-            promptBackup: .make())
+            promptBackup: .make(),
+            caip10AccountProvidable: AnyCAIP10AccountProvidable.make())
 
         coordinator.start(animated: false)
 
@@ -140,7 +149,7 @@ class ActiveWalletViewTests: XCTestCase {
             XCTAssert((tabbarController?.viewControllers?[3] as? UINavigationController)?.viewControllers[0] is SettingsViewController)
         }
     }
-
+    // swiftlint:disable function_body_length
     func testChangeRecentlyUsedAccount() {
         let account1: Wallet = .make(address: AlphaWallet.Address(string: "0x1000000000000000000000000000000000000000")!)
         let account2: Wallet = .make(address: AlphaWallet.Address(string: "0x2000000000000000000000000000000000000000")!)
@@ -187,7 +196,7 @@ class ActiveWalletViewTests: XCTestCase {
             notificationService: .fake(),
             blockiesGenerator: .make(),
             domainResolutionService: FakeDomainResolutionService(),
-            tokenSwapper: FakeTokenSwapper(),
+            tokenSwapper: TokenSwapper.make(),
             sessionsProvider: dep1.sessionsProvider,
             tokenCollection: dep1.pipeline,
             importToken: dep1.importToken,
@@ -197,7 +206,8 @@ class ActiveWalletViewTests: XCTestCase {
             currencyService: currencyService,
             tokenScriptOverridesFileManager: .fake(),
             networkService: FakeNetworkService(),
-            promptBackup: .make())
+            promptBackup: .make(),
+            caip10AccountProvidable: AnyCAIP10AccountProvidable.make())
 
         c1.start(animated: false)
 
@@ -225,7 +235,7 @@ class ActiveWalletViewTests: XCTestCase {
             notificationService: .fake(),
             blockiesGenerator: .make(),
             domainResolutionService: FakeDomainResolutionService(),
-            tokenSwapper: FakeTokenSwapper(),
+            tokenSwapper: TokenSwapper.make(),
             sessionsProvider: dep2.sessionsProvider,
             tokenCollection: dep2.pipeline,
             importToken: dep2.importToken,
@@ -235,12 +245,14 @@ class ActiveWalletViewTests: XCTestCase {
             currencyService: currencyService,
             tokenScriptOverridesFileManager: .fake(),
             networkService: FakeNetworkService(),
-            promptBackup: .make())
+            promptBackup: .make(),
+            caip10AccountProvidable: AnyCAIP10AccountProvidable.make())
 
         c1.start(animated: false)
 
         XCTAssertEqual(c2.keystore.currentWallet, account2)
     }
+    // swiftlint:enable function_body_length
 
     func testShowSendFlow() {
         let wallet: Wallet = .make()
@@ -280,7 +292,7 @@ class ActiveWalletViewTests: XCTestCase {
                 notificationService: .fake(),
                 blockiesGenerator: .make(),
                 domainResolutionService: FakeDomainResolutionService(),
-                tokenSwapper: FakeTokenSwapper(),
+                tokenSwapper: TokenSwapper.make(),
                 sessionsProvider: dep.sessionsProvider,
                 tokenCollection: dep.pipeline,
                 importToken: dep.importToken,
@@ -290,7 +302,8 @@ class ActiveWalletViewTests: XCTestCase {
                 currencyService: currencyService,
                 tokenScriptOverridesFileManager: .fake(),
                 networkService: FakeNetworkService(),
-                promptBackup: .make())
+                promptBackup: .make(),
+                caip10AccountProvidable: AnyCAIP10AccountProvidable.make())
 
         coordinator.start(animated: false)
         coordinator.showPaymentFlow(
@@ -340,7 +353,7 @@ class ActiveWalletViewTests: XCTestCase {
             notificationService: .fake(),
             blockiesGenerator: .make(),
             domainResolutionService: FakeDomainResolutionService(),
-            tokenSwapper: FakeTokenSwapper(),
+            tokenSwapper: TokenSwapper.make(),
             sessionsProvider: dep.sessionsProvider,
             tokenCollection: dep.pipeline,
             importToken: dep.importToken,
@@ -350,7 +363,8 @@ class ActiveWalletViewTests: XCTestCase {
             currencyService: currencyService,
             tokenScriptOverridesFileManager: .fake(),
             networkService: FakeNetworkService(),
-            promptBackup: .make())
+            promptBackup: .make(),
+            caip10AccountProvidable: AnyCAIP10AccountProvidable.make())
 
         coordinator.start(animated: false)
         coordinator.showPaymentFlow(for: .request, server: .main, navigationController: coordinator.navigationController)
@@ -397,7 +411,7 @@ class ActiveWalletViewTests: XCTestCase {
             notificationService: .fake(),
             blockiesGenerator: .make(),
             domainResolutionService: FakeDomainResolutionService(),
-            tokenSwapper: FakeTokenSwapper(),
+            tokenSwapper: TokenSwapper.make(),
             sessionsProvider: dep.sessionsProvider,
             tokenCollection: dep.pipeline,
             importToken: dep.importToken,
@@ -407,7 +421,8 @@ class ActiveWalletViewTests: XCTestCase {
             currencyService: currencyService,
             tokenScriptOverridesFileManager: .fake(),
             networkService: FakeNetworkService(),
-            promptBackup: .make())
+            promptBackup: .make(),
+            caip10AccountProvidable: AnyCAIP10AccountProvidable.make())
         coordinator.start(animated: false)
 
         let viewController = (coordinator.tabBarController.selectedViewController as? UINavigationController)?.viewControllers[0]
@@ -473,7 +488,7 @@ class ActiveWalletViewTests: XCTestCase {
                     notificationService: .fake(),
                     blockiesGenerator: .make(),
                     domainResolutionService: FakeDomainResolutionService(),
-                    tokenSwapper: FakeTokenSwapper(),
+                    tokenSwapper: TokenSwapper.make(),
                     sessionsProvider: dep.sessionsProvider,
                     tokenCollection: dep.pipeline,
                     importToken: dep.importToken,
@@ -483,7 +498,8 @@ class ActiveWalletViewTests: XCTestCase {
                     currencyService: currencyService,
                     tokenScriptOverridesFileManager: .fake(),
                     networkService: FakeNetworkService(),
-                    promptBackup: .make())
+                    promptBackup: .make(),
+                    caip10AccountProvidable: AnyCAIP10AccountProvidable.make())
 
             coordinator.start(animated: false)
 

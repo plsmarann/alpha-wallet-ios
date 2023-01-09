@@ -24,7 +24,7 @@ struct TokensViewModelOutput {
 // swiftlint:disable type_body_length
 final class TokensViewModel {
     private let tokenCollection: TokenCollection
-    private let walletConnectCoordinator: WalletConnectCoordinator
+    private let walletConnectProvider: WalletConnectProvider
     private let walletBalanceService: WalletBalanceService
         //Must be computed because localization can be overridden by user dynamically
     static var segmentedControlTitles: [String] { WalletFilter.orderedTabs.map { $0.title } }
@@ -43,7 +43,7 @@ final class TokensViewModel {
         return tokens.chunked(into: 2).compactMap { elems -> CollectiblePairs? in
             guard let left = elems.first else { return nil }
 
-            let right = (elems.last?.contractAddress.sameContract(as: left.contractAddress) ?? false) ? nil : elems.last
+            let right = elems.last?.contractAddress == left.contractAddress ? nil : elems.last
             return .init(left: left, right: right)
         }
     }
@@ -103,10 +103,6 @@ final class TokensViewModel {
         return .white
     }
 
-    var walletDefaultTitle: String {
-        return R.string.localizable.walletTokensTabbarItemTitle()
-    }
-
     var buyCryptoTitle: String {
         return R.string.localizable.buyCryptoTitle()
     }
@@ -162,11 +158,20 @@ final class TokensViewModel {
         }
     }
 
-    init(wallet: Wallet, tokenCollection: TokenCollection, tokensFilter: TokensFilter, walletConnectCoordinator: WalletConnectCoordinator, walletBalanceService: WalletBalanceService, config: Config, domainResolutionService: DomainResolutionServiceType, blockiesGenerator: BlockiesGenerator, assetDefinitionStore: AssetDefinitionStore) {
+    init(wallet: Wallet,
+         tokenCollection: TokenCollection,
+         tokensFilter: TokensFilter,
+         walletConnectProvider: WalletConnectProvider,
+         walletBalanceService: WalletBalanceService,
+         config: Config,
+         domainResolutionService: DomainResolutionServiceType,
+         blockiesGenerator: BlockiesGenerator,
+         assetDefinitionStore: AssetDefinitionStore) {
+
         self.wallet = wallet
         self.tokenCollection = tokenCollection
         self.tokensFilter = tokensFilter
-        self.walletConnectCoordinator = walletConnectCoordinator
+        self.walletConnectProvider = walletConnectProvider
         self.walletBalanceService = walletBalanceService
         self.config = config
         self.domainResolutionService = domainResolutionService
@@ -199,7 +204,7 @@ final class TokensViewModel {
                 tokenCollection.refresh()
             }.store(in: &cancellable)
 
-        walletConnectCoordinator.sessions
+        walletConnectProvider.sessionsPublisher
             .receive(on: RunLoop.main)
             .sink { [weak self] sessions in
                 self?.walletConnectSessions = sessions.count
@@ -215,13 +220,14 @@ final class TokensViewModel {
         let walletSummary = walletBalanceService
             .walletBalance(for: wallet)
             .map { value in WalletSummary(balances: [value]) }
+            .prepend(WalletSummary(balances: []))
             .eraseToAnyPublisher()
 
         let title = input.appear
-            .flatMap { [unowned self, walletNameFetcher, wallet] _ -> AnyPublisher<String, Never> in
+            .flatMap { [walletNameFetcher, wallet] _ -> AnyPublisher<String, Never> in
                 walletNameFetcher.assignedNameOrEns(for: wallet.address)
-                    .map { $0 ?? self.walletDefaultTitle }
-                    .prepend(self.walletDefaultTitle)
+                    .map { $0 ?? wallet.address.truncateMiddle }
+                    .prepend(wallet.address.truncateMiddle)
                     .eraseToAnyPublisher()
             }.eraseToAnyPublisher()
 
@@ -550,7 +556,7 @@ extension TokensViewModel {
             case .rpcServer:
                 return false
             case .token(let token):
-                if token.contractAddress.sameContract(as: Constants.nativeCryptoAddressInDatabase) {
+                if token.contractAddress == Constants.nativeCryptoAddressInDatabase {
                     return false
                 }
                 return true

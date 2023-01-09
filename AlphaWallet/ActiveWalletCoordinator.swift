@@ -35,21 +35,21 @@ class ActiveWalletCoordinator: NSObject, Coordinator, DappRequestHandlerDelegate
             tokenGroupIdentifier: TokenGroupIdentifier.identifier(fromFileName: "tokens")!)
     }()
 
-    private let tokenCollection: TokenCollection
+    internal let tokenCollection: TokenCollection
 
-    private var transactionCoordinator: TransactionsCoordinator? {
+    var transactionCoordinator: TransactionsCoordinator? {
         return coordinators.compactMap { $0 as? TransactionsCoordinator }.first
     }
-    private var tokensCoordinator: TokensCoordinator? {
+    var tokensCoordinator: TokensCoordinator? {
         return coordinators.compactMap { $0 as? TokensCoordinator }.first
     }
     var dappBrowserCoordinator: DappBrowserCoordinator? {
         coordinators.compactMap { $0 as? DappBrowserCoordinator }.first
     }
-    private var activityCoordinator: ActivitiesCoordinator? {
+    var activityCoordinator: ActivitiesCoordinator? {
         return coordinators.compactMap { $0 as? ActivitiesCoordinator }.first
     }
-    private var settingsCoordinator: SettingsCoordinator? {
+    var settingsCoordinator: SettingsCoordinator? {
         return coordinators.compactMap { $0 as? SettingsCoordinator }.first
     }
     private lazy var helpUsCoordinator: HelpUsCoordinator = {
@@ -125,7 +125,7 @@ class ActiveWalletCoordinator: NSObject, Coordinator, DappRequestHandlerDelegate
     }
 
     private lazy var dappRequestHandler: DappRequestHandler = {
-        let handler = DappRequestHandler(walletConnectCoordinator: walletConnectCoordinator, dappBrowserCoordinator: dappBrowserCoordinator!)
+        let handler = DappRequestHandler(walletConnectProvider: walletConnectCoordinator.walletConnectProvider, dappBrowserCoordinator: dappBrowserCoordinator!)
         handler.delegate = self
 
         return handler
@@ -176,7 +176,8 @@ class ActiveWalletCoordinator: NSObject, Coordinator, DappRequestHandlerDelegate
          currencyService: CurrencyService,
          tokenScriptOverridesFileManager: TokenScriptOverridesFileManager,
          networkService: NetworkService,
-         promptBackup: PromptBackup) {
+         promptBackup: PromptBackup,
+         caip10AccountProvidable: CAIP10AccountProvidable) {
 
         self.promptBackup = promptBackup
         self.networkService = networkService
@@ -220,7 +221,7 @@ class ActiveWalletCoordinator: NSObject, Coordinator, DappRequestHandlerDelegate
 
         self.keystore.recentlyUsedWallet = wallet
         crashlytics.trackActiveWallet(wallet: wallet)
-
+        caip10AccountProvidable.set(activeWallet: wallet)
         notificationService.register(source: transactionNotificationService)
         swapButton.addTarget(self, action: #selector(swapButtonSelected), for: .touchUpInside)
 
@@ -343,7 +344,7 @@ class ActiveWalletCoordinator: NSObject, Coordinator, DappRequestHandlerDelegate
             domainResolutionService: domainResolutionService,
             tokensFilter: tokensFilter,
             currencyService: currencyService)
-        
+
         coordinator.rootViewController.tabBarItem = ActiveWalletViewModel.Tabs.tokens.tabBarItem
         coordinator.delegate = self
         coordinator.start()
@@ -392,7 +393,7 @@ class ActiveWalletCoordinator: NSObject, Coordinator, DappRequestHandlerDelegate
         coordinator.rootViewController.tabBarItem = ActiveWalletViewModel.Tabs.activities.tabBarItem
         coordinator.navigationController.configureForLargeTitles()
         addCoordinator(coordinator)
-        
+
         return coordinator
     }
 
@@ -564,7 +565,7 @@ class ActiveWalletCoordinator: NSObject, Coordinator, DappRequestHandlerDelegate
 
     func addImported(contract: AlphaWallet.Address, forServer server: RPCServer) {
         //Useful to check because we are/might action-only TokenScripts for native crypto currency
-        guard !contract.sameContract(as: Constants.nativeCryptoAddressInDatabase) else { return }
+        guard contract != Constants.nativeCryptoAddressInDatabase else { return }
 
         importToken.importToken(for: contract, server: server, onlyIfThereIsABalance: false)
             .done { _ in }
@@ -637,11 +638,6 @@ extension ActiveWalletCoordinator: SelectServiceToBuyCryptoCoordinatorDelegate {
         removeCoordinator(coordinator)
     }
 
-    func buyCrypto(wallet: Wallet, server: RPCServer, viewController: UIViewController, source: Analytics.BuyCryptoSource) {
-        let token = MultipleChainsTokensDataStore.functional.etherToken(forServer: server)
-        buyCrypto(wallet: wallet, token: token, viewController: viewController, source: source)
-    }
-
     private func buyCrypto(wallet: Wallet, token: TokenActionsIdentifiable, viewController: UIViewController, source: Analytics.BuyCryptoSource) {
         guard let buyTokenProvider = tokenActionsService.service(ofType: BuyTokenProvider.self) as? BuyTokenProvider else { return }
         let coordinator = SelectServiceToBuyCryptoCoordinator(buyTokenProvider: buyTokenProvider, token: token, viewController: viewController, source: source, analytics: analytics)
@@ -651,7 +647,14 @@ extension ActiveWalletCoordinator: SelectServiceToBuyCryptoCoordinatorDelegate {
     }
 }
 
-extension ActiveWalletCoordinator {
+// swiftlint:enable type_body_length
+extension ActiveWalletCoordinator: WalletConnectCoordinatorDelegate {
+
+    func buyCrypto(wallet: Wallet, server: RPCServer, viewController: UIViewController, source: Analytics.BuyCryptoSource) {
+        let token = MultipleChainsTokensDataStore.functional.etherToken(forServer: server)
+        buyCrypto(wallet: wallet, token: token, viewController: viewController, source: source)
+    }
+
     func requestSwitchChain(server: RPCServer, currentUrl: URL?, callbackID: SwitchCustomChainCallbackId, targetChain: WalletSwitchEthereumChainObject) {
         let coordinator = DappRequestSwitchExistingChainCoordinator(
             config: config,
@@ -679,15 +682,15 @@ extension ActiveWalletCoordinator {
             currentUrl: nil,
             viewController: presentationViewController,
             networkService: networkService)
-        
+
         coordinator.delegate = dappRequestHandler
         dappRequestHandler.addCoordinator(coordinator)
         coordinator.start()
     }
-}
 
-// swiftlint:enable type_body_length
-extension ActiveWalletCoordinator: WalletConnectCoordinatorDelegate {
+    func session(for server: AlphaWalletFoundation.RPCServer) -> WalletSession? {
+        sessionsProvider.session(for: server)
+    }
 
     func didSendTransaction(_ transaction: SentTransaction, inCoordinator coordinator: TransactionConfirmationCoordinator) {
         handlePendingTransaction(transaction: transaction)
@@ -709,7 +712,7 @@ extension ActiveWalletCoordinator: CanOpenURL {
     }
 
     func didPressViewContractWebPage(forContract contract: AlphaWallet.Address, server: RPCServer, in viewController: UIViewController) {
-        if contract.sameContract(as: Constants.nativeCryptoAddressInDatabase) {
+        if contract == Constants.nativeCryptoAddressInDatabase {
             guard let url = server.etherscanContractDetailsWebPageURL(for: wallet.address) else { return }
             logExplorerUse(type: .wallet)
             open(url: url, in: viewController)
