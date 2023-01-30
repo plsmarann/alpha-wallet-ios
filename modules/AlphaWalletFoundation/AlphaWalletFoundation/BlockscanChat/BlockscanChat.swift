@@ -4,6 +4,7 @@ import Foundation
 import SwiftyJSON
 import Combine
 import AlphaWalletCore
+import AlphaWalletLogger
 
 public class BlockscanChat {
     private var lastKnownCount: Int?
@@ -25,6 +26,7 @@ public class BlockscanChat {
         infoLog("[BlockscanChat] Fetching unread count for \(address.eip55String)…")
         return networkService
             .dataTaskPublisher(GetUnreadCountEndpointRequest(address: address))
+            .receive(on: DispatchQueue.global())
             .mapError { BlockscanChat.ResponseError.other($0) }
             .flatMap { response -> AnyPublisher<Int, BlockscanChat.ResponseError> in
                 do {
@@ -49,7 +51,7 @@ extension BlockscanChat {
         func asURLRequest() throws -> URLRequest {
             guard var components = URLComponents(url: Constants.BlockscanChat.unreadCountBaseUrl, resolvingAgainstBaseURL: false) else { throw URLError(.badURL) }
             components.path = "/blockscanchat/unreadcount/\(address.eip55String)"
-            
+
             return try URLRequest(url: components.asURL(), method: .get, headers: [
                 "PROXY_KEY": Constants.Credentials.blockscanChatProxyKey
             ])

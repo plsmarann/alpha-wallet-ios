@@ -66,12 +66,12 @@ extension WalletDataProcessingPipeline {
             tokensService: tokensService,
             sessionsProvider: sessionsProvider,
             eventsActivityDataStore: eventsActivityDataStore,
-            eventsDataStore: eventsDataStore,
-            analytics: fas)
+            eventsDataStore: eventsDataStore)
 
         let dep = AppCoordinator.WalletDependencies(
             activitiesPipeLine: activitiesPipeLine,
             transactionsDataStore: transactionsDataStore,
+            tokensDataStore: tokensDataStore,
             importToken: importToken,
             tokensService: tokensService,
             pipeline: pipeline,
@@ -119,7 +119,8 @@ class PaymentCoordinatorTests: XCTestCase {
             tokenSwapper: TokenSwapper.make(),
             tokensFilter: .make(),
             importToken: dep.importToken,
-            networkService: FakeNetworkService())
+            networkService: FakeNetworkService(),
+            transactionDataStore: FakeTransactionsStorage(wallet: wallet))
         coordinator.start()
 
         XCTAssertEqual(1, coordinator.coordinators.count)
@@ -144,7 +145,8 @@ class PaymentCoordinatorTests: XCTestCase {
             tokenSwapper: TokenSwapper.make(),
             tokensFilter: .make(),
             importToken: dep.importToken,
-            networkService: FakeNetworkService())
+            networkService: FakeNetworkService(),
+            transactionDataStore: FakeTransactionsStorage(wallet: wallet))
 
         coordinator.start()
 

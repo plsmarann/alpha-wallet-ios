@@ -8,6 +8,7 @@
 import Foundation
 import WalletConnectSwift
 import AlphaWalletFoundation
+import AlphaWalletLogger
 
 protocol WalletConnectV1ClientDelegate: AnyObject {
     func server(_ server: Server, didReceiveRequest: Request)
@@ -100,7 +101,7 @@ final class WalletConnectV1NativeClient: WalletConnectV1Client {
             }
         }
         connectionTimeoutTimers[url] = timer
-        
+
         try server.connect(to: url)
     }
 

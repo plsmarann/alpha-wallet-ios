@@ -4,7 +4,7 @@ import UIKit
 import AlphaWalletFoundation
 
 protocol SetSellTokensCardExpiryDateViewControllerDelegate: AnyObject, CanOpenURL {
-    func didSetSellTokensExpiryDate(tokenHolder: TokenHolder, linkExpiryDate: Date, ethCost: Ether, in viewController: SetSellTokensCardExpiryDateViewController)
+    func didSetSellTokensExpiryDate(tokenHolder: TokenHolder, linkExpiryDate: Date, ethCost: Double, in viewController: SetSellTokensCardExpiryDateViewController)
     func didPressViewInfo(in viewController: SetSellTokensCardExpiryDateViewController)
 }
 
@@ -72,7 +72,7 @@ class SetSellTokensCardExpiryDateViewController: UIViewController, TokenVerifiab
         let label = UILabel()
         label.translatesAutoresizingMaskIntoConstraints = false
         label.textAlignment = .center
-        label.textColor = Colors.appRed
+        label.textColor = Configuration.Color.Semantic.defaultNote
         label.font = Fonts.semibold(size: 21)
 
         return label
@@ -81,7 +81,7 @@ class SetSellTokensCardExpiryDateViewController: UIViewController, TokenVerifiab
         let label = UILabel()
         label.translatesAutoresizingMaskIntoConstraints = false
         label.textAlignment = .center
-        label.textColor = Colors.appRed
+        label.textColor = Configuration.Color.Semantic.defaultNote
         label.font = Fonts.semibold(size: 21)
         label.numberOfLines = 0
 
@@ -90,7 +90,7 @@ class SetSellTokensCardExpiryDateViewController: UIViewController, TokenVerifiab
     private let noteBorderView: UIView = {
         let view = UIView()
         view.layer.cornerRadius = DataEntry.Metric.CornerRadius.box
-        view.layer.borderColor = Colors.appRed.cgColor
+        view.layer.borderColor = Configuration.Color.Semantic.defaultNote.cgColor
         view.layer.borderWidth = 1
 
         return view
@@ -101,7 +101,7 @@ class SetSellTokensCardExpiryDateViewController: UIViewController, TokenVerifiab
     private let timePicker = UIDatePicker.timePicker
     private var viewModel: SetSellTokensCardExpiryDateViewModel
     private let tokenHolder: TokenHolder
-    private let ethCost: Ether
+    private let ethCost: Double
     private let containerView: ScrollableStackView = {
         let view = ScrollableStackView()
         view.stackView.axis = .vertical
@@ -135,7 +135,7 @@ class SetSellTokensCardExpiryDateViewController: UIViewController, TokenVerifiab
         analytics: AnalyticsLogger,
         paymentFlow: PaymentFlow,
         tokenHolder: TokenHolder,
-        ethCost: Ether,
+        ethCost: Double,
         viewModel: SetSellTokensCardExpiryDateViewModel,
         assetDefinitionStore: AssetDefinitionStore,
         keystore: Keystore,

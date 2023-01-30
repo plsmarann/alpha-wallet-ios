@@ -434,7 +434,7 @@ final class TransactionTypeFromQrCode {
         }
 
         return eip681UrlResolver
-            .resolvePublisher(url: url)
+            .resolve(url: url)
             .flatMap { [session] result -> AnyPublisher<TransactionType, CheckEIP681Error> in
                 switch result {
                 case .transaction(let transactionType, let token):
@@ -488,7 +488,6 @@ extension SendViewModel {
 
     struct AmountTextFieldState {
         let amount: AmountTextFieldViewModel.FungibleAmount
-        //let cryptoToFiatRate: AmountTextFieldViewModel.CurrencyRate
     }
 
     struct RecipientTextFieldState {

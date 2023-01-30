@@ -11,6 +11,7 @@ import FloatingPanel
 import PromiseKit
 import BigInt
 import AlphaWalletFoundation
+import AlphaWalletCore
 
 protocol SwapTokensCoordinatorDelegate: CanOpenURL, BuyCryptoDelegate {
     func didFinish(_ result: ConfirmResult, in coordinator: SwapTokensCoordinator)
@@ -38,7 +39,8 @@ final class SwapTokensCoordinator: Coordinator {
     private lazy var approveSwapProvider: ApproveSwapProvider = {
         let provider = ApproveSwapProvider(
             configurator: configurator,
-            analytics: analytics)
+            analytics: analytics,
+            transactionDataStore: transactionDataStore)
 
         provider.delegate = self
         return provider
@@ -49,6 +51,7 @@ final class SwapTokensCoordinator: Coordinator {
     private var transactionConfirmationResult: ConfirmResult? = .none
     private let tokensFilter: TokensFilter
     private let networkService: NetworkService
+    private let transactionDataStore: TransactionDataStore
 
     var coordinators: [Coordinator] = []
     weak var delegate: SwapTokensCoordinatorDelegate?
@@ -61,8 +64,10 @@ final class SwapTokensCoordinator: Coordinator {
          assetDefinitionStore: AssetDefinitionStore,
          tokenCollection: TokenCollection,
          tokensFilter: TokensFilter,
-         networkService: NetworkService) {
+         networkService: NetworkService,
+         transactionDataStore: TransactionDataStore) {
 
+        self.transactionDataStore = transactionDataStore
         self.networkService = networkService
         self.tokensFilter = tokensFilter
         self.assetDefinitionStore = assetDefinitionStore
@@ -181,16 +186,14 @@ extension SwapTokensCoordinator: ApproveSwapProviderDelegate {
         }
     }
 
-    func didFailure(in approveSwapProvider: ApproveSwapProvider, error: Error) {
+    func didFailure(in approveSwapProvider: ApproveSwapProvider, error: SwapError) {
         rootViewController.hideLoading()
 
-        if let _error = error as? SwapError {
-            switch _error {
-            case .unableToBuildSwapUnsignedTransaction, .unableToBuildSwapUnsignedTransactionFromSwapProvider, .userCancelledApproval, .approveTransactionNotCompleted, .tokenOrSwapQuoteNotFound:
-                return
-            case .unknownError, .inner, .invalidJson:
-                break
-            }
+        switch error {
+        case .unableToBuildSwapUnsignedTransaction, .unableToBuildSwapUnsignedTransactionFromSwapProvider, .userCancelledApproval, .tokenOrSwapQuoteNotFound:
+            return
+        case .unknownError, .inner, .invalidJson:
+            break
         }
 
         if error.isUserCancelledError {
@@ -228,7 +231,7 @@ extension SwapTokensCoordinator: ApproveSwapProviderDelegate {
         coordinator.start(fromSource: .swap)
     }
 
-    func promptForErc20Approval(token: AlphaWallet.Address, server: RPCServer, owner: AlphaWallet.Address, spender: AlphaWallet.Address, amount: BigUInt, in provider: ApproveSwapProvider) -> Promise<EthereumTransaction.Hash> {
+    func promptForErc20Approval(token: AlphaWallet.Address, server: RPCServer, owner: AlphaWallet.Address, spender: AlphaWallet.Address, amount: BigUInt, in provider: ApproveSwapProvider) -> AnyPublisher<String, PromiseError> {
         return firstly {
             Promise.value(token)
         }.map { contract in
@@ -261,14 +264,14 @@ extension SwapTokensCoordinator: ApproveSwapProviderDelegate {
             case .sentTransaction(let transaction):
                 return transaction.id
             }
-        }.recover { error -> Promise<EthereumTransaction.Hash> in
+        }.recover { error -> Promise<String> in
             //TODO no good to have `DAppError` here, but this is because of `TransactionConfirmationCoordinatorBridgeToPromise`. Maybe good to have a global "UserCancelled" or something? If enum, not too many cases? To avoid `switch`
             if case DAppError.cancelled = error {
                 throw SwapError.userCancelledApproval
             } else {
                 throw error
             }
-        }
+        }.publisher()
     }
 
     private func showError(_ error: Error) {

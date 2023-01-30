@@ -1,8 +1,9 @@
-// Copyright SIX DAY LLC. All rights reserved.
+// Copyright © 2023 Stormbird PTE. LTD.
 
-import BigInt
 import Foundation
+import AlphaWalletLogger
 import APIKit
+import BigInt
 import JSONRPCKit
 import PromiseKit
 
@@ -20,7 +21,7 @@ public class SendTransaction {
                 config: Config,
                 analytics: AnalyticsLogger,
                 prompt: String) {
-        
+
         self.prompt = prompt
         self.session = session
         self.keystore = keystore
@@ -75,7 +76,7 @@ public class SendTransaction {
     private func resolveNextNonce(for transaction: UnsignedTransaction) -> Promise<UnsignedTransaction> {
         let (rpcURL, rpcHeaders) = rpcURLAndHeaders
         return firstly {
-            GetNextNonce(rpcURL: rpcURL, rpcHeaders: rpcHeaders, server: session.server, wallet: session.account.address, analytics: analytics).getNextNonce()
+            GetNextNonce(rpcURL: rpcURL, rpcHeaders: rpcHeaders, server: session.server, analytics: analytics).getNextNonce(wallet: session.account.address)
         }.map { nonce -> UnsignedTransaction in
             let transaction = self.appendNonce(to: transaction, currentNonce: nonce)
             return transaction
@@ -114,7 +115,7 @@ public class SendTransaction {
 
     private func logSelectSendError(_ error: Error) {
         guard let error = error as? SendTransactionNotRetryableError else { return }
-        switch error {
+        switch error.type {
         case .nonceTooLow:
             analytics.log(error: Analytics.Error.sendTransactionNonceTooLow)
         case .insufficientFunds, .gasPriceTooLow, .gasLimitTooLow, .gasLimitTooHigh, .possibleChainIdMismatch, .executionReverted, .unknown:

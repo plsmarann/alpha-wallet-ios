@@ -29,13 +29,13 @@ struct GenerateTransferMagicLinkViewModel {
         return Configuration.Color.Semantic.defaultForegroundText
     }
     var actionButtonBackgroundColor: UIColor {
-        return Colors.appActionButtonGreen
+        return Configuration.Color.Semantic.actionButtonBackground
     }
     var actionButtonTitleFont: UIFont {
         return Fonts.regular(size: 20)
     }
     var cancelButtonTitleColor: UIColor {
-        return Colors.appRed
+        return Configuration.Color.Semantic.cancelButtonTitle
     }
     var cancelButtonBackgroundColor: UIColor {
         return .clear

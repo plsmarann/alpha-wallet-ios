@@ -82,9 +82,6 @@ clean:
 	rm -rf ./Pods/*
 	@xcodebuild -quiet -disableAutomaticPackageResolution -workspace AlphaWallet.xcworkspace -scheme AlphaWallet -sdk iphonesimulator -destination 'platform=iOS Simulator,name=iPhone 12,OS=latest' clean
 
-release:
-	fastlane release
-
 setup_path:
 	@$(bundle_cmd) config path $(vendor_path)
 
@@ -117,7 +114,7 @@ update_chains_file:
 	@echo "Compressing."
 	@$(compress_cmd)
 	@echo "Moving compressed file into project."
-	@mv scripts/chains.json.zip AlphaWallet/Rpc\ Network/chains.zip
+	@mv scripts/chains.json.zip AlphaWallet/Resources/chains.zip
 	@rm -f ./scripts/chains.json
 	@echo "Update completed."
 

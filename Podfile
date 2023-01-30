@@ -24,10 +24,12 @@ target 'AlphaWallet' do
   pod 'AlphaWalletCore', :path => '.'
   pod 'AlphaWalletGoBack', :path => '.'
   pod 'AlphaWalletENS', :path => '.'
+  pod 'AlphaWalletLogger', :path => '.'
   pod 'AlphaWalletOpenSea', :path => '.'
   pod 'AlphaWalletFoundation', :path => '.'
   pod 'AlphaWalletTrackAPICalls', :path => '.'
   pod 'AlphaWalletWeb3', :path => '.'
+  pod 'AlphaWalletShareExtensionCore', :path => '.'
   pod 'MailchimpSDK'
   pod 'xcbeautify'
   pod 'FloatingPanel'
@@ -47,11 +49,14 @@ target 'AlphaWallet' do
       pod 'iOSSnapshotTestCase', '6.2.0'
   end
 
-  target 'AlphaWalletShare' do
-      inherit! :search_paths
-      # Pods for testing
-  end
 
+end
+
+target 'AlphaWalletShare' do
+  use_frameworks!
+  inherit! :search_paths
+
+  pod 'AlphaWalletShareExtensionCore', :path => '.'
 end
 
 post_install do |installer|

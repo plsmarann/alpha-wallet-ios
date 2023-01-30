@@ -5,6 +5,8 @@ import Foundation
 import XCTest
 import Combine
 import AlphaWalletFoundation
+import AlphaWalletCore
+import AlphaWalletWeb3
 
 class EnsResolverTests: XCTestCase {
     func testNameHash() {
@@ -14,8 +16,9 @@ class EnsResolverTests: XCTestCase {
     }
     private var cancelable = Set<AnyCancellable>()
     private lazy var resolver: EnsResolver = {
-        let server = makeServerForMainnet()
-        return EnsResolver(server: server, storage: FakeEnsRecordsStorage())
+        return EnsResolver(
+            storage: FakeEnsRecordsStorage(),
+            blockchainProvider: RpcBlockchainProvider(server: .main, analytics: FakeAnalyticsService(), params: .defaultParams(for: .main)))
     }()
     func testResolution() {
         var expectations = [XCTestExpectation]()
@@ -29,7 +32,16 @@ class EnsResolverTests: XCTestCase {
                 case .finished:
                     break
                 case .failure(let error):
-                    XCTFail("Unknown error: \(error)")
+                    guard case .embeded(let e) = error, let pe = e as? PromiseError, let e = pe.embedded as? AlphaWalletWeb3.Web3Error else {
+                        XCTFail("Unknown error: \(error)")
+                        return
+                    }
+                    switch e {
+                    case .rateLimited:
+                        break
+                    default:
+                        XCTFail("Unknown error: \(error)")
+                    }
                 }
                 expectation.fulfill()
             }, receiveValue: { address in
@@ -50,7 +62,16 @@ class EnsResolverTests: XCTestCase {
                 case .finished:
                     break
                 case .failure(let error):
-                    XCTFail("Unknown error: \(error)")
+                    guard case .embeded(let e) = error, let pe = e as? PromiseError, let e = pe.embedded as? AlphaWalletWeb3.Web3Error else {
+                        XCTFail("Unknown error: \(error)")
+                        return
+                    }
+                    switch e {
+                    case .rateLimited:
+                        break
+                    default:
+                        XCTFail("Unknown error: \(error)")
+                    }
                 }
                 expectation.fulfill()
             }, receiveValue: { address in
@@ -71,14 +92,23 @@ class EnsResolverTests: XCTestCase {
                 case .finished:
                     break
                 case .failure(let error):
-                    XCTFail("Unknown error: \(error)")
+                    guard case .embeded(let e) = error, let pe = e as? PromiseError, let e = pe.embedded as? AlphaWalletWeb3.Web3Error else {
+                        XCTFail("Unknown error: \(error)")
+                        return
+                    }
+                    switch e {
+                    case .rateLimited:
+                        break
+                    default:
+                        XCTFail("Unknown error: \(error)")
+                    }
                 }
                 expectation.fulfill()
             }, receiveValue: { address in
                 XCTAssertTrue(address.sameContract(as: "41563129cdbbd0c5d3e1c86cf9563926b243834d"), "ENS name did not resolve correctly")
             }).store(in: &cancelable)
 
-        wait(for: expectations, timeout: 20)
+        wait(for: expectations, timeout: 100)
     }
 
     private func makeServerForMainnet() -> RPCServer {

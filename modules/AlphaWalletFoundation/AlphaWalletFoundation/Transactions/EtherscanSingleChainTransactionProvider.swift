@@ -15,35 +15,38 @@ class EtherscanSingleChainTransactionProvider: SingleChainTransactionProvider {
     private lazy var transactionsTracker: TransactionsTracker = {
         return TransactionsTracker(sessionID: session.sessionID)
     }()
-    private let tokensFromTransactionsFetcher: TokensFromTransactionsFetcher
+    private let ercTokenDetector: ErcTokenDetector
     private var autoDetectErc20TransactionsOperation: AnyCancellable?
     private var autoDetectErc721TransactionsOperation: AnyCancellable?
 
     private var isFetchingLatestTransactions = false
     private let tokensService: TokenProvidable
-    private lazy var transactionsNetworkProvider = TransactionsNetworkProvider(session: session, networkService: networkService, localizedOperationFetcher: localizedOperationFetcher)
-    private lazy var localizedOperationFetcher = LocalizedOperationFetcher(tokensService: tokensService, session: session)
+    private lazy var transactionsNetworkProvider = TransactionsNetworkProvider(
+        session: session,
+        networkService: networkService,
+        transactionBuilder: transactionBuilder)
+
+    private lazy var transactionBuilder = TransactionBuilder(
+        tokensService: tokensService,
+        server: session.server,
+        tokenProvider: session.tokenProvider)
 
     private lazy var pendingTransactionProvider: PendingTransactionProvider = {
-        let pendingTransactionFetcher = GetPendingTransaction(server: session.server, analytics: analytics)
         return PendingTransactionProvider(
             session: session,
             transactionDataStore: transactionDataStore,
-            tokensFromTransactionsFetcher: tokensFromTransactionsFetcher,
-            fetcher: pendingTransactionFetcher)
+            ercTokenDetector: ercTokenDetector)
     }()
     private let networkService: NetworkService
     private var cancelable = Set<AnyCancellable>()
 
-    weak public var delegate: SingleChainTransactionProviderDelegate?
-
-    required init(session: WalletSession,
-                  analytics: AnalyticsLogger,
-                  transactionDataStore: TransactionDataStore,
-                  tokensService: TokenProvidable,
-                  fetchLatestTransactionsQueue: OperationQueue,
-                  tokensFromTransactionsFetcher: TokensFromTransactionsFetcher,
-                  networkService: NetworkService) {
+    init(session: WalletSession,
+         analytics: AnalyticsLogger,
+         transactionDataStore: TransactionDataStore,
+         tokensService: TokenProvidable,
+         fetchLatestTransactionsQueue: OperationQueue,
+         ercTokenDetector: ErcTokenDetector,
+         networkService: NetworkService) {
 
         self.networkService = networkService
         self.tokensService = tokensService
@@ -51,7 +54,7 @@ class EtherscanSingleChainTransactionProvider: SingleChainTransactionProvider {
         self.analytics = analytics
         self.transactionDataStore = transactionDataStore
         self.fetchLatestTransactionsQueue = fetchLatestTransactionsQueue
-        self.tokensFromTransactionsFetcher = tokensFromTransactionsFetcher
+        self.ercTokenDetector = ercTokenDetector
     }
 
     func start() {
@@ -62,6 +65,10 @@ class EtherscanSingleChainTransactionProvider: SingleChainTransactionProvider {
             fetchOlderTransactions()
             autoDetectErc20Transactions()
             autoDetectErc721Transactions()
+        }
+
+        queue.async { [weak self] in
+            self?.removeUnknownTransactions()
         }
     }
 
@@ -86,6 +93,11 @@ class EtherscanSingleChainTransactionProvider: SingleChainTransactionProvider {
                 strongSelf.autoDetectErc721Transactions()
             }
         }, selector: #selector(Operation.main), userInfo: nil, repeats: true)
+    }
+
+    private func removeUnknownTransactions() {
+        //TODO why do we remove such transactions? especially `.failed` and `.unknown`?
+        transactionDataStore.removeTransactions(for: [.unknown], servers: [session.server])
     }
 
     private func autoDetectErc20Transactions() {
@@ -144,7 +156,7 @@ class EtherscanSingleChainTransactionProvider: SingleChainTransactionProvider {
         guard !transactions.isEmpty else { return }
 
         transactionDataStore.addOrUpdate(transactions: transactions)
-        tokensFromTransactionsFetcher.extractNewTokens(from: transactions)
+        ercTokenDetector.detect(from: transactions)
     }
 
     ///Fetching transactions might take a long time, we use a flag to make sure we only pull the latest transactions 1 "page" at a time, otherwise we'd end up pulling the same "page" multiple times
@@ -224,7 +236,7 @@ class EtherscanSingleChainTransactionProvider: SingleChainTransactionProvider {
             self.startBlock = startBlock
             self.sortOrder = sortOrder
             super.init()
-            self.queuePriority = provider.localizedOperationFetcher.server.networkRequestsQueuePriority
+            self.queuePriority = provider.transactionBuilder.server.networkRequestsQueuePriority
         }
 
         override func main() {

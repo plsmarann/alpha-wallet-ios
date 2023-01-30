@@ -421,6 +421,7 @@
 "accounts.error.accountNotFound" = "未找到帐户";
 "accounts.error.failedToSignMessage" = "签署消息失败";
 "accounts.error.failedToExportPrivateKey" = "导出私钥失败";
+"accounts.error.failedToSignEmptyMessage" = "Failed to sign an empty message";
 "accounts.error.failedToExportSeed" = "导出钱包种子失败。如果您已迁移到新手机或者重置了设备，则需再次导入钱包";
 "Chain ID" = "链 ID";
 "Chain ID with prefix" = "链 ID: %ld";
@@ -803,6 +804,7 @@
 "walletConnect.error.connectionTimeout.errorMessage" = "You tried to connect with WalletConnect.\nWell.. It takes too long. Please generate\na fresh QR code and try again.";
 "walletConnect.scanQRCodeAgain" = "Scan QR Code again";
 "donate.shortcuts.walletQrCode" = "Show Wallet QR Code";
+"donate.shortcuts.camera" = "Scan QR Code with Camera";
 "whats.new" = "What’s new?";
 "token.testnetWarning" = "Ropsten tokens are like ‘Monopoly’ money. They have zero financial worth but are used by developers to try out new designs without needing to spend valuable coins. ";
 "token.value.testnetWarning" = "No Value, made for tests only";

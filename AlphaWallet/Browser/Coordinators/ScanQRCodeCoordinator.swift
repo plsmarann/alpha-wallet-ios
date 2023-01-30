@@ -5,6 +5,7 @@ import QRCodeReaderViewController
 import BigInt
 import PromiseKit
 import AlphaWalletFoundation
+import AlphaWalletLogger
 
 protocol ScanQRCodeCoordinatorDelegate: AnyObject {
     func didCancel(in coordinator: ScanQRCodeCoordinator)
@@ -25,7 +26,7 @@ final class ScanQRCodeCoordinator: NSObject, Coordinator {
             showTorchButton: true,
             showMyQRCodeButton: shouldShowMyQRCodeButton,
             chooseFromPhotoLibraryButtonTitle: R.string.localizable.photos(),
-            bordersColor: Colors.qrCodeRectBorders,
+            bordersColor: Configuration.Color.Semantic.qrCodeRectBorders,
             messageText: R.string.localizable.qrCodeTitle(),
             torchTitle: R.string.localizable.light(),
             torchImage: R.image.light(),
@@ -55,6 +56,7 @@ final class ScanQRCodeCoordinator: NSObject, Coordinator {
     }
 
     func start(fromSource source: Analytics.ScanQRCodeSource, clipboardString: String? = nil) {
+        CameraDonation().donate()
         logStartScan(source: source)
         navigationController.makePresentationFullScreenForiOS13Migration()
         parentNavigationController.present(navigationController, animated: true)
@@ -147,7 +149,7 @@ extension ScanQRCodeCoordinator {
         case .privateKey:
             return .privateKey
         case .seedPhase:
-            return .seedPhase
+            return .seedPhrase
         }
     }
 

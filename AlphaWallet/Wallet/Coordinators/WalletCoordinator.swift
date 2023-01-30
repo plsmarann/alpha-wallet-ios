@@ -3,6 +3,7 @@
 import Foundation
 import UIKit
 import AlphaWalletFoundation
+import Combine
 
 protocol WalletCoordinatorDelegate: AnyObject {
     func didFinish(with account: Wallet, in coordinator: WalletCoordinator)
@@ -15,18 +16,18 @@ class WalletCoordinator: Coordinator {
     private weak var importWalletViewController: ImportWalletViewController?
     private let analytics: AnalyticsLogger
     private let domainResolutionService: DomainResolutionServiceType
+    private var cancellable = Set<AnyCancellable>()
 
     var navigationController: UINavigationController
     weak var delegate: WalletCoordinatorDelegate?
     var coordinators: [Coordinator] = []
 
-    init(
-        config: Config,
-        navigationController: UINavigationController = NavigationController(),
-        keystore: Keystore,
-        analytics: AnalyticsLogger,
-        domainResolutionService: DomainResolutionServiceType
-    ) {
+    init(config: Config,
+         navigationController: UINavigationController = NavigationController(),
+         keystore: Keystore,
+         analytics: AnalyticsLogger,
+         domainResolutionService: DomainResolutionServiceType) {
+
         self.config = config
         self.navigationController = navigationController
         self.keystore = keystore
@@ -54,14 +55,14 @@ class WalletCoordinator: Coordinator {
             case .none:
                 break
             }
-            controller.navigationItem.rightBarButtonItem = UIBarButtonItem.cancelBarButton(self, selector: #selector(dismiss))
+            controller.navigationItem.rightBarButtonItem = UIBarButtonItem.cancelBarButton(self, selector: #selector(dismissDidSelected))
             navigationController.viewControllers = [controller]
             importWalletViewController = controller
         case .watchWallet(let address):
             let controller = ImportWalletViewController(keystore: keystore, analytics: analytics, domainResolutionService: domainResolutionService)
             controller.delegate = self
             controller.watchAddressTextField.value = address?.eip55String ?? ""
-            controller.navigationItem.rightBarButtonItem = UIBarButtonItem.cancelBarButton(self, selector: #selector(dismiss))
+            controller.navigationItem.rightBarButtonItem = UIBarButtonItem.cancelBarButton(self, selector: #selector(dismissDidSelected))
             controller.showWatchTab()
             navigationController.viewControllers = [controller]
             importWalletViewController = controller
@@ -84,35 +85,20 @@ class WalletCoordinator: Coordinator {
         navigationController.pushViewController(controller, animated: true)
     }
 
-    func createInitialWalletIfMissing() {
-        if !keystore.hasWallets {
-            switch keystore.importWallet(type: .newWallet) {
-            case .success(let account):
-                keystore.recentlyUsedWallet = account
-            case .failure:
-                //TODO handle initial wallet creation error. App can't be used!
-                break
-            }
-        }
-    }
-
     //TODO Rename this is create in both settings and new install
-    func createInstantWallet() {
+    private func createInstantWallet() {
+        //NOTE: don't use weak ref here
         navigationController.displayLoading(text: R.string.localizable.walletCreateInProgress(), animated: false)
-        keystore.createAccount { [weak self] result in
-            guard let strongSelf = self else { return }
-            switch result {
-            case .success(let wallet):
-                //Not the best implementation, since there's some coupling, but it's clean. We need this so we don't show the What's New UI right after a wallet is created and clash with the pop up prompting user to back up the new wallet, for new installs and creating new wallets for existing installs
+        keystore.createHDWallet()
+            .sink(receiveCompletion: { result in
+                self.navigationController.hideLoading(animated: false)
+                if case .failure(let error) = result {
+                    self.navigationController.displayError(error: error)
+                }
+            }, receiveValue: { wallet in
                 WhatsNewExperimentCoordinator.lastCreatedWalletTimestamp = Date()
-
-                strongSelf.delegate?.didFinish(with: wallet, in: strongSelf)
-            case .failure(let error):
-                //TODO this wouldn't work since navigationController isn't shown anymore
-                strongSelf.navigationController.displayError(error: error)
-            }
-            strongSelf.navigationController.hideLoading(animated: false)
-        }
+                self.didImportAccount(account: wallet)
+            }).store(in: &cancellable)
     }
 
     private func addWalletWith(entryPoint: WalletEntryPoint) {
@@ -125,12 +111,11 @@ class WalletCoordinator: Coordinator {
         navigationController.present(coordinator.navigationController, animated: true)
     }
 
-    @objc func dismiss() {
+    @objc private func dismissDidSelected(_ sender: UIBarButtonItem) {
         delegate?.didCancel(in: self)
     }
 
-    //TODO Rename this is import in both settings and new install
-    func didCreateAccount(account: Wallet) {
+    private func didImportAccount(account: Wallet) {
         delegate?.didFinish(with: account, in: self)
         //Bit of delay to wait for the UI animation to almost finish
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
@@ -152,7 +137,7 @@ extension WalletCoordinator: ImportWalletViewControllerDelegate {
 
     func didImportAccount(account: Wallet, in viewController: ImportWalletViewController) {
         config.addToWalletAddressesAlreadyPromptedForBackup(address: account.address)
-        didCreateAccount(account: account)
+        didImportAccount(account: account)
     }
 }
 

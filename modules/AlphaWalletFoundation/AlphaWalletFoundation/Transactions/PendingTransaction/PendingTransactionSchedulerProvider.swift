@@ -6,54 +6,54 @@
 //
 
 import Foundation
-import Combine 
+import Combine
 import CombineExt
+import AlphaWalletCore
 
-protocol PendingTransactionSchedulerProviderDelegate: AnyObject {
-    func didReceiveResponse(_ response: Swift.Result<PendingTransaction, Covalent.CovalentError>, in provider: PendingTransactionSchedulerProvider)
-}
 
 final class PendingTransactionSchedulerProvider: SchedulerProvider {
     private let fetchPendingTransactionsQueue: OperationQueue
+    private let blockchainProvider: BlockchainProvider
+    private let responseSubject = PassthroughSubject<Swift.Result<PendingTransaction, SessionTaskError>, Never>()
 
     var interval: TimeInterval { return Constants.Covalent.pendingTransactionUpdateInterval }
     var name: String { "PendingTransactionSchedulerProvider" }
-    var operation: AnyPublisher<Void, SchedulerError> {
+    var operation: AnyPublisher<Void, PromiseError> {
         return fetchPendingTransactionPublisher()
     }
-    private let fetcher: GetPendingTransaction
+
     let transaction: TransactionInstance
 
-    weak var delegate: PendingTransactionSchedulerProviderDelegate?
+    var responsePublisher: AnyPublisher<Swift.Result<PendingTransaction, SessionTaskError>, Never> {
+        responseSubject.eraseToAnyPublisher()
+    }
 
-    init(fetcher: GetPendingTransaction, transaction: TransactionInstance, fetchPendingTransactionsQueue: OperationQueue) {
-        self.fetcher = fetcher
+    init(blockchainProvider: BlockchainProvider, transaction: TransactionInstance, fetchPendingTransactionsQueue: OperationQueue) {
+        self.blockchainProvider = blockchainProvider
         self.fetchPendingTransactionsQueue = fetchPendingTransactionsQueue
         self.transaction = transaction
     }
 
-    private func fetchPendingTransactionPublisher() -> AnyPublisher<Void, SchedulerError> {
-        return fetcher.getPendingTransaction(server: transaction.server, hash: transaction.id)
+    private func fetchPendingTransactionPublisher() -> AnyPublisher<Void, PromiseError> {
+        return blockchainProvider
+            .pendingTransaction(hash: transaction.id)
             .subscribe(on: fetchPendingTransactionsQueue)
             .handleEvents(receiveOutput: { [weak self] pendingTransaction in
                 //We can't just delete the pending transaction because it might be valid, just that the RPC node doesn't know about it
                 guard let pendingTransaction = pendingTransaction else { return }
                 guard let blockNumber = Int(pendingTransaction.blockNumber), blockNumber > 0  else { return }
-                self?.didReceiveValue(pendingTransaction)
+
+                self?.handle(response: .success(pendingTransaction))
             }, receiveCompletion: { [weak self] result in
                 guard case .failure(let error) = result else { return }
-                self?.didReceiveError(error)
+                self?.handle(response: .failure(error))
             })
             .mapToVoid()
-            .mapError { SchedulerError.covalentError(.sessionError($0)) }
+            .mapError { PromiseError(error: $0) }
             .eraseToAnyPublisher()
     }
 
-    private func didReceiveValue(_ pendingTransaction: PendingTransaction) {
-        delegate?.didReceiveResponse(.success(pendingTransaction), in: self)
-    }
-
-    private func didReceiveError(_ e: SessionTaskError) {
-        delegate?.didReceiveResponse(.failure(.sessionError(e)), in: self)
+    private func handle(response:  Swift.Result<PendingTransaction, SessionTaskError>) {
+        responseSubject.send(response)
     }
 }

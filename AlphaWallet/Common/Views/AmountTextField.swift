@@ -53,7 +53,9 @@ final class AmountTextField: UIControl {
         button.heightConstraint.flatMap { NSLayoutConstraint.deactivate([$0]) }
         button.heightAnchor.constraint(equalToConstant: 25).isActive = true
         button.contentEdgeInsets = .zero
-
+        button.setContentHuggingPriority(.required, for: .horizontal)
+        button.setContentCompressionResistancePriority(.required, for: .horizontal)
+        
         return button
     }()
 
@@ -88,7 +90,7 @@ final class AmountTextField: UIControl {
         label.translatesAutoresizingMaskIntoConstraints = false
         label.textAlignment = .left
         label.numberOfLines = 0
-        label.textColor = Colors.appGreenContrastBackground
+        label.textColor = Configuration.Color.Semantic.textFieldContrastText
         label.font = Configuration.Font.label
 
         return label
@@ -145,6 +147,7 @@ final class AmountTextField: UIControl {
         addSubview(stackView)
 
         NSLayoutConstraint.activate([
+            selectCurrencyButton.widthAnchor.constraint(lessThanOrEqualTo: widthAnchor, multiplier: 0.5),
             stackView.anchorsConstraint(to: self),
         ])
 

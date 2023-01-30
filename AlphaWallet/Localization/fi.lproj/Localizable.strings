@@ -421,6 +421,7 @@
 "accounts.error.accountNotFound" = "Tiliä ei löytynyt";
 "accounts.error.failedToSignMessage" = "Viestin allekirjoitus epäonnistui";
 "accounts.error.failedToExportPrivateKey" = "Salaisen avaimen vienti epäonnistui";
+"accounts.error.failedToSignEmptyMessage" = "Failed to sign an empty message";
 "accounts.error.failedToExportSeed" = "Lompakon siemenluvun vienti epäonnistui. Jos olet vaihtanut puhelintasi tai palauttanut puhelimen asetukset varmuuskopiolta, lompakko pitää palauttaa tuomalla se erilliseltä varmuuskopiolta";
 "Chain ID" = "Ketjun tunniste (Chain ID)";
 "Chain ID with prefix" = "Chain ID: %ld";
@@ -803,6 +804,7 @@
 "walletConnect.error.connectionTimeout.errorMessage" = "Yritit kytkeä WalletConnect-toiminnolla.\nValitettavasti tämä kesti liian pitkään. Luo uusi\nQR-koodi ja yritä uudestaan.";
 "walletConnect.scanQRCodeAgain" = "Lue QR-koodi uudestaan";
 "donate.shortcuts.walletQrCode" = "Näytä lompakon QR-koodi";
+"donate.shortcuts.camera" = "Scan QR Code with Camera";
 "whats.new" = "Mitä uutta?";
 "token.testnetWarning" = "Ropsten-rahakkeet eivät ole vaihdettavissa keskuspankkirahaan. Niiden rahallinen arvo on nolla. Sovelluskehittäjät käyttävät niitä testatakseen uusia asioita ilman, että heidän täytyy käyttää 'oikeita' Ethereum-rahakkeita.";
 "token.value.testnetWarning" = "Ei arvoa, luotu testaustarkoituksiin";

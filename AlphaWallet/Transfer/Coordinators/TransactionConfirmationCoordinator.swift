@@ -9,6 +9,7 @@ import UIKit
 import BigInt
 import PromiseKit
 import AlphaWalletFoundation
+import AlphaWalletLogger
 
 protocol TransactionConfirmationCoordinatorDelegate: CanOpenURL, SendTransactionDelegate, BuyCryptoDelegate {
     func didFinish(_ result: ConfirmResult, in coordinator: TransactionConfirmationCoordinator)
@@ -79,7 +80,7 @@ class TransactionConfirmationCoordinator: Coordinator {
 
     private func rectifyTransactionError(error: SendTransactionNotRetryableError) {
         analytics.log(action: Analytics.Action.rectifySendTransactionErrorInActionSheet, properties: [Analytics.Properties.type.rawValue: error.analyticsName])
-        switch error {
+        switch error.type {
         case .insufficientFunds:
             delegate?.buyCrypto(wallet: configurator.session.account, server: server, viewController: rootViewController, source: .transactionActionSheetInsufficientFunds)
         case .nonceTooLow:
@@ -173,7 +174,7 @@ extension TransactionConfirmationCoordinator: TransactionConfirmationViewControl
 
     private func handleSendTransactionError(_ error: Error) {
         switch error {
-        case let e as SendTransactionNotRetryableError:
+        case let e as SendTransactionNotRetryableError where !server.isTestnet:
             let errorViewController = SendTransactionErrorViewController(analytics: analytics, viewModel: .init(server: server, error: e))
             errorViewController.delegate = self
 
@@ -360,7 +361,7 @@ extension TransactionConfirmationCoordinator: SendTransactionErrorViewController
 
 extension SendTransactionNotRetryableError {
     var analyticsName: String {
-        switch self {
+        switch self.type {
         case .insufficientFunds:
             return "insufficientFunds"
         case .nonceTooLow:

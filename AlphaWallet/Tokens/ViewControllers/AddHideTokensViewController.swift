@@ -182,17 +182,20 @@ extension AddHideTokensViewController: UITableViewDataSource {
             } else {
                 tableView.reloadData()
             }
-        case .promise(let promise):
+        case .publisher(let publisher):
             self.displayLoading()
-            promise.done(on: .none, flags: .barrier) { _ in
-                //no-op
-            }.catch { _ in
-                self.displayError(message: R.string.localizable.walletsHideTokenErrorAddTokenFailure())
-            }.finally {
+
+            publisher.sink(receiveCompletion: { result in
+                if case .failure = result {
+                    self.displayError(message: R.string.localizable.walletsHideTokenErrorAddTokenFailure())
+                }
+
                 tableView.reloadData()
 
                 self.hideLoading()
-            }
+            }, receiveValue: { _ in
+                //no-op
+            }).store(in: &cancelable)
         }
     }
 
@@ -213,12 +216,12 @@ extension AddHideTokensViewController: UITableViewDataSource {
 
                     completionHandler(false)
                 }
-            case .promise:
+            case .publisher:
                 break
             }
         }
 
-        hideAction.backgroundColor = Colors.appRed
+        hideAction.backgroundColor = Configuration.Color.Semantic.dangerBackground
         hideAction.image = R.image.hideToken()
 
         let configuration = UISwipeActionsConfiguration(actions: [hideAction])

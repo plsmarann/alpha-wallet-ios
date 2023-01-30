@@ -20,6 +20,7 @@ class GetContractInteractions {
         let request = GetContractList(walletAddress: walletAddress, server: server, startBlock: startBlock, erc20: erc20)
         return networkService
             .dataTaskPublisher(request)
+            .receive(on: DispatchQueue.global())
             .tryMap { UniqueNonEmptyContracts(json: try JSON(data: $0.data)) }
             .mapError { PromiseError.some(error: $0) }
             .eraseToAnyPublisher()
@@ -58,11 +59,14 @@ class TransactionsNetworkProvider {
     private let walletAddress: AlphaWallet.Address
     private let server: RPCServer
     private var networkService: NetworkService
-    private var localizedOperationFetcher: LocalizedOperationFetcher
+    private var transactionBuilder: TransactionBuilder
 
-    init(session: WalletSession, networkService: NetworkService, localizedOperationFetcher: LocalizedOperationFetcher) {
+    init(session: WalletSession,
+         networkService: NetworkService,
+         transactionBuilder: TransactionBuilder) {
+        
         self.walletAddress = session.account.address
-        self.localizedOperationFetcher = localizedOperationFetcher
+        self.transactionBuilder = transactionBuilder
         self.networkService = networkService
         self.server = session.server
     }
@@ -90,18 +94,22 @@ class TransactionsNetworkProvider {
     func getTransactions(startBlock: Int, endBlock: Int = 999_999_999, sortOrder: GetTransactions.SortOrder) -> AnyPublisher<[TransactionInstance], PromiseError> {
         return networkService
             .dataTaskPublisher(GetTransactions(server: server, address: walletAddress, startBlock: startBlock, endBlock: endBlock, sortOrder: sortOrder))
+            .receive(on: DispatchQueue.global())
             .mapError { PromiseError(error: $0) }
-            .flatMap { [localizedOperationFetcher] result -> AnyPublisher<[TransactionInstance], PromiseError> in
+            .flatMap { [transactionBuilder] result -> AnyPublisher<[TransactionInstance], PromiseError> in
                 if result.response.statusCode == 404 {
                     return .fail(.some(error: URLError(URLError.Code(rawValue: 404)))) // Clearer than a JSON deserialization error when it's a 404
                 }
 
                 do {
                     let promises = try JSONDecoder().decode(ArrayResponse<RawTransaction>.self, from: result.data)
-                        .result.map { TransactionInstance.buildTransaction(from: $0, fetcher: localizedOperationFetcher) }
+                        .result.map { transactionBuilder.buildTransaction(from: $0) }
 
-                    return (when(fulfilled: promises).compactMap(on: .global()) { $0.compactMap { $0 } })
-                        .publisher
+                    return Publishers.MergeMany(promises)
+                        .collect()
+                        .map { $0.compactMap { $0 } }
+                        .setFailureType(to: PromiseError.self)
+                        .eraseToAnyPublisher()
                 } catch {
                     return .fail(.some(error: error))
                 }
@@ -112,6 +120,7 @@ class TransactionsNetworkProvider {
     private func getErc20Transactions(walletAddress: AlphaWallet.Address, server: RPCServer, startBlock: Int? = nil) -> AnyPublisher<[TransactionInstance], PromiseError> {
         return networkService
             .dataTaskPublisher(GetErc20TransactionsRequest(startBlock: startBlock, server: server, walletAddress: walletAddress))
+            .receive(on: DispatchQueue.global())
             .tryMap { GetContractInteractions.functional.decodeTransactions(json: JSON($0.data), server: server) }
             .mapError { PromiseError.some(error: $0) }
             .eraseToAnyPublisher()
@@ -120,6 +129,7 @@ class TransactionsNetworkProvider {
     private func getErc721Transactions(walletAddress: AlphaWallet.Address, server: RPCServer, startBlock: Int? = nil) -> AnyPublisher<[TransactionInstance], PromiseError> {
         return networkService
             .dataTaskPublisher(GetErc721TransactionsRequest(startBlock: startBlock, server: server, walletAddress: walletAddress))
+            .receive(on: DispatchQueue.global())
             .tryMap { GetContractInteractions.functional.decodeTransactions(json: JSON($0.data), server: server) }
             .mapError { PromiseError.some(error: $0) }
             .eraseToAnyPublisher()

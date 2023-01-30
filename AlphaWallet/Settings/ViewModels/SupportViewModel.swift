@@ -7,6 +7,7 @@
 
 import UIKit
 import AlphaWalletFoundation
+import AlphaWalletLogger
 import Combine
 
 struct SupportViewModelInput {

@@ -9,6 +9,7 @@ import Combine
 import SwiftyJSON
 import AlphaWalletENS
 import AlphaWalletCore
+import AlphaWalletLogger
 
 struct UnstoppableDomainsV2NetworkProvider {
     private let networkService: NetworkService
@@ -20,6 +21,7 @@ struct UnstoppableDomainsV2NetworkProvider {
     func resolveDomain(address: AlphaWallet.Address) -> AnyPublisher<String, PromiseError> {
         return networkService
             .dataTaskPublisher(DomainRequest(address: address))
+            .receive(on: DispatchQueue.global())
             .tryMap { response -> String in
                 guard let json = try? JSON(data: response.data) else {
                     throw UnstoppableDomainsV2ApiError(localizedDescription: "Error calling \(Constants.unstoppableDomainsV2API.absoluteString) API isMainThread: \(Thread.isMainThread)")
@@ -39,6 +41,7 @@ struct UnstoppableDomainsV2NetworkProvider {
     func resolveAddress(forName name: String) -> AnyPublisher<AlphaWallet.Address, PromiseError> {
         return networkService
             .dataTaskPublisher(AddressRequest(name: name))
+            .receive(on: DispatchQueue.global())
             .tryMap { response -> AlphaWallet.Address in
                 guard let json = try? JSON(data: response.data) else {
                     throw UnstoppableDomainsV2ApiError(localizedDescription: "Error calling \(Constants.unstoppableDomainsV2API.absoluteString) API isMainThread: \(Thread.isMainThread)")

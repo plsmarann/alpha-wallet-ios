@@ -23,7 +23,7 @@ protocol SettingsCoordinatorDelegate: AnyObject, CanOpenURL {
 class SettingsCoordinator: Coordinator {
     private let keystore: Keystore
     private var config: Config
-    private let sessions: ServerDictionary<WalletSession>
+    private let sessionsProvider: SessionsProvider
     private let restartQueue: RestartTaskQueue
     private let promptBackupCoordinator: PromptBackupCoordinator
     private let analytics: AnalyticsLogger
@@ -33,7 +33,7 @@ class SettingsCoordinator: Coordinator {
     private let blockiesGenerator: BlockiesGenerator
     private let domainResolutionService: DomainResolutionServiceType
     private var account: Wallet {
-        return sessions.anyValue.account
+        return sessionsProvider.activeSessions.anyValue.account
     }
     private let lock: Lock
     private let currencyService: CurrencyService
@@ -64,7 +64,7 @@ class SettingsCoordinator: Coordinator {
     init(navigationController: UINavigationController = .withOverridenBarAppearence(),
          keystore: Keystore,
          config: Config,
-         sessions: ServerDictionary<WalletSession>,
+         sessionsProvider: SessionsProvider,
          restartQueue: RestartTaskQueue,
          promptBackupCoordinator: PromptBackupCoordinator,
          analytics: AnalyticsLogger,
@@ -86,7 +86,7 @@ class SettingsCoordinator: Coordinator {
         self.lock = lock
         self.keystore = keystore
         self.config = config
-        self.sessions = sessions
+        self.sessionsProvider = sessionsProvider
         self.restartQueue = restartQueue
         self.promptBackupCoordinator = promptBackupCoordinator
         self.analytics = analytics
@@ -159,7 +159,7 @@ extension SettingsCoordinator: SettingsViewControllerDelegate {
             navigationController: navigationController,
             keystore: keystore,
             account: account)
-        
+
         addCoordinator(coordinator)
         coordinator.delegate = self
         coordinator.start()
@@ -184,7 +184,7 @@ extension SettingsCoordinator: SettingsViewControllerDelegate {
             blockiesGenerator: blockiesGenerator,
             domainResolutionService: domainResolutionService,
             promptBackup: promptBackup)
-        
+
         coordinator.delegate = self
         coordinator.start()
         addCoordinator(coordinator)
@@ -457,7 +457,7 @@ extension SettingsCoordinator: ClearDappBrowserCacheCoordinatorDelegate {
 
 extension SettingsCoordinator: ToolsViewControllerDelegate {
     func checkTransactionStateSelected(in controller: ToolsViewController) {
-        let coordinator = CheckTransactionStateCoordinator(navigationController: navigationController, config: config, analytics: analytics)
+        let coordinator = CheckTransactionStateCoordinator(navigationController: navigationController, config: config, sessionsProvider: sessionsProvider)
         addCoordinator(coordinator)
         coordinator.delegate = self
         coordinator.start()
@@ -468,7 +468,7 @@ extension SettingsCoordinator: ToolsViewControllerDelegate {
     }
 
     func pingInfuraSelected(in controller: ToolsViewController) {
-        let coordinator = PingInfuraCoordinator(viewController: controller, analytics: analytics)
+        let coordinator = PingInfuraCoordinator(viewController: controller, analytics: analytics, sessionsProvider: sessionsProvider)
         coordinator.delegate = self
         coordinator.start()
         addCoordinator(coordinator)

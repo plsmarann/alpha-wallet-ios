@@ -33,7 +33,7 @@ class TextField: UIControl {
             case .none:
                 return whileEditing ? Configuration.Color.Semantic.textFieldShadowWhileEditing : Configuration.Color.Semantic.border
             case .error:
-                return Configuration.Color.Semantic.textFieldError
+                return Configuration.Color.Semantic.defaultErrorText
             }
         }
 
@@ -51,7 +51,7 @@ class TextField: UIControl {
             case .none:
                 return Configuration.Color.Semantic.defaultForegroundText
             case .error:
-                return Configuration.Color.Semantic.textFieldError
+                return Configuration.Color.Semantic.defaultErrorText
             }
         }
     }
@@ -75,7 +75,7 @@ class TextField: UIControl {
         let label = UILabel()
         label.translatesAutoresizingMaskIntoConstraints = false
         label.font = Configuration.Font.textFieldTitle
-        label.textColor = Configuration.Color.Semantic.label
+        label.textColor = Configuration.Color.Semantic.defaultSubtitleText
         label.textAlignment = .left
 
         return label

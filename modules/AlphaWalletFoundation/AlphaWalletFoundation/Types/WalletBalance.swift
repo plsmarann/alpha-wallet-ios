@@ -14,6 +14,13 @@ public struct WalletBalance {
     public let totalAmount: ValueForCurrency?
     public let change: ValueForCurrency?
 
+    public init(wallet: Wallet) {
+        self.wallet = wallet
+        self.etherToken = nil
+        self.totalAmount = nil
+        self.change = nil
+    }
+
     init(wallet: Wallet, tokens: [TokenViewModel]) {
         self.wallet = wallet
 
@@ -68,11 +75,7 @@ extension Balance: CustomStringConvertible {
     }
 }
 
-extension WalletBalance: Hashable {
-    public static func == (lhs: WalletBalance, rhs: WalletBalance) -> Bool {
-        return lhs.wallet.address == rhs.wallet.address && lhs.totalAmount == rhs.totalAmount && lhs.change == rhs.change
-    }
-}
+extension WalletBalance: Hashable { }
 
 public extension WalletBalance {
     public struct ValueForCurrency: Equatable, Hashable {

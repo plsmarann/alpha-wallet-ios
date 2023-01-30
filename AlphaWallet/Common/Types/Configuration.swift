@@ -21,6 +21,8 @@ fileprivate func colorFrom(trait: UITraitCollection, lightColor: UIColor, darkCo
 struct Configuration {
     struct Color {
         struct Semantic {
+            static let borderClear = UIColor.clear
+            static let backgroundClear = UIColor.clear
             static let defaultViewBackground = UIColor { trait in
                 return colorFrom(trait: trait, lightColor: R.color.white()!, darkColor: R.color.cod()!)
             }
@@ -42,6 +44,8 @@ struct Configuration {
             static let indicator = UIColor { trait in
                 return colorFrom(trait: trait, lightColor: R.color.azure()!, darkColor: R.color.dodge()!)
             }
+            static let loading = R.color.loadingBackground()!
+            static let loadingIndicatorBorder = UIColor(red: 237, green: 237, blue: 237)
             static let alternativeText = UIColor { trait in
                 return colorFrom(trait: trait, lightColor: .darkGray, darkColor: .lightGray)
             }
@@ -54,6 +58,9 @@ struct Configuration {
                 return colorFrom(trait: trait, lightColor: R.color.azure()!, darkColor: R.color.dodge()!)
             }
 
+            static let disabledActionButton = UIColor(hex: "d7ebc8")
+            static let qrCodeRectBorders = UIColor(red: 216, green: 216, blue: 216)
+            
             static let primaryButtonBackground = UIColor { trait in
                 return colorFrom(trait: trait, lightColor: R.color.cod()!, darkColor: R.color.alabaster()!)
             }
@@ -111,6 +118,11 @@ struct Configuration {
                 return colorFrom(trait: trait, lightColor: R.color.white()!, darkColor: R.color.cod()!)
             }
             static let defaultButtonBorder = R.color.alabaster()!
+            static let actionButtonBackground = UIColor(red: 105, green: 200, blue: 0)
+            static let actionButtonShadow = UIColor.clear
+            static let cancelButtonTitle = R.color.danger()!
+            static let deleteButtonTitle = R.color.danger()!
+            static let defaultNote = R.color.danger()!
 
             static let labelTextActive = UIColor { trait in
                 return colorFrom(trait: trait, lightColor: R.color.mine()!, darkColor: R.color.white()!)
@@ -247,6 +259,8 @@ struct Configuration {
                 return colorFrom(trait: trait, lightColor: R.color.alabaster()!, darkColor: R.color.venus()!)
             }
 
+            static let textFieldContrastText = UIColor(red: 86, green: 153, blue: 8)
+            
             static let textFieldBackground = UIColor { trait in
                 return colorFrom(trait: trait, lightColor: R.color.alabaster()!, darkColor: R.color.venus()!)
             }
@@ -277,13 +291,17 @@ struct Configuration {
                 return colorFrom(trait: trait, lightColor: R.color.alabaster()!, darkColor: R.color.venus()!)
             }
 
+            static let dangerBackground = R.color.danger()!
+            static let appreciation = UIColor(red: 117, green: 185, blue: 67)
+            static let depreciation = R.color.danger()!
+            static let pass = appreciation
+            static let fail = depreciation
+
             static let border = UIColor(red: 194, green: 194, blue: 194)
             static let text = Colors.appText
-            static let label = Colors.appGrayLabel
             static let textFieldStatus = Configuration.Color.Semantic.defaultErrorText
             static let icon = Colors.appTint
-            static let secondary = Colors.appGrayLabel
-            static let textFieldError = Colors.appRed
+            static let secondary = UIColor(red: 155, green: 155, blue: 155)
             static let textFieldShadowWhileEditing = Colors.appTint
             static let placeholder = UIColor(hex: "919191")
             static let ensText = UIColor(red: 117, green: 185, blue: 67)

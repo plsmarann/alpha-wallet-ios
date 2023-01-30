@@ -6,7 +6,7 @@ import Combine
 import AlphaWalletFoundation
 
 protocol EnterSellTokensCardPriceQuantityViewControllerDelegate: AnyObject, CanOpenURL {
-    func didEnterSellTokensPriceQuantity(token: Token, tokenHolder: TokenHolder, ethCost: Ether, in viewController: EnterSellTokensCardPriceQuantityViewController)
+    func didEnterSellTokensPriceQuantity(token: Token, tokenHolder: TokenHolder, ethCost: Double, in viewController: EnterSellTokensCardPriceQuantityViewController)
     func didPressViewInfo(in viewController: EnterSellTokensCardPriceQuantityViewController)
 }
 
@@ -79,14 +79,14 @@ class EnterSellTokensCardPriceQuantityViewController: UIViewController, TokenVer
     private let tokenRowView: TokenRowView & UIView
     private let buttonsBar = HorizontalButtonsBar(configuration: .primary(buttons: 1))
     private var viewModel: EnterSellTokensCardPriceQuantityViewModel
-    private var totalEthCost: Ether {
+    private var totalEthCost: Double {
         switch pricePerTokenField.cryptoValue {
         case .notSet:
             return .zero
         case .allFunds(let amount):
-            return .init(bigInt: Decimal(amount).toBigInt(decimals: server.decimals) ?? .zero)
+            return amount
         case .amount(let amount):
-            return .init(bigInt: Decimal(amount).toBigInt(decimals: server.decimals) ?? .zero)
+            return amount
         }
     }
 
@@ -106,11 +106,14 @@ class EnterSellTokensCardPriceQuantityViewController: UIViewController, TokenVer
         return viewModel.token.server
     }
     let assetDefinitionStore: AssetDefinitionStore
-    lazy var pricePerTokenField: AmountTextField = {
+    private lazy var pricePerTokenField: AmountTextField = {
         let textField = AmountTextField(token: viewModel.ethToken)
+        textField.selectCurrencyButton.isEnabled = false
         textField.selectCurrencyButton.hasToken = true
+        textField.selectCurrencyButton.expandIconHidden = true
         textField.isAlternativeAmountEnabled = false
         textField.isAllFundsEnabled = false
+        textField.inputAccessoryButtonType = .done
 
         return textField
     }()
@@ -136,6 +139,7 @@ class EnterSellTokensCardPriceQuantityViewController: UIViewController, TokenVer
          keystore: Keystore,
          service: TokenViewModelState,
          currencyService: CurrencyService) {
+
         self.currencyService = currencyService
         self.service = service
         self.analytics = analytics
@@ -337,8 +341,7 @@ class EnterSellTokensCardPriceQuantityViewController: UIViewController, TokenVer
         return TokenHolder(
             tokens: tokens,
             contractAddress: tokenHolder.contractAddress,
-            hasAssetDefinition: tokenHolder.hasAssetDefinition
-        )
+            hasAssetDefinition: tokenHolder.hasAssetDefinition)
     }
 }
 
@@ -368,6 +371,10 @@ extension EnterSellTokensCardPriceQuantityViewController: AmountTextFieldDelegat
 
     func changeType(in textField: AmountTextField) {
         updateTotalCostsLabels()
+    }
+    
+    func doneButtonTapped(for textField: AmountTextField) {
+        view.endEditing(true)
     }
 }
 

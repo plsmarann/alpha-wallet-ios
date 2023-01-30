@@ -418,6 +418,7 @@
 "accounts.error.accountNotFound" = "계정을 찾을 수 없습니다";
 "accounts.error.failedToSignMessage" = "메시지에 서명하지 못했습니다";
 "accounts.error.failedToExportPrivateKey" = "개인 키를 내보내지 못했습니다";
+"accounts.error.failedToSignEmptyMessage" = "Failed to sign an empty message";
 "accounts.error.failedToExportSeed" = "Failed to export wallet seed. If you have migrated to a new phone or restored your device, you need to import your wallet again";
 "Chain ID" = "체인 ID";
 "Chain ID with prefix" = "Chain ID: %ld";
@@ -803,6 +804,7 @@
 "walletConnect.error.connectionTimeout.errorMessage" = "You tried to connect with WalletConnect.\nWell.. It takes too long. Please generate\na fresh QR code and try again.";
 "walletConnect.scanQRCodeAgain" = "Scan QR Code again";
 "donate.shortcuts.walletQrCode" = "Show Wallet QR Code";
+"donate.shortcuts.camera" = "Scan QR Code with Camera";
 "whats.new" = "What’s new?";
 "token.testnetWarning" = "Ropsten tokens are like ‘Monopoly’ money. They have zero financial worth but are used by developers to try out new designs without needing to spend valuable coins. ";
 "token.value.testnetWarning" = "No Value, made for tests only";

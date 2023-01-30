@@ -81,7 +81,7 @@ class SendTransactionErrorViewController: UIViewController {
 
     @objc private func linkButtonTapped() {
         if let url = viewModel.linkUrl {
-            switch viewModel.error {
+            switch viewModel.error.type {
             case .insufficientFunds:
                 analytics.log(navigation: Analytics.Navigation.openHelpUrl, properties: [Analytics.Properties.type.rawValue: Analytics.HelpUrl.insufficientFunds.rawValue])
             case .nonceTooLow, .gasPriceTooLow, .gasLimitTooLow, .gasLimitTooHigh, .possibleChainIdMismatch, .executionReverted, .unknown:
@@ -109,7 +109,7 @@ class SendTransactionErrorViewController: UIViewController {
         if let rectifyErrorTitle = viewModel.rectifyErrorButtonTitle {
             buttonsBar.configure()
             let button = buttonsBar.buttons[0]
-            button.shrinkBorderColor = Colors.loadingIndicatorBorder
+            button.shrinkBorderColor = Configuration.Color.Semantic.loadingIndicatorBorder
             button.setTitle(rectifyErrorTitle, for: .normal)
             button.addTarget(self, action: #selector(rectifyErrorButtonTapped), for: .touchUpInside)
             footerBar.isHidden = false

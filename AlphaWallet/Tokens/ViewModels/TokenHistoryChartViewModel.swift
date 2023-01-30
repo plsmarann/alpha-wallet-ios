@@ -26,7 +26,7 @@ class TokenHistoryChartViewModel {
     var periodTitles: [String] = ChartHistoryPeriod.allCases.map { $0.title }
     var initialSelectionIndex: Int { return 0 }
     var setGradientFill: Fill? {
-        return ColorFill(color: Colors.clear)
+        return ColorFill(color: Configuration.Color.Semantic.backgroundClear)
     }
 
     init(chartHistories: AnyPublisher<[ChartHistoryPeriod: ChartHistory], Never>, coinTicker: AnyPublisher<CoinTicker?, Never>, currencyService: CurrencyService) {
@@ -88,9 +88,9 @@ class TokenHistoryChartViewModel {
     private func gradientColorForTicker(ticker: CoinTicker?) -> UIColor {
         switch TickerHelper(ticker: ticker).change24h {
         case .appreciate, .none:
-            return Colors.appActionButtonGreen
+            return Configuration.Color.Semantic.appreciation
         case .depreciate:
-            return Colors.appRed
+            return  Configuration.Color.Semantic.depreciation
         }
     }
 }

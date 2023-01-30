@@ -6,31 +6,49 @@
 //
 
 import Foundation
-import PromiseKit
 import AlphaWalletCore
+import Combine
 
-//TODO: improve waiting for tx completion
 public final class WaitTillTransactionCompleted {
-    private let server: RPCServer
-    private let analytics: AnalyticsLogger
-    private lazy var provider = GetPendingTransaction(server: server, analytics: analytics)
-
-    public init(server: RPCServer, analytics: AnalyticsLogger) {
-        self.server = server
-        self.analytics = analytics
+    
+    enum TransactionError: Error {
+        case `internal`(Error)
+        case timeout
+        case notInState(TransactionState)
     }
 
-    public func waitTillCompleted(hash: EthereumTransaction.Hash, timesToRepeat: Int = 50) -> Promise<Void> {
-        return attempt(maximumRetryCount: timesToRepeat, delayBeforeRetry: .seconds(10), delayUpperRangeValueFrom0To: 20) { [provider] in
-            return firstly {
-                provider.getPendingTransaction(hash: hash)
-            }.map { pendingTransaction in
-                if let pendingTransaction = pendingTransaction, let blockNumber = Int(pendingTransaction.blockNumber), blockNumber > 0 {
-                    return ()
+    private let server: RPCServer
+    private let transactionDataStore: TransactionDataStore
+
+    public init(transactionDataStore: TransactionDataStore, server: RPCServer) {
+        self.transactionDataStore = transactionDataStore
+        self.server = server
+    }
+
+    /// Return transaction when it reaches state
+    /// - state - transactions state required
+    /// - hash - transaction hash to look for trsnsaction
+    /// - timeout - waiting timeout
+    func transaction(hash: String, for state: TransactionState, timeout: Int) -> AnyPublisher<TransactionInstance, TransactionError> {
+        transactionDataStore
+            .transactionPublisher(for: hash, server: server)
+            .mapError { TransactionError.internal($0) }
+            .map { tx -> Result<TransactionInstance, TransactionError> in
+                if let tx = tx {
+                    if tx.state == state {
+                        return .success(tx)
+                    } else {
+                        return .failure(TransactionError.notInState(state))
+                    }
                 } else {
-                    throw EthereumTransaction.NotCompletedYet()
+                    return .failure(TransactionError.internal(DataStoreError.objectNotFound))
                 }
-            }
-        }
+            }.compactMap { result -> TransactionInstance? in
+                guard case .success(let tx) = result else { return nil }
+                return tx
+            }.timeout(.seconds(timeout), scheduler: DispatchQueue.main, options: nil) { return TransactionError.timeout }
+            .receive(on: DispatchQueue.main)
+            .first()
+            .eraseToAnyPublisher()
     }
 }

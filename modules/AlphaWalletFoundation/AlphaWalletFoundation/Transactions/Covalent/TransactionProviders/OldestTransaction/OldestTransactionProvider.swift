@@ -7,19 +7,20 @@
 
 import Foundation
 import Combine
+import AlphaWalletCore
 
 final class OldestTransactionProvider: NSObject {
     private let session: WalletSession
     private lazy var transactionsTracker: TransactionsTracker = TransactionsTracker(sessionID: session.sessionID)
     private let scheduler: SchedulerProtocol
-    private let tokensFromTransactionsFetcher: TokensFromTransactionsFetcher
+    private let ercTokenDetector: ErcTokenDetector
     private let queue = DispatchQueue(label: "com.OldestTransactionProvider.updateQueue")
     private let transactionDataStore: TransactionDataStore
 
-    init(session: WalletSession, scheduler: SchedulerProtocol, tokensFromTransactionsFetcher: TokensFromTransactionsFetcher, transactionDataStore: TransactionDataStore) {
+    init(session: WalletSession, scheduler: SchedulerProtocol, ercTokenDetector: ErcTokenDetector, transactionDataStore: TransactionDataStore) {
         self.session = session
         self.scheduler = scheduler
-        self.tokensFromTransactionsFetcher = tokensFromTransactionsFetcher
+        self.ercTokenDetector = ercTokenDetector
         self.transactionDataStore = transactionDataStore
         super.init()
     }
@@ -49,7 +50,7 @@ final class OldestTransactionProvider: NSObject {
         scheduler.cancel()
     }
 
-    private func didReceiveError(error: Covalent.CovalentError) {
+    private func didReceiveError(error: PromiseError) {
         transactionsTracker.fetchingState = .failed
     }
 
@@ -59,13 +60,13 @@ final class OldestTransactionProvider: NSObject {
             scheduler.cancel()
         } else {
             transactionDataStore.addOrUpdate(transactions: transactions)
-            tokensFromTransactionsFetcher.extractNewTokens(from: transactions)
+            ercTokenDetector.detect(from: transactions)
         }
     }
 }
 
 extension OldestTransactionProvider: OldestTransactionSchedulerProviderDelegate {
-    func didReceiveResponse(_ response: Swift.Result<[TransactionInstance], Covalent.CovalentError>, in provider: OldestTransactionSchedulerProvider) {
+    func didReceiveResponse(_ response: Swift.Result<[TransactionInstance], PromiseError>, in provider: OldestTransactionSchedulerProvider) {
         switch response {
         case .success(let transactions):
             didReceiveValue(transactions: transactions)

@@ -31,7 +31,12 @@ extension TokenScriptSupportable {
         let hardcodedTokenIdForFungibles = BigUInt(1)
         let xmlHandler = XMLHandler(token: self, assetDefinitionStore: assetDefinitionStore)
             //TODO Event support, if/when designed for fungibles
-        let values = xmlHandler.resolveAttributesBypassingCache(withTokenIdOrEvent: .tokenId(tokenId: hardcodedTokenIdForFungibles), server: server, account: account)
+        let values = xmlHandler.resolveAttributesBypassingCache(
+            withTokenIdOrEvent: .tokenId(tokenId: hardcodedTokenIdForFungibles),
+            server: server,
+            account: account,
+            assetDefinitionStore: assetDefinitionStore)
+
         let subscribablesForAttributeValues = values.values
         let allResolved = subscribablesForAttributeValues.allSatisfy { $0.subscribableValue?.value != nil }
 
@@ -59,7 +64,10 @@ public class TokenAdaptor {
     private let eventsDataStore: NonActivityEventsDataStore
     private let xmlHandler: XMLHandler
 
-    public init(token: TokenScriptSupportable, assetDefinitionStore: AssetDefinitionStore, eventsDataStore: NonActivityEventsDataStore) {
+    public init(token: TokenScriptSupportable,
+                assetDefinitionStore: AssetDefinitionStore,
+                eventsDataStore: NonActivityEventsDataStore) {
+
         self.token = token
         self.assetDefinitionStore = assetDefinitionStore
         self.eventsDataStore = eventsDataStore
@@ -200,8 +208,22 @@ public class TokenAdaptor {
     }
 
     //TODO pass lang into here
-    private func getToken(name: String, symbol: String, forTokenIdOrEvent tokenIdOrEvent: TokenIdOrEvent, index: UInt16, inWallet account: Wallet, server: RPCServer) -> TokenScript.Token {
-        xmlHandler.getToken(name: name, symbol: symbol, fromTokenIdOrEvent: tokenIdOrEvent, index: index, inWallet: account, server: server, tokenType: token.type)
+    private func getToken(name: String,
+                          symbol: String,
+                          forTokenIdOrEvent tokenIdOrEvent: TokenIdOrEvent,
+                          index: UInt16,
+                          inWallet account: Wallet,
+                          server: RPCServer) -> TokenScript.Token {
+
+        xmlHandler.getToken(
+            name: name,
+            symbol: symbol,
+            fromTokenIdOrEvent: tokenIdOrEvent,
+            index: index,
+            inWallet: account,
+            server: server,
+            tokenType: token.type,
+            assetDefinitionStore: assetDefinitionStore)
     }
 
     private func getFirstMatchingEvent(nonFungible: NonFungibleFromJson, inWallet account: Wallet, isSourcedFromEvents: Bool) -> EventInstanceValue? {
@@ -248,7 +270,12 @@ public class TokenAdaptor {
         let event = getFirstMatchingEvent(nonFungible: nonFungible, inWallet: account, isSourcedFromEvents: isSourcedFromEvents)
         let tokenIdOrEvent: TokenIdOrEvent = getTokenIdOrEvent(event: event, nonFungible: nonFungible)
 
-        var values = xmlHandler.resolveAttributesBypassingCache(withTokenIdOrEvent: tokenIdOrEvent, server: token.server, account: account)
+        var values = xmlHandler.resolveAttributesBypassingCache(
+            withTokenIdOrEvent: tokenIdOrEvent,
+            server: token.server,
+            account: account,
+            assetDefinitionStore: assetDefinitionStore)
+
         values.setTokenId(string: nonFungible.tokenId)
         if let date = nonFungible.collectionCreatedDate {
             //Storing as GeneralisedTime because we only support that for date/time formats in TokenScript. We are using the same `values` infrastructure
@@ -303,16 +330,14 @@ public class TokenAdaptor {
                 name: nonFungible.contractName,
                 symbol: "",
                 status: status,
-                values: values
-        )
+                values: values)
     }
 
     private func getTokenHolder(for tokens: [TokenScript.Token]) -> TokenHolder {
         return TokenHolder(
                 tokens: tokens,
                 contractAddress: token.contractAddress,
-                hasAssetDefinition: xmlHandler.hasAssetDefinition
-        )
+                hasAssetDefinition: xmlHandler.hasAssetDefinition)
     }
 
 }

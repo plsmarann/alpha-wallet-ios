@@ -10,9 +10,9 @@ import UIKit
 class ActivityIndicatorControl: UIControl {
     private let circularLoadingView: CircularLoadingIndicatorView = {
         let control = CircularLoadingIndicatorView()
-        control.lineColor = Colors.green
-        control.backgroundLineColor = Colors.loadingIndicatorBorder
-        control.checkmarkColor = Colors.green
+        control.lineColor = Configuration.Color.Semantic.pass
+        control.backgroundLineColor = Configuration.Color.Semantic.loadingIndicatorBorder
+        control.checkmarkColor = Configuration.Color.Semantic.pass
         control.translatesAutoresizingMaskIntoConstraints = false
         control.duration = 1.5
 
@@ -86,7 +86,7 @@ class CircularLoadingIndicatorView: UIView {
         let layer = CAShapeLayer()
         layer.lineCap = CAShapeLayerLineCap.round
         layer.lineWidth = lineWidth
-        layer.fillColor = Colors.clear.cgColor
+        layer.fillColor = Configuration.Color.Semantic.backgroundClear.cgColor
         layer.strokeColor = lineColor.cgColor
         layer.strokeEnd = 0
 
@@ -97,14 +97,14 @@ class CircularLoadingIndicatorView: UIView {
         let layer = CAShapeLayer()
         layer.strokeColor = backgroundLineColor.cgColor
         layer.lineWidth = lineWidth
-        layer.fillColor = Colors.clear.cgColor
+        layer.fillColor = Configuration.Color.Semantic.backgroundClear.cgColor
 
         return layer
     }()
 
     private lazy var checkmarkLayer: CAShapeLayer = {
         let layer = CAShapeLayer()
-        layer.fillColor = Colors.clear.cgColor
+        layer.fillColor = Configuration.Color.Semantic.backgroundClear.cgColor
         layer.lineWidth = checkmarkWidth
         layer.strokeEnd = 0
         layer.strokeColor = checkmarkColor.cgColor

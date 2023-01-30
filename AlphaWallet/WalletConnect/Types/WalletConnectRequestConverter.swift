@@ -9,6 +9,7 @@ import Foundation
 import PromiseKit
 import WalletConnectSwift
 import AlphaWalletFoundation
+import AlphaWalletLogger
 
 struct WalletConnectRequestDecoder {
 
@@ -30,9 +31,9 @@ struct WalletConnectRequestDecoder {
             return .value(.signMessage(message))
         case .signPersonalMessage(_, let message):
             return .value(.signPersonalMessage(message))
-        case .signTransaction(let bridgeTransaction):
+        case .signTransaction(let walletConnectTransaction):
             do {
-                let transaction = try TransactionType.prebuilt(server).buildAnyDappTransaction(bridgeTransaction: bridgeTransaction)
+                let transaction = try TransactionType.prebuilt(server).buildAnyDappTransaction(walletConnectTransaction: walletConnectTransaction)
                 return .value(.signTransaction(transaction))
             } catch {
                 return .init(error: error)
@@ -41,9 +42,9 @@ struct WalletConnectRequestDecoder {
             return .value(.typedMessage(data))
         case .signTypedData(_, let data):
             return .value(.signTypedMessageV3(data))
-        case .sendTransaction(let bridgeTransaction):
+        case .sendTransaction(let walletConnectTransaction):
             do {
-                let transaction = try TransactionType.prebuilt(server).buildAnyDappTransaction(bridgeTransaction: bridgeTransaction)
+                let transaction = try TransactionType.prebuilt(server).buildAnyDappTransaction(walletConnectTransaction: walletConnectTransaction)
                 return .value(.sendTransaction(transaction))
             } catch {
                 return .init(error: error)

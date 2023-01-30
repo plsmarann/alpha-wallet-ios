@@ -2,6 +2,7 @@ import UIKit
 import PromiseKit
 import Combine
 import AlphaWalletFoundation
+import AlphaWalletLogger
 
 // swiftlint:disable file_length
 protocol ActiveWalletCoordinatorDelegate: AnyObject {
@@ -23,7 +24,6 @@ class ActiveWalletCoordinator: NSObject, Coordinator, DappRequestHandlerDelegate
     private let restartQueue: RestartTaskQueue
     private let coinTickersFetcher: CoinTickersFetcher
     private let transactionsDataStore: TransactionDataStore
-    private var claimOrderCoordinatorCompletionBlock: ((Bool) -> Void)?
     private let blockscanChatService: BlockscanChatService
     private let activitiesPipeLine: ActivitiesPipeLine
     private let sessionsProvider: SessionsProvider
@@ -147,7 +147,6 @@ class ActiveWalletCoordinator: NSObject, Coordinator, DappRequestHandlerDelegate
     private let networkService: NetworkService
 
     init(navigationController: UINavigationController = NavigationController(),
-         walletAddressesStore: WalletAddressesStore,
          activitiesPipeLine: ActivitiesPipeLine,
          wallet: Wallet,
          keystore: Keystore,
@@ -207,7 +206,7 @@ class ActiveWalletCoordinator: NSObject, Coordinator, DappRequestHandlerDelegate
         self.coinTickersFetcher = coinTickersFetcher
         self.tokenActionsService = tokenActionsService
         self.blockscanChatService = BlockscanChatService(
-            walletAddressesStore: walletAddressesStore,
+            keystore: keystore,
             account: wallet,
             analytics: analytics,
             networkService: networkService)
@@ -256,12 +255,16 @@ class ActiveWalletCoordinator: NSObject, Coordinator, DappRequestHandlerDelegate
     private func handleTokenScriptOverrideImport() {
         tokenScriptOverridesFileManager
             .importTokenScriptOverridesFileEvent
-            .sink { [weak self] event in
+            .sink { [weak self, importToken, wallet] event in
                 switch event {
                 case .failure(let error):
                     self?.show(error: error)
                 case .success(let override):
-                    self?.addImported(contract: override.contract, forServer: override.server)
+                    importToken.importTokenPublisher(for: override.contract, server: override.server, onlyIfThereIsABalance: false)
+                        .sinkAsync(receiveCompletion: { result in
+                            guard case .failure(let error) = result else { return }
+                            debugLog("Error while adding imported token contract: \(override.contract.eip55String) server: \(override.server) wallet: \(wallet.address.eip55String) error: \(error)")
+                        })
                     if !override.destinationFileInUse {
                         self?.show(openedURL: override.filename)
                     }
@@ -292,8 +295,8 @@ class ActiveWalletCoordinator: NSObject, Coordinator, DappRequestHandlerDelegate
         }
     }
 
-    func launchUniversalScanner() {
-        tokensCoordinator?.launchUniversalScanner(fromSource: .quickAction)
+    func launchUniversalScanner(fromSource source: Analytics.ScanQRCodeSource) {
+        tokensCoordinator?.launchUniversalScanner(fromSource: source)
     }
 
     private func oneTimeCreationOfOneDatabaseToHoldAllChains() {
@@ -359,9 +362,9 @@ class ActiveWalletCoordinator: NSObject, Coordinator, DappRequestHandlerDelegate
             transactionDataStore: transactionsDataStore,
             analytics: analytics,
             tokensService: tokensService,
-            networkService: networkService)
+            networkService: networkService,
+            assetDefinitionStore: assetDefinitionStore)
 
-        transactionsService.delegate = self
         transactionsService.start()
 
         let coordinator = TransactionsCoordinator(
@@ -424,7 +427,7 @@ class ActiveWalletCoordinator: NSObject, Coordinator, DappRequestHandlerDelegate
         let coordinator = SettingsCoordinator(
             keystore: keystore,
             config: config,
-            sessions: sessionsProvider.activeSessions,
+            sessionsProvider: sessionsProvider,
             restartQueue: restartQueue,
             promptBackupCoordinator: promptBackupCoordinator,
             analytics: analytics,
@@ -513,7 +516,8 @@ class ActiveWalletCoordinator: NSObject, Coordinator, DappRequestHandlerDelegate
                 tokenSwapper: tokenSwapper,
                 tokensFilter: tokensFilter,
                 importToken: importToken,
-                networkService: networkService)
+                networkService: networkService,
+                transactionDataStore: transactionsDataStore)
 
             coordinator.delegate = self
             coordinator.start()
@@ -539,39 +543,6 @@ class ActiveWalletCoordinator: NSObject, Coordinator, DappRequestHandlerDelegate
     private func fetchXMLAssetDefinitions() {
         let fetch = FetchTokenScriptFiles(assetDefinitionStore: assetDefinitionStore, tokensService: tokensService, config: config)
         fetch.start()
-    }
-
-    func importPaidSignedOrder(signedOrder: SignedOrder, token: Token, inViewController viewController: ImportMagicTokenViewController, completion: @escaping (Bool) -> Void) {
-        guard let navigationController = viewController.navigationController else { return }
-        guard let session = sessionsProvider.session(for: token.server) else { return }
-        claimOrderCoordinatorCompletionBlock = completion
-
-        let coordinator = ClaimPaidOrderCoordinator(
-            navigationController: navigationController,
-            keystore: keystore,
-            session: session,
-            token: token,
-            signedOrder: signedOrder,
-            analytics: analytics,
-            domainResolutionService: domainResolutionService,
-            assetDefinitionStore: assetDefinitionStore,
-            tokensService: tokenCollection,
-            networkService: networkService)
-
-        coordinator.delegate = self
-        addCoordinator(coordinator)
-        coordinator.start()
-    }
-
-    func addImported(contract: AlphaWallet.Address, forServer server: RPCServer) {
-        //Useful to check because we are/might action-only TokenScripts for native crypto currency
-        guard contract != Constants.nativeCryptoAddressInDatabase else { return }
-
-        importToken.importToken(for: contract, server: server, onlyIfThereIsABalance: false)
-            .done { _ in }
-            .catch { error in
-                debugLog("Error while adding imported token contract: \(contract.eip55String) server: \(server) wallet: \(self.wallet.address.eip55String) error: \(error)")
-            }
     }
 
     func show(error: Error) {
@@ -777,14 +748,6 @@ extension ActiveWalletCoordinator: SettingsCoordinatorDelegate {
 }
 
 extension ActiveWalletCoordinator: UrlSchemeResolver {
-
-    var service: TokenViewModelState & TokenProvidable & TokenAddable {
-        tokenCollection
-    }
-
-    var sessions: ServerDictionary<WalletSession> {
-        sessionsProvider.activeSessions
-    }
 
     func openURLInBrowser(url: URL) {
         guard let dappBrowserCoordinator = dappBrowserCoordinator else { return }
@@ -1196,23 +1159,6 @@ extension ActiveWalletCoordinator: ActivitiesCoordinatorDelegate {
     }
 }
 
-extension ActiveWalletCoordinator: ClaimOrderCoordinatorDelegate {
-    func coordinator(_ coordinator: ClaimPaidOrderCoordinator, didFailTransaction error: Error) {
-        claimOrderCoordinatorCompletionBlock?(false)
-    }
-
-    func didClose(in coordinator: ClaimPaidOrderCoordinator) {
-        claimOrderCoordinatorCompletionBlock = nil
-        removeCoordinator(coordinator)
-    }
-
-    func coordinator(_ coordinator: ClaimPaidOrderCoordinator, didCompleteTransaction result: ConfirmResult) {
-        claimOrderCoordinatorCompletionBlock?(true)
-        claimOrderCoordinatorCompletionBlock = nil
-        removeCoordinator(coordinator)
-    }
-}
-
 // MARK: Analytics
 extension ActiveWalletCoordinator {
     private func logEnabledChains() {
@@ -1278,19 +1224,6 @@ extension ActiveWalletCoordinator: BlockscanChatServiceDelegate {
 
     func showBlockscanUnreadCount(_ count: Int?, for: BlockscanChatService) {
         settingsCoordinator?.showBlockscanChatUnreadCount(count)
-    }
-}
-
-extension ActiveWalletCoordinator: TransactionsServiceDelegate {
-
-    func didCompleteTransaction(in service: TransactionsService, transaction: TransactionInstance) {
-        tokenCollection.refreshBalance(updatePolicy: .all)
-    }
-
-    func didExtractNewContracts(in service: TransactionsService, contractsAndServers: [AddressAndRPCServer]) {
-        for each in contractsAndServers {
-            assetDefinitionStore.fetchXML(forContract: each.address, server: each.server)
-        }
     }
 }
 

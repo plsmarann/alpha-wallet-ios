@@ -1,10 +1,12 @@
 // Copyright © 2018 Stormbird PTE. LTD.
 
 import Combine
+import AlphaWalletLogger
 import PromiseKit
 
 public typealias XMLFile = String
-public protocol BaseTokenScriptFilesProvider {
+
+public protocol BaseTokenScriptFilesProvider: AnyObject {
     func containsTokenScriptFile(for file: XMLFile) -> Bool
     func baseTokenScriptFile(for tokenType: TokenType) -> XMLFile?
 }
@@ -29,15 +31,17 @@ public class AssetDefinitionStore: NSObject {
 
     private var lastContractInPasteboard: String?
     private var backingStore: AssetDefinitionBackingStore
-    private let _baseTokenScriptFiles: AtomicDictionary<TokenType, String> = .init()
     private let xmlHandlers: AtomicDictionary<AlphaWallet.Address, PrivateXMLHandler> = .init()
     private let baseXmlHandlers: AtomicDictionary<String, PrivateXMLHandler> = .init()
     private var signatureChangeSubject: PassthroughSubject<AlphaWallet.Address, Never> = .init()
     private var bodyChangeSubject: PassthroughSubject<AlphaWallet.Address, Never> = .init()
     private var listOfBadTokenScriptFilesSubject: CurrentValueSubject<[TokenScriptFileIndices.FileName], Never> = .init([])
-    private let network: AssetDefinitionNetworking
-    private var cancelable: [Int: AnyCancellable] = [:]
+    private let networking: AssetDefinitionNetworking
+    private let tokenScriptStatusResolver: TokenScriptStatusResolver
+    private let tokenScriptFilesProvider: BaseTokenScriptFilesProvider
+    private let blockchainsProvider: BlockchainsProvider
 
+    public let assetAttributeResolver: AssetAttributeResolver
     public var listOfBadTokenScriptFiles: AnyPublisher<[TokenScriptFileIndices.FileName], Never> {
         listOfBadTokenScriptFilesSubject.eraseToAnyPublisher()
     }
@@ -119,10 +123,35 @@ public class AssetDefinitionStore: NSObject {
                """
     }
 
-    public init(backingStore: AssetDefinitionBackingStore = AssetDefinitionDiskBackingStoreWithOverrides(), baseTokenScriptFiles: [TokenType: String] = [:], networkService: NetworkService) {
-        self.network = AssetDefinitionNetworking(networkService: networkService)
+    convenience public init(backingStore: AssetDefinitionBackingStore = AssetDefinitionDiskBackingStoreWithOverrides(),
+                            baseTokenScriptFiles: [TokenType: String] = [:],
+                            networkService: NetworkService,
+                            reachability: ReachabilityManagerProtocol = ReachabilityManager(),
+                            blockchainsProvider: BlockchainsProvider) {
+
+        let baseTokenScriptFilesProvider: BaseTokenScriptFilesProvider = InMemoryTokenScriptFilesProvider(baseTokenScriptFiles: baseTokenScriptFiles)
+        self.init(backingStore: backingStore,
+                  tokenScriptFilesProvider: baseTokenScriptFilesProvider,
+                  signatureVerifier: TokenScriptSignatureVerifier(
+                    tokenScriptFilesProvider: baseTokenScriptFilesProvider,
+                    networkService: networkService,
+                    reachability: reachability),
+                  networkService: networkService,
+                  blockchainsProvider: blockchainsProvider)
+    }
+
+    public init(backingStore: AssetDefinitionBackingStore,
+                tokenScriptFilesProvider: BaseTokenScriptFilesProvider,
+                signatureVerifier: TokenScriptSignatureVerifieble,
+                networkService: NetworkService,
+                blockchainsProvider: BlockchainsProvider) {
+
+        self.blockchainsProvider = blockchainsProvider
+        self.networking = AssetDefinitionNetworking(networkService: networkService)
         self.backingStore = backingStore
-        self._baseTokenScriptFiles.set(value: baseTokenScriptFiles)
+        self.tokenScriptStatusResolver = BaseTokenScriptStatusResolver(backingStore: backingStore, signatureVerifier: signatureVerifier)
+        self.tokenScriptFilesProvider = tokenScriptFilesProvider
+        assetAttributeResolver = AssetAttributeResolver(blockchainsProvider: blockchainsProvider)
         super.init()
         self.backingStore.delegate = self
 
@@ -143,14 +172,6 @@ public class AssetDefinitionStore: NSObject {
 
     func setBaseXmlHandler(for key: String, baseXmlHandler: PrivateXMLHandler?) {
         baseXmlHandlers[key] = baseXmlHandler
-    }
-
-    public func hasConflict(forContract contract: AlphaWallet.Address) -> Bool {
-        return backingStore.hasConflictingFile(forContract: contract)
-    }
-
-    public func hasOutdatedTokenScript(forContract contract: AlphaWallet.Address) -> Bool {
-        return backingStore.hasOutdatedTokenScript(forContract: contract)
     }
 
     //Calling this in >= iOS 14 will trigger a scary "AlphaWallet pasted from <app>" message
@@ -191,39 +212,39 @@ public class AssetDefinitionStore: NSObject {
             return
         }
 
-        firstly {
-            urlToFetch(contract: contract, server: server)
-        }.done { result in
-            guard let (url, isScriptUri) = result else { return }
-            self.fetchXML(contract: contract, server: server, url: url, useCacheAndFetch: useCacheAndFetch) { result in
-                //Try a bit harder if the TokenScript was specified via EIP-5169 (`scriptURI()`)
-                //TODO probably better to convert completionHandler to Promise so we can retry more elegantly
-                if isScriptUri && result.isError {
-                    self.fetchXML(contract: contract, server: server, url: url, useCacheAndFetch: useCacheAndFetch) { result in
-                        if isScriptUri && result.isError {
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
-                                self.fetchXML(contract: contract, server: server, url: url, useCacheAndFetch: useCacheAndFetch, completionHandler: completionHandler)
+        urlToFetch(contract: contract, server: server)
+            .receive(on: RunLoop.main)
+            .sinkAsync(receiveCompletion: { result in
+                guard case .failure(let error) = result else { return }
+                //no-op
+                warnLog("[TokenScript] unexpected error while fetching TokenScript file for contract: \(contract.eip55String) error: \(error)")
+            }, receiveValue: { result in
+                guard let (url, isScriptUri) = result else { return }
+                self.fetchXML(contract: contract, server: server, url: url, useCacheAndFetch: useCacheAndFetch) { result in
+                    //Try a bit harder if the TokenScript was specified via EIP-5169 (`scriptURI()`)
+                    //TODO probably better to convert completionHandler to Promise so we can retry more elegantly
+                    if isScriptUri && result.isError {
+                        self.fetchXML(contract: contract, server: server, url: url, useCacheAndFetch: useCacheAndFetch) { result in
+                            if isScriptUri && result.isError {
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+                                    self.fetchXML(contract: contract, server: server, url: url, useCacheAndFetch: useCacheAndFetch, completionHandler: completionHandler)
+                                }
                             }
                         }
+                    } else {
+                        completionHandler?(result)
                     }
-                } else {
-                    completionHandler?(result)
                 }
-            }
-        }.catch { error in
-            //no-op
-            warnLog("[TokenScript] unexpected error while fetching TokenScript file for contract: \(contract.eip55String) error: \(error)")
-        }
+            })
     }
 
     private func fetchXML(contract: AlphaWallet.Address, server: RPCServer?, url: URL, useCacheAndFetch: Bool = false, completionHandler: ((Result) -> Void)? = nil) {
         let lastModified = lastModifiedDateOfCachedAssetDefinitionFile(forContract: contract)
         let request = AssetDefinitionNetworking.GetXmlFileRequest(url: url, lastModifiedDate: lastModified)
 
-        cancelable[request.hashValue] = network
-            .fetchXml(request: request)
-            .sink(receiveCompletion: { [weak self] _ in
-                self?.cancelable[request.hashValue] = .none
+        networking.fetchXml(request: request)
+            .sinkAsync(receiveCompletion: { _ in
+                //no-op
             }, receiveValue: { [weak self] response in
                 guard let strongSelf = self else { return }
 
@@ -273,18 +294,22 @@ public class AssetDefinitionStore: NSObject {
         fetchXML(forContract: address, server: nil)
     }
 
-    private func urlToFetch(contract: AlphaWallet.Address, server: RPCServer?) -> Promise<(url: URL, isScriptUri: Bool)?> {
+    private func urlToFetch(contract: AlphaWallet.Address, server: RPCServer?) -> AnyPublisher<(url: URL, isScriptUri: Bool)?, Never> {
+        let urlToFetchFromTokenScriptRepo = Self.functional.urlToFetchFromTokenScriptRepo(contract: contract).flatMap { ($0, false) }
+
         if let server = server {
-            return firstly { () -> Promise<(url: URL, isScriptUri: Bool)?> in
-                Self.functional.urlToFetchFromScriptUri(contract: contract, server: server)
-                    .map { ($0, true) }
-            }.recover { _ -> Promise<(url: URL, isScriptUri: Bool)?> in
-                Self.functional.urlToFetchFromTokenScriptRepo(contract: contract)
-                    .map { $0.flatMap { ($0, false) } }
-            }
+            return Just(server)
+                .setFailureType(to: SessionTaskError.self)
+                .flatMap { [blockchainsProvider] server -> AnyPublisher<(url: URL, isScriptUri: Bool)?, SessionTaskError> in
+                    guard let blockchain = blockchainsProvider.blockchain(with: server) else { return .fail(SessionTaskError.responseError(PMKError.cancelled)) }
+
+                    return ScriptUri(blockchainProvider: blockchain).get(forContract: contract)
+                        .map { ($0, true) }
+                        .eraseToAnyPublisher()
+                }.replaceError(with: urlToFetchFromTokenScriptRepo)
+                .eraseToAnyPublisher()
         } else {
-            return Self.functional.urlToFetchFromTokenScriptRepo(contract: contract)
-                .map { $0.flatMap { ($0, false) } }
+            return .just(urlToFetchFromTokenScriptRepo)
         }
     }
 
@@ -299,28 +324,37 @@ public class AssetDefinitionStore: NSObject {
     public func invalidateSignatureStatus(forContract contract: AlphaWallet.Address) {
         triggerSignatureChangedSubscribers(forContract: contract)
     }
+}
 
-    public func getCacheTokenScriptSignatureVerificationType(forXmlString xmlString: String) -> TokenScriptSignatureVerificationType? {
-        return backingStore.getCacheTokenScriptSignatureVerificationType(forXmlString: xmlString)
-    }
-
-    public func writeCacheTokenScriptSignatureVerificationType(_ verificationType: TokenScriptSignatureVerificationType, forContract contract: AlphaWallet.Address, forXmlString xmlString: String) {
-        return backingStore.writeCacheTokenScriptSignatureVerificationType(verificationType, forContract: contract, forXmlString: xmlString)
-    }
-
-    public func contractDeleted(_ contract: AlphaWallet.Address) {
-        invalidate(forContract: contract)
-        backingStore.deleteFileDownloadedFromOfficialRepoFor(contract: contract)
+extension AssetDefinitionStore: TokenScriptStatusResolver {
+    public func computeTokenScriptStatus(forContract contract: AlphaWallet.Address, xmlString: String, isOfficial: Bool) -> Promise<TokenLevelTokenScriptDisplayStatus> {
+        tokenScriptStatusResolver.computeTokenScriptStatus(forContract: contract, xmlString: xmlString, isOfficial: isOfficial)
     }
 }
 
-extension AssetDefinitionStore: BaseTokenScriptFilesProvider {
+public final class InMemoryTokenScriptFilesProvider: BaseTokenScriptFilesProvider {
+    private let _baseTokenScriptFiles: AtomicDictionary<TokenType, String> = .init()
+
+    public init(baseTokenScriptFiles: [TokenType: String] = [:]) {
+        _baseTokenScriptFiles.set(value: baseTokenScriptFiles)
+    }
+
     public func containsTokenScriptFile(for file: XMLFile) -> Bool {
         return _baseTokenScriptFiles.contains(where: { $1 == file })
     }
 
     public func baseTokenScriptFile(for tokenType: TokenType) -> XMLFile? {
         return _baseTokenScriptFiles[tokenType]
+    }
+}
+
+extension AssetDefinitionStore: BaseTokenScriptFilesProvider {
+    public func containsTokenScriptFile(for file: XMLFile) -> Bool {
+        return tokenScriptFilesProvider.containsTokenScriptFile(for: file)
+    }
+
+    public func baseTokenScriptFile(for tokenType: TokenType) -> XMLFile? {
+        return tokenScriptFilesProvider.baseTokenScriptFile(for: tokenType)
     }
 }
 
@@ -352,14 +386,9 @@ extension AssetDefinitionStore {
 }
 
 extension AssetDefinitionStore.functional {
-    public static func urlToFetchFromTokenScriptRepo(contract: AlphaWallet.Address) -> Promise<URL?> {
+    public static func urlToFetchFromTokenScriptRepo(contract: AlphaWallet.Address) -> URL? {
         let name = contract.eip55String
         let url = URL(string: TokenScript.repoServer)?.appendingPathComponent(name)
-        return .value(url)
-    }
-
-    public static func urlToFetchFromScriptUri(contract: AlphaWallet.Address, server: RPCServer) -> Promise<URL> {
-        ScriptUri(forServer: server).get(forContract: contract)
+        return url
     }
 }
-

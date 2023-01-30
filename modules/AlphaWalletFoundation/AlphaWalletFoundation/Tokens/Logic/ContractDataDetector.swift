@@ -3,6 +3,7 @@
 import Foundation
 import PromiseKit
 import BigInt
+import Combine
 
 public enum ContractData {
     case name(String)
@@ -52,9 +53,9 @@ public class ContractDataDetector {
         self.wallet = session.account.address
         self.tokenProvider = session.tokenProvider
         self.assetDefinitionStore = assetDefinitionStore
-        namePromise = tokenProvider.getContractName(for: address)
-        symbolPromise = tokenProvider.getContractSymbol(for: address)
-        tokenTypePromise = tokenProvider.getTokenType(for: address)
+        namePromise = tokenProvider.getContractName(for: address).promise()
+        symbolPromise = tokenProvider.getContractSymbol(for: address).promise()
+        tokenTypePromise = tokenProvider.getTokenType(for: address).promise()
     }
 
     //Failure to obtain contract data may be due to no-connectivity. So we should check .failed(networkReachable: Bool)
@@ -78,54 +79,70 @@ public class ContractDataDetector {
     private func processTokenType(_ tokenType: TokenType) {
         switch tokenType {
         case .erc875:
-            tokenProvider.getErc875Balance(for: address).done { balance in
-                self.nonFungibleBalanceSeal.fulfill(.erc875(balance))
-                self.completionOfPartialData(.balance(nonFungible: .erc875(balance), fungible: nil, tokenType: .erc875))
-            }.catch { error in
-                self.nonFungibleBalanceSeal.reject(error)
-                self.decimalsSeal.fulfill(0)
-                self.callCompletionFailed(error: ContractDataDetectorError.promise(error: error, .erc875Balance))
-            }
+            tokenProvider.getErc875TokenBalance(for: wallet, contract: address)
+                .sinkAsync(receiveCompletion: { result in
+                    guard case .failure(let error) = result else { return }
+
+                    self.nonFungibleBalanceSeal.reject(error)
+                    self.decimalsSeal.fulfill(0)
+                    self.callCompletionFailed(error: ContractDataDetectorError.promise(error: error, .erc875Balance))
+                }, receiveValue: { balance in
+                    self.nonFungibleBalanceSeal.fulfill(.erc875(balance))
+                    self.completionOfPartialData(.balance(nonFungible: .erc875(balance), fungible: nil, tokenType: .erc875))
+                })
         case .erc721:
-            tokenProvider.getErc721Balance(for: address).done { balance in
-                self.nonFungibleBalanceSeal.fulfill(.balance(balance))
-                self.decimalsSeal.fulfill(0)
-                self.completionOfPartialData(.balance(nonFungible: .balance(balance), fungible: nil, tokenType: .erc721))
-            }.catch { error in
-                self.nonFungibleBalanceSeal.reject(error)
-                self.decimalsSeal.fulfill(0)
-                self.callCompletionFailed(error: ContractDataDetectorError.promise(error: error, .erc721Balance))
-            }
+            tokenProvider.getErc721Balance(for: address)
+                .sinkAsync(receiveCompletion: { result in
+                    guard case .failure(let error) = result else { return }
+
+                    self.nonFungibleBalanceSeal.reject(error)
+                    self.decimalsSeal.fulfill(0)
+                    self.callCompletionFailed(error: ContractDataDetectorError.promise(error: error, .erc721Balance))
+
+                }, receiveValue: { balance in
+                    self.nonFungibleBalanceSeal.fulfill(.balance(balance))
+                    self.decimalsSeal.fulfill(0)
+                    self.completionOfPartialData(.balance(nonFungible: .balance(balance), fungible: nil, tokenType: .erc721))
+                })
         case .erc721ForTickets:
-            tokenProvider.getErc721ForTicketsBalance(for: address).done { balance in
-                self.nonFungibleBalanceSeal.fulfill(.erc721ForTickets(balance))
-                self.decimalsSeal.fulfill(0)
-                self.completionOfPartialData(.balance(nonFungible: .erc721ForTickets(balance), fungible: nil, tokenType: .erc721ForTickets))
-            }.catch { error in
-                self.nonFungibleBalanceSeal.reject(error)
-                self.callCompletionFailed(error: ContractDataDetectorError.promise(error: error, .erc721ForTicketsBalance))
-            }
+            tokenProvider.getErc721ForTicketsBalance(for: address)
+                .sinkAsync(receiveCompletion: { result in
+                    guard case .failure(let error) = result else { return }
+
+                    self.nonFungibleBalanceSeal.reject(error)
+                    self.callCompletionFailed(error: ContractDataDetectorError.promise(error: error, .erc721ForTicketsBalance))
+                }, receiveValue: { balance in
+                    self.nonFungibleBalanceSeal.fulfill(.erc721ForTickets(balance))
+                    self.decimalsSeal.fulfill(0)
+                    self.completionOfPartialData(.balance(nonFungible: .erc721ForTickets(balance), fungible: nil, tokenType: .erc721ForTickets))
+                })
         case .erc1155:
             let balance: [String] = .init()
             self.nonFungibleBalanceSeal.fulfill(.balance(balance))
             self.decimalsSeal.fulfill(0)
             self.completionOfPartialData(.balance(nonFungible: .balance(balance), fungible: nil, tokenType: .erc1155))
         case .erc20:
-            tokenProvider.getErc20Balance(for: address).done { value in
-                self.fungibleBalanceSeal.fulfill(value)
-                self.completionOfPartialData(.balance(nonFungible: nil, fungible: value, tokenType: .erc20))
-            }.catch { error in
-                self.fungibleBalanceSeal.reject(error)
-                self.callCompletionFailed(error: ContractDataDetectorError.promise(error: error, .erc20Balance))
-            }
+            tokenProvider.getErc20Balance(for: address)
+                .sinkAsync(receiveCompletion: { result in
+                    guard case .failure(let error) = result else { return }
 
-            tokenProvider.getDecimals(for: address).done { decimal in
-                self.decimalsSeal.fulfill(decimal)
-                self.completionOfPartialData(.decimals(decimal))
-            }.catch { error in
-                self.decimalsSeal.reject(error)
-                self.callCompletionFailed(error: ContractDataDetectorError.promise(error: error, .decimals))
-            }
+                    self.fungibleBalanceSeal.reject(error)
+                    self.callCompletionFailed(error: ContractDataDetectorError.promise(error: error, .erc20Balance))
+                }, receiveValue: { value in
+                    self.fungibleBalanceSeal.fulfill(value)
+                    self.completionOfPartialData(.balance(nonFungible: nil, fungible: value, tokenType: .erc20))
+                })
+
+            tokenProvider.getDecimals(for: address)
+                .sinkAsync(receiveCompletion: { result in
+                    guard case .failure(let error) = result else { return }
+
+                    self.decimalsSeal.reject(error)
+                    self.callCompletionFailed(error: ContractDataDetectorError.promise(error: error, .decimals))
+                }, receiveValue: { decimal in
+                    self.decimalsSeal.fulfill(decimal)
+                    self.completionOfPartialData(.decimals(decimal))
+                })
         case .nativeCryptocurrency:
             break
         }

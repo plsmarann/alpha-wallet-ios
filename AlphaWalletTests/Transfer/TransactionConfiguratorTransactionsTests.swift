@@ -12,10 +12,11 @@ import AlphaWalletFoundation
 
 class TransactionConfiguratorTransactionsTests: XCTestCase {
 
-    func testDAppRecipientAddress() {
+    func testDAppRecipientAddress() throws {
         let address = AlphaWallet.Address(string: "0x1000000000000000000000000000000000000000")!
-        let bridgeTransaction = RawTransactionBridge(to: address)
-        let transaction = UnconfirmedTransaction(transactionType: .prebuilt(.main), bridgeTransaction: bridgeTransaction)
+        let walletConnectTransaction = WalletConnectTransaction(to: address)
+
+        let transaction = try TransactionType.prebuilt(.main).buildAnyDappTransaction(walletConnectTransaction: walletConnectTransaction)
         let analytics = FakeAnalyticsService()
 
         let configurator = TransactionConfigurator(
