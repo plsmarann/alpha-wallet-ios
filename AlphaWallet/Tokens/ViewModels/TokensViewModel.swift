@@ -54,7 +54,7 @@ final class TokensViewModel {
     private let deletionSubject = PassthroughSubject<[IndexPath], Never>()
     private let wallet: Wallet
     private let assetDefinitionStore: AssetDefinitionStore
-
+    private let tokenImageFetcher: TokenImageFetcher
     let config: Config
     let largeTitleDisplayMode: UINavigationItem.LargeTitleDisplayMode = .never
     var filterViewModel: (cells: [ScrollableSegmentedControlCell], configuration: ScrollableSegmentedControlConfiguration) {
@@ -64,20 +64,6 @@ final class TokensViewModel {
             ScrollableSegmentedControlCell(frame: .zero, title: title, configuration: cellConfiguration)
         }
         return (cells: cells, configuration: controlConfiguration)
-    }
-
-        //NOTE: For case with empty tokens list we want
-    func isBottomSeparatorLineHiddenForTestnetHeader(section: Int) -> Bool {
-        switch sections[section] {
-        case .walletSummary, .filters, .activeWalletSession, .search, .tokens, .collectiblePairs:
-            return true
-        case .testnetTokens:
-            if let index = sections.firstIndex(where: { $0 == tokenListSection }) {
-                return numberOfItems(for: Int(index)) == 0
-            } else {
-                return true
-            }
-        }
     }
 
     var emptyTokensTitle: String {
@@ -100,7 +86,7 @@ final class TokensViewModel {
     }
 
     var headerBackgroundColor: UIColor {
-        return .white
+        return Configuration.Color.Semantic.defaultViewBackground
     }
 
     var buyCryptoTitle: String {
@@ -108,7 +94,7 @@ final class TokensViewModel {
     }
 
     var backgroundColor: UIColor {
-        return Configuration.Color.Semantic.searchbarBackground
+        return Configuration.Color.Semantic.searchBarBackground
     }
 
     var buyButtonFooterBarBackgroundColor: UIColor {
@@ -137,7 +123,7 @@ final class TokensViewModel {
             return DataEntry.Metric.Tokens.Filter.height
         case .activeWalletSession:
             return 80
-        case .search, .testnetTokens:
+        case .search:
             return DataEntry.Metric.AddHideToken.Header.height
         case .tokens, .collectiblePairs:
             return 0.01
@@ -146,7 +132,7 @@ final class TokensViewModel {
 
     func numberOfItems(for section: Int) -> Int {
         switch sections[section] {
-        case .search, .testnetTokens, .walletSummary, .filters, .activeWalletSession:
+        case .search, .walletSummary, .filters, .activeWalletSession:
             return 0
         case .tokens, .collectiblePairs:
             switch filter {
@@ -166,8 +152,10 @@ final class TokensViewModel {
          config: Config,
          domainResolutionService: DomainResolutionServiceType,
          blockiesGenerator: BlockiesGenerator,
-         assetDefinitionStore: AssetDefinitionStore) {
+         assetDefinitionStore: AssetDefinitionStore,
+         tokenImageFetcher: TokenImageFetcher) {
 
+        self.tokenImageFetcher = tokenImageFetcher
         self.wallet = wallet
         self.tokenCollection = tokenCollection
         self.tokensFilter = tokensFilter
@@ -291,7 +279,7 @@ final class TokensViewModel {
                     guard let viewModel: TokenViewModel = isLeftCardSelected ? pair.left : pair.right else { return nil }
 
                     return tokenCollection.token(for: viewModel.contractAddress, server: viewModel.server)
-                case .tokens, .testnetTokens, .activeWalletSession, .filters, .search, .walletSummary:
+                case .tokens, .activeWalletSession, .filters, .search, .walletSummary:
                     return nil
                 }
             case .cell(let indexPath):
@@ -357,7 +345,7 @@ final class TokensViewModel {
         }
 
         switch sections[indexPath.section] {
-        case .collectiblePairs, .testnetTokens, .search, .walletSummary, .filters, .activeWalletSession:
+        case .collectiblePairs, .search, .walletSummary, .filters, .activeWalletSession:
             return nil
         case .tokens:
             return trailingSwipeActionsConfiguration(forRowAt: indexPath)
@@ -366,7 +354,7 @@ final class TokensViewModel {
 
     private func viewModel(for indexPath: IndexPath) -> ViewModelType {
         switch sections[indexPath.section] {
-        case .search, .testnetTokens, .walletSummary, .filters, .activeWalletSession:
+        case .search, .walletSummary, .filters, .activeWalletSession:
             return .undefined
         case .tokens:
             switch tokenOrServer(at: indexPath) {
@@ -377,23 +365,23 @@ final class TokensViewModel {
             case .token(let token):
                 switch token.type {
                 case .nativeCryptocurrency:
-                    let viewModel = EthTokenViewCellViewModel(token: token)
+                    let viewModel = EthTokenViewCellViewModel(token: token, tokenImageFetcher: tokenImageFetcher)
 
                     return .nativeCryptocurrency(viewModel)
                 case .erc20:
-                    let viewModel = FungibleTokenViewCellViewModel(token: token)
+                    let viewModel = FungibleTokenViewCellViewModel(token: token, tokenImageFetcher: tokenImageFetcher)
 
                     return .fungibleToken(viewModel)
                 case .erc721, .erc721ForTickets, .erc1155, .erc875:
-                    let viewModel = NonFungibleTokenViewCellViewModel(token: token)
+                    let viewModel = NonFungibleTokenViewCellViewModel(token: token, tokenImageFetcher: tokenImageFetcher)
 
                     return .nonFungible(viewModel)
                 }
             }
         case .collectiblePairs:
             let pair = collectiblePairs[indexPath.row]
-            let left = OpenSeaNonFungibleTokenViewCellViewModel(token: pair.left)
-            let right: OpenSeaNonFungibleTokenViewCellViewModel? = pair.right.flatMap { token in .init(token: token) }
+            let left = OpenSeaNonFungibleTokenViewCellViewModel(token: pair.left, tokenImageFetcher: tokenImageFetcher)
+            let right: OpenSeaNonFungibleTokenViewCellViewModel? = pair.right.flatMap { token in .init(token: token, tokenImageFetcher: tokenImageFetcher) }
 
             let viewModel = OpenSeaNonFungibleTokenPairTableCellViewModel(leftViewModel: left, rightViewModel: right)
 
@@ -403,7 +391,7 @@ final class TokensViewModel {
 
     func cellHeight(for indexPath: IndexPath) -> CGFloat {
         switch sections[indexPath.section] {
-        case .tokens, .testnetTokens:
+        case .tokens:
             switch tokenOrServer(at: indexPath) {
             case .rpcServer:
                 return DataEntry.Metric.Tokens.headerHeight
@@ -522,20 +510,13 @@ final class TokensViewModel {
             sections = [varyTokenOrCollectiblePeirsSection]
         } else {
             let initialSections: [Section]
-            let testnetHeaderSections: [Section]
-
-            if config.enabledServers.allSatisfy({ $0.isTestnet }) {
-                testnetHeaderSections = [.testnetTokens]
-            } else {
-                testnetHeaderSections = []
-            }
 
             if count == .zero {
                 initialSections = [.walletSummary, .filters, .search]
             } else {
                 initialSections = [.walletSummary, .filters, .search, .activeWalletSession]
             }
-            sections = initialSections + testnetHeaderSections + [varyTokenOrCollectiblePeirsSection]
+            sections = initialSections + [varyTokenOrCollectiblePeirsSection]
         }
         tokenListSection = varyTokenOrCollectiblePeirsSection
     }
@@ -591,7 +572,6 @@ extension TokensViewModel {
     enum Section: Int, Hashable {
         case walletSummary
         case filters
-        case testnetTokens
         case search
         case tokens
         case collectiblePairs

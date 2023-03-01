@@ -26,15 +26,24 @@ extension CurrencyService {
 extension WalletDataProcessingPipeline {
     static func make(wallet: Wallet = .make(), server: RPCServer = .main) -> AppCoordinator.WalletDependencies {
         let fas = FakeAnalyticsService()
-        let sessionsProvider: SessionsProvider = .make(wallet: wallet, servers: [server])
-        let eventsActivityDataStore: EventsActivityDataStoreProtocol = EventsActivityDataStore(store: .fake(for: wallet))
 
         let tokensDataStore = FakeTokensDataStore(account: wallet, servers: [server])
-        let contractDataFetcher = FakeContractDataFetcher()
-        let importToken = ImportToken.make(tokensDataStore: tokensDataStore, contractDataFetcher: contractDataFetcher)
+        let sessionsProvider = FakeSessionsProvider(
+            config: .make(),
+            analytics: FakeAnalyticsService(),
+            blockchainsProvider: .make(servers: [server]),
+            tokensDataStore: tokensDataStore,
+            assetDefinitionStore: .make(),
+            reachability: FakeReachabilityManager(true),
+            wallet: wallet,
+            eventsDataStore: FakeEventsDataStore(account: wallet))
+
+        sessionsProvider.start()
+
+        let eventsActivityDataStore: EventsActivityDataStoreProtocol = EventsActivityDataStore(store: .fake(for: wallet))
+
         let eventsDataStore = FakeEventsDataStore()
         let transactionsDataStore = FakeTransactionsStorage()
-        let nftProvider = FakeNftProvider()
         let coinTickersFetcher = CoinTickersFetcherImpl.make()
         let currencyService: CurrencyService = .make()
 
@@ -42,9 +51,7 @@ extension WalletDataProcessingPipeline {
             sessionsProvider: sessionsProvider,
             tokensDataStore: tokensDataStore,
             analytics: fas,
-            importToken: importToken,
             transactionsStorage: transactionsDataStore,
-            nftProvider: nftProvider,
             assetDefinitionStore: .make(),
             networkService: FakeNetworkService())
 
@@ -54,9 +61,10 @@ extension WalletDataProcessingPipeline {
             coinTickersFetcher: coinTickersFetcher,
             assetDefinitionStore: .make(),
             eventsDataStore: eventsDataStore,
-            currencyService: currencyService)
+            currencyService: currencyService,
+            sessionsProvider: sessionsProvider)
 
-        let fetcher = WalletBalanceFetcher(wallet: wallet, tokensService: pipeline)
+        let fetcher = WalletBalanceFetcher(wallet: wallet, tokensService: pipeline, currencyService: .make())
 
         let activitiesPipeLine = ActivitiesPipeLine(
             config: .make(),
@@ -72,7 +80,6 @@ extension WalletDataProcessingPipeline {
             activitiesPipeLine: activitiesPipeLine,
             transactionsDataStore: transactionsDataStore,
             tokensDataStore: tokensDataStore,
-            importToken: importToken,
             tokensService: tokensService,
             pipeline: pipeline,
             fetcher: fetcher,
@@ -80,20 +87,11 @@ extension WalletDataProcessingPipeline {
             eventsDataStore: eventsDataStore,
             currencyService: currencyService)
         
-        dep.sessionsProvider.start(wallet: wallet)
+        dep.sessionsProvider.start()
         dep.fetcher.start()
         dep.pipeline.start()
 
         return dep
-    }
-}
-
-extension SessionsProvider {
-    static func make(wallet: Wallet = .make(), servers: [RPCServer] = [.main]) -> SessionsProvider {
-        let provider = FakeSessionsProvider(servers: servers)
-        provider.start(wallet: wallet)
-
-        return provider
     }
 }
 
@@ -110,7 +108,7 @@ class PaymentCoordinatorTests: XCTestCase {
             navigationController: FakeNavigationController(),
             flow: .send(type: .transaction(.nativeCryptocurrency(Token(), destination: .init(address: address), amount: .notSet))),
             server: .main,
-            sessionProvider: dep.sessionsProvider,
+            sessionsProvider: dep.sessionsProvider,
             keystore: FakeEtherKeystore(),
             assetDefinitionStore: .make(),
             analytics: FakeAnalyticsService(),
@@ -118,9 +116,9 @@ class PaymentCoordinatorTests: XCTestCase {
             domainResolutionService: FakeDomainResolutionService(),
             tokenSwapper: TokenSwapper.make(),
             tokensFilter: .make(),
-            importToken: dep.importToken,
             networkService: FakeNetworkService(),
-            transactionDataStore: FakeTransactionsStorage(wallet: wallet))
+            transactionDataStore: FakeTransactionsStorage(wallet: wallet),
+            tokenImageFetcher: FakeTokenImageFetcher())
         coordinator.start()
 
         XCTAssertEqual(1, coordinator.coordinators.count)
@@ -136,7 +134,7 @@ class PaymentCoordinatorTests: XCTestCase {
             navigationController: FakeNavigationController(),
             flow: .request,
             server: .main,
-            sessionProvider: dep.sessionsProvider,
+            sessionsProvider: dep.sessionsProvider,
             keystore: FakeEtherKeystore(),
             assetDefinitionStore: .make(),
             analytics: FakeAnalyticsService(),
@@ -144,13 +142,32 @@ class PaymentCoordinatorTests: XCTestCase {
             domainResolutionService: FakeDomainResolutionService(),
             tokenSwapper: TokenSwapper.make(),
             tokensFilter: .make(),
-            importToken: dep.importToken,
             networkService: FakeNetworkService(),
-            transactionDataStore: FakeTransactionsStorage(wallet: wallet))
+            transactionDataStore: FakeTransactionsStorage(wallet: wallet),
+            tokenImageFetcher: FakeTokenImageFetcher())
 
         coordinator.start()
 
         XCTAssertEqual(1, coordinator.coordinators.count)
         XCTAssertTrue(coordinator.coordinators.first is RequestCoordinator)
+    }
+}
+
+import AlphaWalletOpenSea
+
+class FakeTokenImageFetcher: TokenImageFetcher {
+
+    func image(contractAddress: AlphaWallet.Address,
+               server: RPCServer,
+               name: String,
+               type: TokenType,
+               balance: NonFungibleFromJson?,
+               size: GoogleContentSize,
+               contractDefinedImage: UIImage?,
+               colors: [UIColor],
+               staticOverlayIcon: UIImage?,
+               blockChainNameColor: UIColor,
+               serverIconImage: UIImage?) -> TokenImagePublisher {
+        return .empty()
     }
 }

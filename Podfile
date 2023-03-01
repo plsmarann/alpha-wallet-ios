@@ -38,7 +38,8 @@ target 'AlphaWallet' do
   pod 'SwiftLint', '0.50.3', :configuration => 'Debug'
   pod 'SwiftFormat/CLI', '~> 0.49', :configuration => 'Debug'
 
-  pod 'WalletConnectSwiftV2', '~> 1.0.2'
+  pod 'WalletConnectSwiftV2', :git => 'https://github.com/WalletConnect/WalletConnectSwiftV2.git', :tag => '1.3.1'
+  pod 'WalletConnectSwiftV2/Web3Wallet', :git => 'https://github.com/WalletConnect/WalletConnectSwiftV2.git', :tag => '1.3.1'
   pod 'FirebaseCrashlytics', '8.10.0'
   pod 'WalletConnectSwift', :git => 'https://github.com/AlphaWallet/WalletConnectSwift.git', :branch => 'alphaWallet'
   pod 'Starscream', '3.1.1'
@@ -89,6 +90,14 @@ post_install do |installer|
       target.build_configurations.each do |config|
         config.build_settings['SWIFT_VERSION'] = '4.2'
       end
+    end
+
+    #Work around for build warning:
+    #    Run script build phase 'Create Symlinks to Header Folders' will be run during every build because it does not specify any outputs. To address this warning, either add output dependencies to the script phase, or configure it to run in every build by unchecking "Based on dependency analysis" in the script phase.
+    #From https://github.com/realm/realm-swift/issues/7957#issuecomment-1248556797
+    if ['Realm'].include? target.name
+      create_symlink_phase = target.shell_script_build_phases.find { |x| x.name == 'Create Symlinks to Header Folders' }
+      create_symlink_phase.always_out_of_date = "1"
     end
 
     target.build_configurations.each do |config|

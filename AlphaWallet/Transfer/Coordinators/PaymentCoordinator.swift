@@ -19,10 +19,10 @@ protocol NavigationBarPresentable {
 
 class PaymentCoordinator: Coordinator {
     private var session: WalletSession {
-        return sessionProvider.session(for: server)!
+        return sessionsProvider.session(for: server)!
     }
     private let server: RPCServer
-    private let sessionProvider: SessionsProvider
+    private let sessionsProvider: SessionsProvider
     private let keystore: Keystore
     private let assetDefinitionStore: AssetDefinitionStore
     private let analytics: AnalyticsLogger
@@ -33,9 +33,9 @@ class PaymentCoordinator: Coordinator {
     private let reachabilityManager: ReachabilityManagerProtocol
     private let domainResolutionService: DomainResolutionServiceType
     private let tokensFilter: TokensFilter
-    private let importToken: ImportToken
     private let networkService: NetworkService
     private let transactionDataStore: TransactionDataStore
+    private let tokenImageFetcher: TokenImageFetcher
 
     let flow: PaymentFlow
     weak var delegate: PaymentCoordinatorDelegate?
@@ -45,7 +45,7 @@ class PaymentCoordinator: Coordinator {
     init(navigationController: UINavigationController,
          flow: PaymentFlow,
          server: RPCServer,
-         sessionProvider: SessionsProvider,
+         sessionsProvider: SessionsProvider,
          keystore: Keystore,
          assetDefinitionStore: AssetDefinitionStore,
          analytics: AnalyticsLogger,
@@ -54,20 +54,20 @@ class PaymentCoordinator: Coordinator {
          domainResolutionService: DomainResolutionServiceType,
          tokenSwapper: TokenSwapper,
          tokensFilter: TokensFilter,
-         importToken: ImportToken,
          networkService: NetworkService,
-         transactionDataStore: TransactionDataStore) {
+         transactionDataStore: TransactionDataStore,
+         tokenImageFetcher: TokenImageFetcher) {
 
+        self.tokenImageFetcher = tokenImageFetcher
         self.transactionDataStore = transactionDataStore
         self.networkService = networkService
-        self.importToken = importToken
         self.tokensFilter = tokensFilter
         self.tokenSwapper = tokenSwapper
         self.reachabilityManager = reachabilityManager
         self.tokenCollection = tokenCollection
         self.navigationController = navigationController
         self.server = server
-        self.sessionProvider = sessionProvider
+        self.sessionsProvider = sessionsProvider
         self.flow = flow
         self.keystore = keystore
         self.assetDefinitionStore = assetDefinitionStore
@@ -83,13 +83,14 @@ class PaymentCoordinator: Coordinator {
             transactionType: transactionType,
             navigationController: navigationController,
             session: session,
+            sessionsProvider: sessionsProvider,
             keystore: keystore,
             tokensService: tokenCollection,
             assetDefinitionStore: assetDefinitionStore,
             analytics: analytics,
             domainResolutionService: domainResolutionService,
-            importToken: importToken,
-            networkService: networkService)
+            networkService: networkService,
+            tokenImageFetcher: tokenImageFetcher)
 
         coordinator.delegate = self
         coordinator.start()
@@ -107,7 +108,8 @@ class PaymentCoordinator: Coordinator {
             analytics: analytics,
             domainResolutionService: domainResolutionService,
             tokensService: tokenCollection,
-            networkService: networkService)
+            networkService: networkService,
+            tokenImageFetcher: tokenImageFetcher)
         
         coordinator.delegate = self
         coordinator.start()
@@ -126,7 +128,8 @@ class PaymentCoordinator: Coordinator {
             analytics: analytics,
             domainResolutionService: domainResolutionService,
             tokensService: tokenCollection,
-            networkService: networkService)
+            networkService: networkService,
+            tokenImageFetcher: tokenImageFetcher)
 
         coordinator.delegate = self
         coordinator.start()
@@ -154,7 +157,7 @@ class PaymentCoordinator: Coordinator {
 
     private func startWithSwapCoordinator(swapPair: SwapPair) {
         let configurator = SwapOptionsConfigurator(
-            sessionProvider: sessionProvider,
+            sessionProvider: sessionsProvider,
             swapPair: swapPair,
             tokenCollection: tokenCollection,
             tokenSwapper: tokenSwapper)
@@ -169,7 +172,8 @@ class PaymentCoordinator: Coordinator {
             tokenCollection: tokenCollection,
             tokensFilter: tokensFilter,
             networkService: networkService,
-            transactionDataStore: transactionDataStore)
+            transactionDataStore: transactionDataStore,
+            tokenImageFetcher: tokenImageFetcher)
 
         coordinator.start()
         coordinator.delegate = self

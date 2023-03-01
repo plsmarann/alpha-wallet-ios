@@ -20,12 +20,12 @@ class ActivityStateView: UIView {
 
     private func createPendingLoadingIndicatorView() -> ActivityLoadingIndicatorView {
         let control = ActivityLoadingIndicatorView()
-        control.lineColor = Colors.appTint
+        control.lineColor = Configuration.Color.Semantic.appTint
         control.backgroundLineColor = Configuration.Color.Semantic.loading
         control.translatesAutoresizingMaskIntoConstraints = false
         control.duration = 1.1
         control.lineWidth = 3
-        control.backgroundFillColor = .white
+        control.backgroundFillColor = Configuration.Color.Semantic.activityStateViewPendingLoadingIndicatorViewBackground
         control.translatesAutoresizingMaskIntoConstraints = false
 
         return control

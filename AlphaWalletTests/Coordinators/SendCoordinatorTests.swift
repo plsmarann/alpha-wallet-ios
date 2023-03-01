@@ -11,13 +11,14 @@ class SendCoordinatorTests: XCTestCase {
             transactionType: .nativeCryptocurrency(Token(), destination: .none, amount: .notSet),
             navigationController: FakeNavigationController(),
             session: .make(),
+            sessionsProvider: FakeSessionsProvider.make(servers: [.main]),
             keystore: FakeEtherKeystore(),
             tokensService: WalletDataProcessingPipeline.make().pipeline,
             assetDefinitionStore: .make(),
             analytics: FakeAnalyticsService(),
             domainResolutionService: FakeDomainResolutionService(),
-            importToken: ImportToken.make(wallet: .make()),
-            networkService: FakeNetworkService())
+            networkService: FakeNetworkService(),
+            tokenImageFetcher: FakeTokenImageFetcher())
 
         coordinator.start()
 
@@ -30,13 +31,14 @@ class SendCoordinatorTests: XCTestCase {
             transactionType: .nativeCryptocurrency(Token(), destination: .init(address: address), amount: .notSet),
             navigationController: FakeNavigationController(),
             session: .make(),
+            sessionsProvider: FakeSessionsProvider.make(servers: [.main]),
             keystore: FakeEtherKeystore(),
             tokensService: WalletDataProcessingPipeline.make().pipeline,
             assetDefinitionStore: .make(),
             analytics: FakeAnalyticsService(),
             domainResolutionService: FakeDomainResolutionService(),
-            importToken: ImportToken.make(wallet: .make()),
-            networkService: FakeNetworkService())
+            networkService: FakeNetworkService(),
+            tokenImageFetcher: FakeTokenImageFetcher())
         coordinator.start()
 
         XCTAssertEqual(address.eip55String, coordinator.sendViewController.targetAddressTextField.value)

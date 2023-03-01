@@ -35,7 +35,6 @@ public class ActivitiesService: NSObject, ActivitiesServiceType {
     //Dictionary for lookup. Using `.firstIndex` too many times is too slow (60s for 10k events)
     private var activitiesIndexLookup: AtomicDictionary<Int, (index: Int, activity: Activity)> = .init()
     private var activities: AtomicArray<Activity> = .init()
-
     private var tokensAndTokenHolders: AtomicDictionary<AddressAndRPCServer, [TokenHolder]> = .init()
     private var rateLimitedViewControllerReloader: RateLimiter?
     private var hasLoadedActivitiesTheFirstTime = false
@@ -60,17 +59,16 @@ public class ActivitiesService: NSObject, ActivitiesServiceType {
         didUpdateActivitySubject.eraseToAnyPublisher()
     }
 
-    init(
-        config: Config,
-        sessions: ServerDictionary<WalletSession>,
-        assetDefinitionStore: AssetDefinitionStore,
-        eventsActivityDataStore: EventsActivityDataStoreProtocol,
-        eventsDataStore: NonActivityEventsDataStore,
-        transactionDataStore: TransactionDataStore,
-        activitiesFilterStrategy: ActivitiesFilterStrategy = .none,
-        transactionsFilterStrategy: TransactionsFilterStrategy = .all,
-        tokensService: TokenProvidable
-    ) {
+    init(config: Config,
+         sessions: ServerDictionary<WalletSession>,
+         assetDefinitionStore: AssetDefinitionStore,
+         eventsActivityDataStore: EventsActivityDataStoreProtocol,
+         eventsDataStore: NonActivityEventsDataStore,
+         transactionDataStore: TransactionDataStore,
+         activitiesFilterStrategy: ActivitiesFilterStrategy = .none,
+         transactionsFilterStrategy: TransactionsFilterStrategy = .all,
+         tokensService: TokenProvidable) {
+
         self.config = config
         self.sessions = sessions
         self.assetDefinitionStore = assetDefinitionStore
@@ -168,7 +166,7 @@ public class ActivitiesService: NSObject, ActivitiesServiceType {
         let activitiesAndTokens = getActivitiesAndTokens(contractsAndCards: contractsAndCards)
 
         activities.set(array: activitiesAndTokens.compactMap { $0.activity }.sorted { $0.blockNumber > $1.blockNumber })
-        updateActivitiesIndexLookup(with: activities.array)
+        updateActivitiesIndexLookup(with: activities.all)
 
         reloadViewController(reloadImmediately: true)
 
@@ -212,6 +210,7 @@ public class ActivitiesService: NSObject, ActivitiesServiceType {
 
         let activitiesForThisCard: [ActivityTokenObjectTokenHolder] = events.compactMap { eachEvent in
             guard let token = tokensService.token(for: contract, server: server) else { return nil }
+            guard let session = sessions[safe: token.server] else { return nil }
 
             let implicitAttributes = generateImplicitAttributesForToken(forContract: contract, server: server, symbol: token.symbol)
             let tokenAttributes = implicitAttributes
@@ -235,7 +234,7 @@ public class ActivitiesService: NSObject, ActivitiesServiceType {
 
                     tokenHolders = [TokenHolder(tokens: [_token], contractAddress: token.contractAddress, hasAssetDefinition: true)]
                 } else {
-                    tokenHolders = token.getTokenHolders(assetDefinitionStore: assetDefinitionStore, eventsDataStore: eventsDataStore, forWallet: wallet)
+                    tokenHolders = session.tokenAdaptor.getTokenHolders(token: token)
                 }
                 tokensAndTokenHolders[token.addressAndRPCServer] = tokenHolders
             }
@@ -287,8 +286,8 @@ public class ActivitiesService: NSObject, ActivitiesServiceType {
             hasLoadedActivitiesTheFirstTime = true
         }
 
-        let transactions = transactionDataStore.transactions(forFilter: transactionsFilterStrategy, servers: config.enabledServers, oldestBlockNumber: activities.array.last?.blockNumber)
-        let items = combine(activities: activities.array, with: transactions)
+        let transactions = transactionDataStore.transactions(forFilter: transactionsFilterStrategy, servers: config.enabledServers, oldestBlockNumber: activities.last?.blockNumber)
+        let items = combine(activities: activities.all, with: transactions)
         let activities = ActivityCollection.sorted(activities: items)
 
         activitiesSubject.send(activities)
@@ -354,7 +353,7 @@ public class ActivitiesService: NSObject, ActivitiesServiceType {
                 } else if transaction.localizedOperations.count == 1 {
                     return [.standaloneTransaction(transaction: transaction, activity: activity)]
                 } else {
-                    let isSwap = self.isSwap(activities: activities.array, operations: transaction.localizedOperations, wallet: wallet)
+                    let isSwap = self.isSwap(activities: activities.all, operations: transaction.localizedOperations, wallet: wallet)
                     var results: [ActivityRowModel] = .init()
                     results.append(.parentTransaction(transaction: transaction, isSwap: isSwap, activities: .init()))
                     results.append(contentsOf: transaction.localizedOperations.map {
@@ -390,7 +389,7 @@ public class ActivitiesService: NSObject, ActivitiesServiceType {
             let updatedValues = (token: oldActivity.values.token.merging(resolvedAttributeNameValues) { _, new in new }, card: oldActivity.values.card)
             let updatedActivity: Activity = .init(id: oldActivity.id, rowType: oldActivity.rowType, token: token, server: oldActivity.server, name: oldActivity.name, eventName: oldActivity.eventName, blockNumber: oldActivity.blockNumber, transactionId: oldActivity.transactionId, transactionIndex: oldActivity.transactionIndex, logIndex: oldActivity.logIndex, date: oldActivity.date, values: updatedValues, view: oldActivity.view, itemView: oldActivity.itemView, isBaseCard: oldActivity.isBaseCard, state: oldActivity.state)
 
-            if activities.indices.contains(index) {
+            if activities.contains(index: index) {
                 activities[index] = updatedActivity
                 reloadViewController(reloadImmediately: false)
 

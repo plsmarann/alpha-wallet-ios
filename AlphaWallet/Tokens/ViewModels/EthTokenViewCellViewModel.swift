@@ -4,6 +4,7 @@ import Foundation
 import UIKit
 import BigInt
 import AlphaWalletFoundation
+import Combine
 
 struct EthTokenViewCellViewModel {
     private let safeShortTitleInPluralForm: String
@@ -16,10 +17,14 @@ struct EthTokenViewCellViewModel {
     private let isVisible: Bool
     private let amountInFiat: Double?
 
-    let iconImage: Subscribable<TokenImage>
+    let iconImage: TokenImagePublisher
     let accessoryType: UITableViewCell.AccessoryType
 
-    init(token: TokenViewModel, isVisible: Bool = true, accessoryType: UITableViewCell.AccessoryType = .none) {
+    init(token: TokenViewModel,
+         isVisible: Bool = true,
+         accessoryType: UITableViewCell.AccessoryType = .none,
+         tokenImageFetcher: TokenImageFetcher) {
+
         self.safeShortTitleInPluralForm = token.tokenScriptOverrides?.safeShortTitleInPluralForm ?? ""
         self.amountShort = token.balance.amountShort
         self.symbolInPluralForm = token.tokenScriptOverrides?.symbolInPluralForm ?? ""
@@ -28,7 +33,7 @@ struct EthTokenViewCellViewModel {
         self.server = token.server
         self.valueDecimal = token.balance.valueDecimal
         self.amountInFiat = token.balance.amountInFiat
-        self.iconImage = token.icon(withSize: .s300)
+        self.iconImage = tokenImageFetcher.image(token: token, size: .s300)
         self.isVisible = isVisible
         self.accessoryType = accessoryType
     }
@@ -170,3 +175,15 @@ struct EthTokenViewCellViewModel {
 }
 
 extension EthTokenViewCellViewModel: Hashable { }
+
+extension TokenImagePublisher: Equatable {
+    public static func == (lhs: TokenImagePublisher, rhs: TokenImagePublisher) -> Bool {
+        return true
+    }
+}
+
+extension TokenImagePublisher: Hashable {
+    public func hash(into hasher: inout Hasher) {
+        //no-op
+    }
+}

@@ -15,7 +15,7 @@ extension AlphaWallet.WalletConnect {
         enum ActionType {
             case signMessage(String)
             case signPersonalMessage(String)
-            case signTypedMessageV3(EIP712TypedData)
+            case signEip712v3And4(EIP712TypedData)
             case signTransaction(UnconfirmedTransaction)
             case sendTransaction(UnconfirmedTransaction)
             case typedMessage([EthTypedData])
@@ -23,7 +23,6 @@ extension AlphaWallet.WalletConnect {
             case getTransactionCount(String)
             case walletSwitchEthereumChain(WalletSwitchEthereumChainObject)
             case walletAddEthereumChain(WalletAddEthereumChainObject)
-            case unknown
         }
 
         let type: ActionType
@@ -41,7 +40,7 @@ extension AlphaWallet.WalletConnect {
             self = .error(code: code, message: message)
         }
 
-        init(error: AlphaWallet.WalletConnect.ResponseError) {
+        init(error: JsonRpcError) {
             self = .error(code: error.code, message: error.message)
         }
 

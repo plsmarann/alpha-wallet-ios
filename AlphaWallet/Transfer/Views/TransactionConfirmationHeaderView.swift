@@ -6,9 +6,6 @@
 //
 
 import UIKit
-import AlphaWalletFoundation
-
-fileprivate typealias CFG = Configuration
 
 protocol TransactionConfirmationHeaderViewDelegate: AnyObject {
     func headerView(_ header: TransactionConfirmationHeaderView, shouldHideChildren section: Int, index: Int) -> Bool
@@ -43,6 +40,7 @@ class TransactionConfirmationHeaderView: UIView {
 
     private let titleIconImageView: RoundedImageView = {
         let imageView = RoundedImageView(size: .init(width: 24, height: 24))
+        imageView.hideWhenImageIsNil = true
         return imageView
     }()
 
@@ -63,7 +61,7 @@ class TransactionConfirmationHeaderView: UIView {
     private let chevronImageView: UIImageView = {
         let imageView = UIImageView()
         imageView.translatesAutoresizingMaskIntoConstraints = false
-        imageView.tintColor = CFG.Color.Semantic.tableViewAccessory
+        imageView.tintColor = AlphaWallet.Configuration.Color.Semantic.tableViewAccessory
         imageView.contentMode = .scaleAspectFit
 
         return imageView
@@ -91,7 +89,7 @@ class TransactionConfirmationHeaderView: UIView {
 
         let separatorLine = UIView()
         separatorLine.translatesAutoresizingMaskIntoConstraints = false
-        separatorLine.backgroundColor = CFG.Color.Semantic.popupSeparator
+        separatorLine.backgroundColor = AlphaWallet.Configuration.Color.Semantic.popupSeparator
 
         let titleRow = [titleIconImageView, titleLabel].asStackView(axis: .horizontal, spacing: 6, alignment: .center)
 
@@ -167,8 +165,7 @@ class TransactionConfirmationHeaderView: UIView {
         chevronView.isHidden = viewModel.configuration.shouldHideChevron
         chevronImageView.image = viewModel.chevronImage
 
-        titleIconImageView.isHidden = viewModel.isTitleIconHidden
-        titleIconImageView.subscribable = viewModel.titleIcon
+        titleIconImageView.set(imageSource: viewModel.titleIcon)
         titleIconImageView.alpha = viewModel.titleAlpha
 
         titleLabel.alpha = viewModel.titleAlpha
@@ -223,7 +220,7 @@ extension TransactionConfirmationHeaderView {
 
         label.attributedText = NSAttributedString(string: title, attributes: [
             .font: Fonts.bold(size: 17) as Any,
-            .foregroundColor: Colors.appTint,
+            .foregroundColor: AlphaWallet.Configuration.Color.Semantic.appTint,
             .paragraphStyle: paragraph
         ])
         label.translatesAutoresizingMaskIntoConstraints = false

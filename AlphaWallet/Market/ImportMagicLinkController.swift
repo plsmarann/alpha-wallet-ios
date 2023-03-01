@@ -43,7 +43,7 @@ final class ImportMagicLinkController {
     private let session: WalletSession
     private let networking: ImportMagicLinkNetworking
     private var signedOrder: SignedOrder?
-    private let importToken: ImportToken
+    private let importToken: TokenImportable & TokenOrContractFetchable
     private let displayViewSubject = PassthroughSubject<Void, Never>()
     private let claimPaidSignedOrderSubject = PassthroughSubject<(signedOrder: SignedOrder, token: Token), Never>()
     private let viewStateSubject: CurrentValueSubject<ViewState, Never> = .init(.init(state: .validating))
@@ -67,7 +67,7 @@ final class ImportMagicLinkController {
          keystore: Keystore,
          tokensService: TokenViewModelState & TokenProvidable,
          networkService: NetworkService,
-         importToken: ImportToken,
+         importToken: TokenImportable & TokenOrContractFetchable,
          reachability: ReachabilityManagerProtocol) {
 
         self.reachability = reachability
@@ -372,13 +372,13 @@ final class ImportMagicLinkController {
     struct ViewState {
         var url: URL?
         var contract: AlphaWallet.Address?
-        var state: ImportMagicTokenViewControllerViewModel.State
+        var state: ImportMagicTokenViewModel.State
         var tokenHolder: TokenHolder?
         var count: Decimal?
-        var cost: ImportMagicTokenViewControllerViewModel.Cost?
+        var cost: ImportMagicTokenViewModel.Cost?
     }
 
-    private func updateImportTokenState(with state: ImportMagicTokenViewControllerViewModel.State, cost: ImportMagicTokenViewControllerViewModel.Cost? = nil) {
+    private func updateImportTokenState(with state: ImportMagicTokenViewModel.State, cost: ImportMagicTokenViewModel.Cost? = nil) {
         guard !hasCompleted else { return }
 
         viewStateSubject.value.state = state
@@ -393,7 +393,7 @@ final class ImportMagicLinkController {
         hasCompleted = state.hasCompleted
     }
 
-    private func promptImportUniversalLink(cost: ImportMagicTokenViewControllerViewModel.Cost) {
+    private func promptImportUniversalLink(cost: ImportMagicTokenViewModel.Cost) {
         updateImportTokenState(with: .promptImport, cost: cost)
     }
 
@@ -401,7 +401,7 @@ final class ImportMagicLinkController {
         updateImportTokenState(with: .succeeded)
     }
 
-    private func showImportError(errorMessage: String, cost: ImportMagicTokenViewControllerViewModel.Cost? = nil) {
+    private func showImportError(errorMessage: String, cost: ImportMagicTokenViewModel.Cost? = nil) {
         updateImportTokenState(with: .failed(errorMessage: errorMessage), cost: cost)
     }
 
@@ -425,7 +425,7 @@ final class ImportMagicLinkController {
     }
 
     private func importToken(contract: AlphaWallet.Address) {
-        importToken.importTokenPublisher(for: contract, server: server, onlyIfThereIsABalance: false)
+        importToken.importToken(for: contract, onlyIfThereIsABalance: false)
             .handleEvents(receiveCompletion: { [server, wallet] result in
                 guard case .failure(let error) = result else { return }
                 debugLog("Error while adding imported token contract: \(contract.eip55String) server: \(server) wallet: \(wallet.address.eip55String) error: \(error)")

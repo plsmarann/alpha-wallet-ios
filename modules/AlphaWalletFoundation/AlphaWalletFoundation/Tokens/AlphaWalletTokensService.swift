@@ -26,10 +26,8 @@ public class AlphaWalletTokensService: TokensService {
     }()
     private let sessionsProvider: SessionsProvider
     private let analytics: AnalyticsLogger
-    private let importToken: ImportToken
     private let tokensDataStore: TokensDataStore
     private let transactionsStorage: TransactionDataStore
-    private let nftProvider: NFTProvider
     private let assetDefinitionStore: AssetDefinitionStore
     private let networkService: NetworkService
 
@@ -68,19 +66,15 @@ public class AlphaWalletTokensService: TokensService {
     public init(sessionsProvider: SessionsProvider,
                 tokensDataStore: TokensDataStore,
                 analytics: AnalyticsLogger,
-                importToken: ImportToken,
                 transactionsStorage: TransactionDataStore,
-                nftProvider: NFTProvider,
                 assetDefinitionStore: AssetDefinitionStore,
                 networkService: NetworkService) {
 
         self.networkService = networkService
         self.sessionsProvider = sessionsProvider
         self.tokensDataStore = tokensDataStore
-        self.importToken = importToken
         self.analytics = analytics
         self.transactionsStorage = transactionsStorage
-        self.nftProvider = nftProvider
         self.assetDefinitionStore = assetDefinitionStore
     }
 
@@ -136,12 +130,10 @@ public class AlphaWalletTokensService: TokensService {
         let etherToken = MultipleChainsTokensDataStore.functional.etherToken(forServer: session.server)
         let balanceFetcher = TokenBalanceFetcher(
             session: session,
-            nftProvider: nftProvider,
             tokensService: self,
             etherToken: etherToken,
             assetDefinitionStore: assetDefinitionStore,
             analytics: analytics,
-            importToken: importToken,
             networkService: networkService)
 
         balanceFetcher.erc721TokenIdsFetcher = transactionsStorage
@@ -150,7 +142,6 @@ public class AlphaWalletTokensService: TokensService {
             session: session,
             autoDetectTransactedTokensQueue: autoDetectTransactedTokensQueue,
             autoDetectTokensQueue: autoDetectTokensQueue,
-            importToken: importToken,
             tokensDataStore: tokensDataStore,
             balanceFetcher: balanceFetcher,
             networkService: networkService)

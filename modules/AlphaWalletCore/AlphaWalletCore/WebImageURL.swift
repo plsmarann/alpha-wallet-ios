@@ -79,7 +79,9 @@ public enum WebImageURL: Codable, Hashable, Equatable, CustomStringConvertible {
     }
 
     public init?(string: String, withUrlRewriting: Bool = true, rewriteGoogleContentSizeUrl size: GoogleContentSize = .s750) {
-        guard let url = URL(string: string) else { return nil }
+        guard let url = URL(string: string.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines).replacingOccurrences(of: " ", with: "%20")) else {
+            return nil
+        }
         self.init(url: url, withUrlRewriting: withUrlRewriting, rewriteGoogleContentSizeUrl: size)
     }
 
@@ -95,6 +97,7 @@ public enum WebImageURL: Codable, Hashable, Equatable, CustomStringConvertible {
 }
 
 extension String {
+    
     func rangeFromNSRange(nsRange: NSRange) -> Range<String.Index>? {
         return Range(nsRange, in: self)
     }

@@ -4,64 +4,64 @@ import Foundation
 import AlphaWalletFoundation
 
 struct ImportMagicTokenCardRowViewModel: TokenCardRowViewModelProtocol {
-    private var importMagicTokenViewControllerViewModel: ImportMagicTokenViewControllerViewModel
+    private let viewModel: ImportMagicTokenViewModel
     private let assetDefinitionStore: AssetDefinitionStore
 
-    init(importMagicTokenViewControllerViewModel: ImportMagicTokenViewControllerViewModel, assetDefinitionStore: AssetDefinitionStore) {
-        self.importMagicTokenViewControllerViewModel = importMagicTokenViewControllerViewModel
+    init(viewModel: ImportMagicTokenViewModel, assetDefinitionStore: AssetDefinitionStore) {
+        self.viewModel = viewModel
         self.assetDefinitionStore = assetDefinitionStore
     }
 
     var tokenHolder: TokenHolder? {
-        return importMagicTokenViewControllerViewModel.tokenHolder
+        return viewModel.tokenHolder
     }
 
     var tokenCount: String {
-        return importMagicTokenViewControllerViewModel.tokenCount
+        return viewModel.tokenCount
     }
 
     var city: String {
-        return importMagicTokenViewControllerViewModel.city
+        return viewModel.city
     }
 
     var category: String {
-        return importMagicTokenViewControllerViewModel.category
+        return viewModel.category
     }
 
     var teams: String {
-        return importMagicTokenViewControllerViewModel.teams
+        return viewModel.teams
     }
 
     var match: String {
-        return importMagicTokenViewControllerViewModel.match
+        return viewModel.match
     }
 
     var venue: String {
-        return importMagicTokenViewControllerViewModel.venue
+        return viewModel.venue
     }
 
     var date: String {
-        return importMagicTokenViewControllerViewModel.date
+        return viewModel.date
     }
 
     var numero: String {
-        return importMagicTokenViewControllerViewModel.numero
+        return viewModel.numero
     }
 
     var time: String {
-        return importMagicTokenViewControllerViewModel.time
+        return viewModel.time
     }
 
     var onlyShowTitle: Bool {
-        return importMagicTokenViewControllerViewModel.onlyShowTitle
+        return viewModel.onlyShowTitle
     }
 
     var isMeetupContract: Bool {
-        return importMagicTokenViewControllerViewModel.tokenHolder?.isSpawnableMeetupContract ?? false
+        return viewModel.tokenHolder?.isSpawnableMeetupContract ?? false
     }
 
     func subscribeBuilding(withBlock block: @escaping (String) -> Void) {
-        if let subscribable = importMagicTokenViewControllerViewModel.tokenHolder?.values.buildingSubscribableValue {
+        if let subscribable = viewModel.tokenHolder?.values.buildingSubscribableValue {
             subscribable.subscribe { value in
                 value?.stringValue.flatMap { block($0) }
             }
@@ -74,9 +74,10 @@ struct ImportMagicTokenCardRowViewModel: TokenCardRowViewModelProtocol {
             let string = values.joined(separator: ", ")
             block(string)
         }
-        if let subscribable = importMagicTokenViewControllerViewModel.tokenHolder?.values.streetSubscribableValue {
+
+        if let subscribable = viewModel.tokenHolder?.values.streetSubscribableValue {
             subscribable.subscribe { value in
-                guard let tokenHolder = self.importMagicTokenViewControllerViewModel.tokenHolder else { return }
+                guard let tokenHolder = self.viewModel.tokenHolder else { return }
                 if let value = value?.stringValue {
                     updateStreetLocalityStateCountry(
                             street: value,
@@ -87,9 +88,9 @@ struct ImportMagicTokenCardRowViewModel: TokenCardRowViewModelProtocol {
                 }
             }
         }
-        if let subscribable = importMagicTokenViewControllerViewModel.tokenHolder?.values.stateSubscribableValue {
+        if let subscribable = viewModel.tokenHolder?.values.stateSubscribableValue {
             subscribable.subscribe { value in
-                guard let tokenHolder = self.importMagicTokenViewControllerViewModel.tokenHolder else { return }
+                guard let tokenHolder = self.viewModel.tokenHolder else { return }
                 if let value = value?.stringValue {
                     updateStreetLocalityStateCountry(
                             street: tokenHolder.values.streetSubscribableStringValue,
@@ -100,9 +101,9 @@ struct ImportMagicTokenCardRowViewModel: TokenCardRowViewModelProtocol {
                 }
             }
         }
-        if let subscribable = importMagicTokenViewControllerViewModel.tokenHolder?.values.localitySubscribableValue {
+        if let subscribable = viewModel.tokenHolder?.values.localitySubscribableValue {
             subscribable.subscribe { value in
-                guard let tokenHolder = self.importMagicTokenViewControllerViewModel.tokenHolder else { return }
+                guard let tokenHolder = self.viewModel.tokenHolder else { return }
                 if let value = value?.stringValue {
                     updateStreetLocalityStateCountry(
                             street: tokenHolder.values.streetSubscribableStringValue,
@@ -113,8 +114,8 @@ struct ImportMagicTokenCardRowViewModel: TokenCardRowViewModelProtocol {
                 }
             }
         }
-        if let country = importMagicTokenViewControllerViewModel.tokenHolder?.values.countryStringValue {
-            guard let tokenHolder = self.importMagicTokenViewControllerViewModel.tokenHolder else { return }
+        if let country = viewModel.tokenHolder?.values.countryStringValue {
+            guard let tokenHolder = self.viewModel.tokenHolder else { return }
             updateStreetLocalityStateCountry(
                     street: tokenHolder.values.streetSubscribableStringValue,
                     locality: tokenHolder.values.localitySubscribableStringValue,
@@ -125,11 +126,11 @@ struct ImportMagicTokenCardRowViewModel: TokenCardRowViewModelProtocol {
     }
 
     var tokenScriptHtml: String {
-        guard let tokenHolder = importMagicTokenViewControllerViewModel.tokenHolder else { return "" }
+        guard let tokenHolder = viewModel.tokenHolder else { return "" }
         let xmlHandler = XMLHandler(contract: tokenHolder.contractAddress, tokenType: tokenHolder.tokenType, assetDefinitionStore: assetDefinitionStore)
         let (html: html, style: style) = xmlHandler.tokenViewIconifiedHtml
 
-        return wrapWithHtmlViewport(html: html, style: style, forTokenHolder: tokenHolder)
+        return wrapWithHtmlViewport(html: html, style: style, forTokenId: tokenHolder.tokenIds[0])
     }
 
     var hasTokenScriptHtml: Bool {

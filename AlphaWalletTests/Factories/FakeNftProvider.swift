@@ -18,10 +18,14 @@ final class FakeNftProvider: NFTProvider, NftAssetImageProvider {
 
     struct ProviderError: Error {}
 
-    func collectionStats(slug: String, server: RPCServer) -> Promise<Stats> {
+    func collectionStats(collectionId: String) -> Promise<Stats> {
         return .init(error: ProviderError())
     }
-    func nonFungible(wallet: Wallet, server: RPCServer) -> Promise<NonFungiblesTokens> {
-        return .value((openSea: [:], enjin: [:]))
+    func nonFungible() -> AnyPublisher<NonFungiblesTokens, Never> {
+        return .just((openSea: [:], enjin: ()))
+    }
+    
+    func enjinToken(tokenId: TokenId) -> EnjinToken? {
+        return nil
     }
 }

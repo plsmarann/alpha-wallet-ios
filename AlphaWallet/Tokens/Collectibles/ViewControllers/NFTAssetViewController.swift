@@ -11,8 +11,8 @@ import AlphaWalletFoundation
 
 protocol NonFungibleTokenViewControllerDelegate: AnyObject, CanOpenURL {
     func didPressRedeem(token: Token, tokenHolder: TokenHolder, in viewController: NFTAssetViewController)
-    func didPressSell(tokenHolder: TokenHolder, for paymentFlow: PaymentFlow, in viewController: NFTAssetViewController)
-    func didPressTransfer(token: Token, tokenHolder: TokenHolder, forPaymentFlow paymentFlow: PaymentFlow, in viewController: NFTAssetViewController)
+    func didPressSell(tokenHolder: TokenHolder, in viewController: NFTAssetViewController)
+    func didPressTransfer(token: Token, tokenHolder: TokenHolder, paymentFlow: PaymentFlow, in viewController: NFTAssetViewController)
     func didPressViewRedemptionInfo(in viewController: NFTAssetViewController)
     func didTapURL(url: URL, in viewController: NFTAssetViewController)
     func didTap(action: TokenInstanceAction, tokenHolder: TokenHolder, viewController: NFTAssetViewController)
@@ -40,7 +40,7 @@ class NFTAssetViewController: UIViewController, TokenVerifiableStatusViewControl
 
     init(viewModel: NFTAssetViewModel, tokenCardViewFactory: TokenCardViewFactory) {
         self.viewModel = viewModel
-        self.previewView = tokenCardViewFactory.createPreview(of: viewModel.previewViewType, session: viewModel.session, edgeInsets: viewModel.previewEdgeInsets)
+        self.previewView = tokenCardViewFactory.createPreview(of: viewModel.previewViewType, session: viewModel.session, edgeInsets: viewModel.previewEdgeInsets, playButtonPositioning: .bottomRight)
         self.previewView.rounding = .custom(20)
         self.previewView.contentMode = .scaleAspectFill
         super.init(nibName: nil, bundle: nil)
@@ -83,6 +83,7 @@ class NFTAssetViewController: UIViewController, TokenVerifiableStatusViewControl
         title = ""
         super.viewWillDisappear(animated)
         showNavigationBarTopSeparatorLine()
+        previewView.cancel()
     }
 
     override func viewDidLoad() {
@@ -135,12 +136,12 @@ class NFTAssetViewController: UIViewController, TokenVerifiableStatusViewControl
             case .nftRedeem:
                 delegate?.didPressRedeem(token: viewModel.token, tokenHolder: viewModel.tokenHolder, in: self)
             case .nftSell:
-                delegate?.didPressSell(tokenHolder: viewModel.tokenHolder, for: .send(type: .transaction(viewModel.sellTransactionType)), in: self)
+                delegate?.didPressSell(tokenHolder: viewModel.tokenHolder, in: self)
             case .erc20Send, .erc20Receive, .swap, .buy, .bridge:
                 //TODO when we support TokenScript views for ERC20s, we need to perform the action here
                 break
             case .nonFungibleTransfer:
-                delegate?.didPressTransfer(token: viewModel.token, tokenHolder: viewModel.tokenHolder, forPaymentFlow: .send(type: .transaction(viewModel.transferTransactionType)), in: self)
+                delegate?.didPressTransfer(token: viewModel.token, tokenHolder: viewModel.tokenHolder, paymentFlow: .send(type: .transaction(viewModel.transferTransactionType)), in: self)
             case .tokenScript:
                 if let message = viewModel.tokenScriptWarningMessage(for: action) {
                     guard case .warning(let denialMessage) = message else { return }

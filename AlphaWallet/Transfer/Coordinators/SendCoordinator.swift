@@ -19,8 +19,9 @@ class SendCoordinator: Coordinator {
     private let analytics: AnalyticsLogger
     private let domainResolutionService: DomainResolutionServiceType
     private var transactionConfirmationResult: ConfirmResult? = .none
-    private let importToken: ImportToken
+    private let sessionsProvider: SessionsProvider
     private let networkService: NetworkService
+    private let tokenImageFetcher: TokenImageFetcher
 
     let navigationController: UINavigationController
     var coordinators: [Coordinator] = []
@@ -33,16 +34,18 @@ class SendCoordinator: Coordinator {
     init(transactionType: TransactionType,
          navigationController: UINavigationController,
          session: WalletSession,
+         sessionsProvider: SessionsProvider,
          keystore: Keystore,
          tokensService: TokenProvidable & TokenAddable & TokenViewModelState & TokenBalanceRefreshable,
          assetDefinitionStore: AssetDefinitionStore,
          analytics: AnalyticsLogger,
          domainResolutionService: DomainResolutionServiceType,
-         importToken: ImportToken,
-         networkService: NetworkService) {
-        
+         networkService: NetworkService,
+         tokenImageFetcher: TokenImageFetcher) {
+
+        self.tokenImageFetcher = tokenImageFetcher
         self.networkService = networkService
-        self.importToken = importToken
+        self.sessionsProvider = sessionsProvider
         self.transactionType = transactionType
         self.navigationController = navigationController
         self.session = session
@@ -62,11 +65,12 @@ class SendCoordinator: Coordinator {
             transactionType: transactionType,
             session: session,
             tokensService: tokensService,
-            importToken: importToken)
+            sessionsProvider: sessionsProvider)
 
         let controller = SendViewController(
             viewModel: viewModel,
-            domainResolutionService: domainResolutionService)
+            domainResolutionService: domainResolutionService,
+            tokenImageFetcher: tokenImageFetcher)
 
         controller.delegate = self
         controller.navigationItem.largeTitleDisplayMode = .never

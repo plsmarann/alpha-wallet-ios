@@ -197,8 +197,8 @@ class ConfigureTransactionViewController: UIViewController {
     private func createTableFooterForGasPriceWarning(_ gasPriceWarning: TransactionConfigurator.GasPriceWarning) -> UIView {
         let background = UIView()
         background.translatesAutoresizingMaskIntoConstraints = false
-        background.backgroundColor = .init(red: 255, green: 235, blue: 234)
-        background.borderColor = .init(red: 252, green: 187, blue: 183)
+        background.backgroundColor = Configuration.Color.Semantic.configureTransactionBackground
+        background.borderColor = Configuration.Color.Semantic.configureTransactionBorder
         background.cornerRadius = 8
         background.borderWidth = 1
 
@@ -502,9 +502,9 @@ extension ConfigureTransactionViewController: TextFieldDelegate {
     func shouldChangeCharacters(inRange range: NSRange, replacementString string: String, for textField: TextField) -> Bool {
         let value = (textField.value as NSString).replacingCharacters(in: range, with: string)
 
-        if textField == dataTextField.textField {
+        if textField == dataTextField {
             viewModel.configurationToEdit.dataRawValue = value
-        } else if textField == nonceTextField.textField {
+        } else if textField == nonceTextField {
             viewModel.configurationToEdit.nonceRawValue = Int(value)
         }
 

@@ -11,7 +11,6 @@ protocol EnterSellTokensCardPriceQuantityViewControllerDelegate: AnyObject, CanO
 }
 
 class EnterSellTokensCardPriceQuantityViewController: UIViewController, TokenVerifiableStatusViewController {
-    private let analytics: AnalyticsLogger
     private let pricePerTokenLabel: UILabel = {
         let label = UILabel()
         label.translatesAutoresizingMaskIntoConstraints = false
@@ -78,7 +77,7 @@ class EnterSellTokensCardPriceQuantityViewController: UIViewController, TokenVer
 
     private let tokenRowView: TokenRowView & UIView
     private let buttonsBar = HorizontalButtonsBar(configuration: .primary(buttons: 1))
-    private var viewModel: EnterSellTokensCardPriceQuantityViewModel
+    private (set) var viewModel: EnterSellTokensCardPriceQuantityViewModel
     private var totalEthCost: Double {
         switch pricePerTokenField.cryptoValue {
         case .notSet:
@@ -99,15 +98,9 @@ class EnterSellTokensCardPriceQuantityViewController: UIViewController, TokenVer
         }
     }
 
-    var contract: AlphaWallet.Address {
-        return viewModel.token.contractAddress
-    }
-    var server: RPCServer {
-        return viewModel.token.server
-    }
-    let assetDefinitionStore: AssetDefinitionStore
+    private let tokenImageFetcher: TokenImageFetcher
     private lazy var pricePerTokenField: AmountTextField = {
-        let textField = AmountTextField(token: viewModel.ethToken)
+        let textField = AmountTextField(token: viewModel.ethToken, tokenImageFetcher: tokenImageFetcher)
         textField.selectCurrencyButton.isEnabled = false
         textField.selectCurrencyButton.hasToken = true
         textField.selectCurrencyButton.expandIconHidden = true
@@ -117,8 +110,7 @@ class EnterSellTokensCardPriceQuantityViewController: UIViewController, TokenVer
 
         return textField
     }()
-    let paymentFlow: PaymentFlow
-    weak var delegate: EnterSellTokensCardPriceQuantityViewControllerDelegate?
+
     private let walletSession: WalletSession
     private var cancelable = Set<AnyCancellable>()
     private let service: TokenViewModelState
@@ -131,19 +123,25 @@ class EnterSellTokensCardPriceQuantityViewController: UIViewController, TokenVer
     }()
     private let currencyService: CurrencyService
 
-    init(analytics: AnalyticsLogger,
-         paymentFlow: PaymentFlow,
-         viewModel: EnterSellTokensCardPriceQuantityViewModel,
+    weak var delegate: EnterSellTokensCardPriceQuantityViewControllerDelegate?
+    var contract: AlphaWallet.Address {
+        return viewModel.token.contractAddress
+    }
+    var server: RPCServer {
+        return viewModel.token.server
+    }
+    let assetDefinitionStore: AssetDefinitionStore
+
+    init(viewModel: EnterSellTokensCardPriceQuantityViewModel,
          assetDefinitionStore: AssetDefinitionStore,
          walletSession: WalletSession,
-         keystore: Keystore,
          service: TokenViewModelState,
-         currencyService: CurrencyService) {
+         currencyService: CurrencyService,
+         tokenImageFetcher: TokenImageFetcher) {
 
+        self.tokenImageFetcher = tokenImageFetcher
         self.currencyService = currencyService
         self.service = service
-        self.analytics = analytics
-        self.paymentFlow = paymentFlow
         self.walletSession = walletSession
         self.viewModel = viewModel
         self.assetDefinitionStore = assetDefinitionStore
@@ -153,7 +151,7 @@ class EnterSellTokensCardPriceQuantityViewController: UIViewController, TokenVer
         case .backedByOpenSea:
             tokenRowView = OpenSeaNonFungibleTokenCardRowView(tokenView: .viewIconified)
         case .notBackedByOpenSea:
-            tokenRowView = TokenCardRowView(analytics: analytics, server: viewModel.token.server, tokenView: .viewIconified, assetDefinitionStore: assetDefinitionStore, keystore: keystore, wallet: walletSession.account)
+            tokenRowView = TokenCardRowView(server: viewModel.token.server, tokenView: .viewIconified, assetDefinitionStore: assetDefinitionStore, wallet: walletSession.account)
         }
 
         super.init(nibName: nil, bundle: nil)

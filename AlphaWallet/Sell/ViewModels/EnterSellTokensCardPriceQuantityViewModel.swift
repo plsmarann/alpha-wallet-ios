@@ -6,10 +6,11 @@ import AlphaWalletFoundation
 import BigInt
 
 struct EnterSellTokensCardPriceQuantityViewModel {
-    private let server: RPCServer
+    private let session: WalletSession
     private let assetDefinitionStore: AssetDefinitionStore
     private let currencyService: CurrencyService
-    lazy var ethToken: Token = MultipleChainsTokensDataStore.functional.etherToken(forServer: server)
+    lazy var ethToken: Token = MultipleChainsTokensDataStore.functional.etherToken(forServer: session.server)
+
     let token: Token
     let tokenHolder: TokenHolder
     var ethCost: Double = .zero
@@ -47,7 +48,7 @@ struct EnterSellTokensCardPriceQuantityViewModel {
 
     var ethCostLabelText: String {
         let amount = NumberFormatter.shortCrypto.string(double: ethCost, minimumFractionDigits: 6, maximumFractionDigits: 8).droppedTrailingZeros
-        return "\(amount) \(server.symbol)"
+        return "\(amount) \(session.server.symbol)"
     }
 
     var dollarCostLabelText: String {
@@ -58,11 +59,16 @@ struct EnterSellTokensCardPriceQuantityViewModel {
         return dollarCost.trimmed.isEmpty
     }
 
-    init(token: Token, tokenHolder: TokenHolder, server: RPCServer, assetDefinitionStore: AssetDefinitionStore, currencyService: CurrencyService) {
+    init(token: Token,
+         tokenHolder: TokenHolder,
+         session: WalletSession,
+         assetDefinitionStore: AssetDefinitionStore,
+         currencyService: CurrencyService) {
+
         self.token = token
         self.currencyService = currencyService
         self.tokenHolder = tokenHolder
-        self.server = server
+        self.session = session
         self.assetDefinitionStore = assetDefinitionStore
     }
 }

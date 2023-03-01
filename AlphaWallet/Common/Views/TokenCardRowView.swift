@@ -3,9 +3,10 @@
 import UIKit
 import WebKit
 import AlphaWalletFoundation
+import AlphaWalletCore
+import Combine
 
 class TokenCardRowView: UIView, TokenCardRowViewProtocol {
-    private let analytics: AnalyticsLogger
     private let server: RPCServer
     private let assetDefinitionStore: AssetDefinitionStore
     private let tokenCountLabel = UILabel()
@@ -54,7 +55,7 @@ class TokenCardRowView: UIView, TokenCardRowViewProtocol {
     var stateLabel = UILabel()
     var tokenView: TokenView
     lazy var tokenScriptRendererView: TokenInstanceWebView = {
-        let webView = TokenInstanceWebView(analytics: analytics, server: server, wallet: wallet, assetDefinitionStore: assetDefinitionStore, keystore: keystore)
+        let webView = TokenInstanceWebView(server: server, wallet: wallet, assetDefinitionStore: assetDefinitionStore)
         webView.delegate = self
         return webView
     }()
@@ -84,12 +85,10 @@ class TokenCardRowView: UIView, TokenCardRowViewProtocol {
             tokenScriptRendererView.isStandalone = newValue
         }
     }
-    private let keystore: Keystore
+
     private let wallet: Wallet
 
-    init(analytics: AnalyticsLogger, server: RPCServer, tokenView: TokenView, showCheckbox: Bool = false, assetDefinitionStore: AssetDefinitionStore, keystore: Keystore, wallet: Wallet) {
-        self.keystore = keystore
-        self.analytics = analytics
+    init(server: RPCServer, tokenView: TokenView, showCheckbox: Bool = false, assetDefinitionStore: AssetDefinitionStore, wallet: Wallet) {
         self.server = server
         self.tokenView = tokenView
         self.showCheckbox = showCheckbox
@@ -339,8 +338,14 @@ extension TokenCardRowView: TokenRowView {
 }
 
 extension TokenCardRowView: TokenInstanceWebViewDelegate {
-    func navigationControllerFor(tokenInstanceWebView: TokenInstanceWebView) -> UINavigationController? {
-        return nil
+
+    func requestSignMessage(message: SignMessageType,
+                            server: RPCServer,
+                            account: AlphaWallet.Address,
+                            source: Analytics.SignMessageRequestSource,
+                            requester: RequesterViewModel?) -> AnyPublisher<Data, PromiseError> {
+        
+        return .fail(PromiseError(error: DAppError.cancelled))
     }
 
     func shouldClose(tokenInstanceWebView: TokenInstanceWebView) {

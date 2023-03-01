@@ -9,7 +9,6 @@ protocol SetSellTokensCardExpiryDateViewControllerDelegate: AnyObject, CanOpenUR
 }
 
 class SetSellTokensCardExpiryDateViewController: UIViewController, TokenVerifiableStatusViewController {
-    private let analytics: AnalyticsLogger
     private let linkExpiryDateLabel: UILabel = {
         let label = UILabel()
         label.translatesAutoresizingMaskIntoConstraints = false
@@ -99,9 +98,7 @@ class SetSellTokensCardExpiryDateViewController: UIViewController, TokenVerifiab
     private let buttonsBar = HorizontalButtonsBar(configuration: .primary(buttons: 1))
     private let datePicker = UIDatePicker.datePicker
     private let timePicker = UIDatePicker.timePicker
-    private var viewModel: SetSellTokensCardExpiryDateViewModel
-    private let tokenHolder: TokenHolder
-    private let ethCost: Double
+    private (set) var viewModel: SetSellTokensCardExpiryDateViewModel
     private let containerView: ScrollableStackView = {
         let view = ScrollableStackView()
         view.stackView.axis = .vertical
@@ -116,7 +113,7 @@ class SetSellTokensCardExpiryDateViewController: UIViewController, TokenVerifiab
         return viewModel.token.server
     }
     let assetDefinitionStore: AssetDefinitionStore
-    let paymentFlow: PaymentFlow
+
     weak var delegate: SetSellTokensCardExpiryDateViewControllerDelegate?
 
     private var linkExpiryDate: Date {
@@ -130,21 +127,10 @@ class SetSellTokensCardExpiryDateViewController: UIViewController, TokenVerifiab
         }
     }
 
-    // swiftlint:disable function_body_length
-    init(
-        analytics: AnalyticsLogger,
-        paymentFlow: PaymentFlow,
-        tokenHolder: TokenHolder,
-        ethCost: Double,
-        viewModel: SetSellTokensCardExpiryDateViewModel,
-        assetDefinitionStore: AssetDefinitionStore,
-        keystore: Keystore,
-        session: WalletSession
-    ) {
-        self.analytics = analytics
-        self.paymentFlow = paymentFlow
-        self.tokenHolder = tokenHolder
-        self.ethCost = ethCost
+    init(viewModel: SetSellTokensCardExpiryDateViewModel,
+         assetDefinitionStore: AssetDefinitionStore,
+         session: WalletSession) {
+
         self.viewModel = viewModel
         self.assetDefinitionStore = assetDefinitionStore
 
@@ -153,7 +139,7 @@ class SetSellTokensCardExpiryDateViewController: UIViewController, TokenVerifiab
         case .backedByOpenSea:
             tokenRowView = OpenSeaNonFungibleTokenCardRowView(tokenView: .viewIconified)
         case .notBackedByOpenSea:
-            tokenRowView = TokenCardRowView(analytics: analytics, server: viewModel.token.server, tokenView: .viewIconified, assetDefinitionStore: assetDefinitionStore, keystore: keystore, wallet: session.account)
+            tokenRowView = TokenCardRowView(server: viewModel.token.server, tokenView: .viewIconified, assetDefinitionStore: assetDefinitionStore, wallet: session.account)
         }
 
         super.init(nibName: nil, bundle: nil)
@@ -248,7 +234,6 @@ class SetSellTokensCardExpiryDateViewController: UIViewController, TokenVerifiab
             footerBar.anchorsConstraint(to: view),
         ])
     }
-    // swiftlint:enable function_body_length
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -281,7 +266,7 @@ class SetSellTokensCardExpiryDateViewController: UIViewController, TokenVerifiab
         }
 
         //TODO be good if we check if date chosen is not too far into the future. Example 1 year ahead. Common error?
-        delegate?.didSetSellTokensExpiryDate(tokenHolder: tokenHolder, linkExpiryDate: expiryDate, ethCost: ethCost, in: self)
+        delegate?.didSetSellTokensExpiryDate(tokenHolder: viewModel.tokenHolder, linkExpiryDate: expiryDate, ethCost: viewModel.ethCost, in: self)
     }
 
     func configure(viewModel newViewModel: SetSellTokensCardExpiryDateViewModel? = nil) {

@@ -30,21 +30,21 @@ enum ButtonStyle {
 
     var backgroundColor: UIColor {
         switch self {
-        case .solid, .squared: return Colors.appTint
+        case .solid, .squared: return Configuration.Color.Semantic.appTint
         case .border, .borderless: return Configuration.Color.Semantic.defaultViewBackground
-        case .system: return .clear
-        case .special: return Colors.concrete
+        case .system: return Configuration.Color.Semantic.buttonBackgroundSystem
+        case .special: return Configuration.Color.Semantic.specialButton
         case .green: return ButtonsBarViewModel.primaryButton.buttonBackgroundColor
         }
     }
 
     var backgroundColorHighlighted: UIColor {
         switch self {
-        case .solid, .squared: return Colors.appTint
-        case .border: return Colors.appTint
+        case .solid, .squared: return Configuration.Color.Semantic.appTint
+        case .border: return Configuration.Color.Semantic.appTint
         case .borderless: return Configuration.Color.Semantic.defaultViewBackground
-        case .system: return .clear
-        case .special: return Colors.concrete
+        case .system: return Configuration.Color.Semantic.buttonBackgroundHighlighted
+        case .special: return Configuration.Color.Semantic.specialButton
         case .green: return ButtonsBarViewModel.primaryButton.buttonBackgroundColor
         }
     }
@@ -71,7 +71,7 @@ enum ButtonStyle {
 
     var textColor: UIColor {
         switch self {
-        case .solid, .squared: return Colors.appWhite
+        case .solid, .squared: return Configuration.Color.Semantic.defaultInverseText
         case .border, .borderless, .system, .special: return Configuration.Color.Semantic.defaultForegroundText
         case .green: return ButtonsBarViewModel.primaryButton.buttonTitleColor
         }
@@ -79,17 +79,17 @@ enum ButtonStyle {
 
     var textColorHighlighted: UIColor {
         switch self {
-        case .solid, .squared: return UIColor(white: 1, alpha: 0.8)
-        case .border: return Colors.appWhite
+        case .solid, .squared: return Configuration.Color.Semantic.defaultInverseText.withAlphaComponent(0.8)
+        case .border: return Configuration.Color.Semantic.defaultInverseText
         case .borderless, .system, .special: return Configuration.Color.Semantic.defaultViewBackground
-        case .green: return Colors.appWhite.withAlphaComponent(0.8)
+        case .green: return Configuration.Color.Semantic.defaultInverseText.withAlphaComponent(0.8)
         }
     }
 
     var borderColor: UIColor {
         switch self {
         case .solid, .squared, .border: return Configuration.Color.Semantic.defaultButtonBorder
-        case .borderless, .system, .special: return .clear
+        case .borderless, .system, .special: return Configuration.Color.Semantic.buttonBorderlessBorder
         case .green: return ButtonsBarViewModel.primaryButton.buttonBorderColor
         }
     }

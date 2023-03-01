@@ -7,12 +7,18 @@
 
 import UIKit
 import AlphaWalletFoundation
+import Combine
 
 struct PopularTokenViewCellViewModel {
     private let token: PopularToken
     private let isVisible: Bool
+    private let tokenImageFetcher: TokenImageFetcher
 
-    init(token: PopularToken, isVisible: Bool = true) {
+    init(token: PopularToken,
+         isVisible: Bool = true,
+         tokenImageFetcher: TokenImageFetcher) {
+
+        self.tokenImageFetcher = tokenImageFetcher
         self.token = token
         self.isVisible = isVisible
     }
@@ -32,8 +38,8 @@ struct PopularTokenViewCellViewModel {
         return isVisible ? 1.0 : 0.4
     }
 
-    var iconImage: Subscribable<TokenImage> {
-        token.icon(withSize: .s120)
+    var iconImage: TokenImagePublisher {
+        tokenImageFetcher.image(token: token, size: .s120)
     }
 
     var blockChainTagViewModel: BlockchainTagLabelViewModel {

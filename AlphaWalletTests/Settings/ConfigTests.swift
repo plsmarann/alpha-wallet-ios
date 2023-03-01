@@ -39,11 +39,7 @@ class ConfigTests: XCTestCase {
     }
 
     func testTokensNavigationTitle() {
-
-        let expectation = expectation(description: "Wait for resolve tokens navigation title")
-
-        var sessions = ServerDictionary<WalletSession>()
-        sessions[.main] = WalletSession.make()
+        let sessionsProvider = FakeSessionsProvider.make(servers: [.main])
 
         let config: Config = .make()
         let tokenActionsService = FakeSwapTokenService()
@@ -51,39 +47,33 @@ class ConfigTests: XCTestCase {
 
         let coordinator = TokensCoordinator(
             navigationController: FakeNavigationController(),
-            sessions: sessions,
+            sessionsProvider: sessionsProvider,
             keystore: FakeEtherKeystore(),
             config: config,
             assetDefinitionStore: .make(),
             promptBackupCoordinator: .make(),
             analytics: FakeAnalyticsService(),
-            nftProvider: FakeNftProvider(),
             tokenActionsService: tokenActionsService,
             walletConnectCoordinator: .fake(),
             coinTickersFetcher: CoinTickersFetcherImpl.make(),
             activitiesService: FakeActivitiesService(),
             walletBalanceService: FakeMultiWalletBalanceService(),
             tokenCollection: dep1.pipeline,
-            importToken: dep1.importToken,
             blockiesGenerator: .make(),
             domainResolutionService: FakeDomainResolutionService(),
             tokensFilter: .make(),
-            currencyService: .make())
+            currencyService: .make(),
+            tokenImageFetcher: FakeTokenImageFetcher())
 
         coordinator.start()
         coordinator.tokensViewController.viewWillAppear(false)
 
-        DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
-            XCTAssertEqual(coordinator.tokensViewController.navigationItem.title, "0x1000…0000")
-            expectation.fulfill()
-        }
-
-        wait(for: [expectation], timeout: 20)
+        XCTAssertEqual(coordinator.tokensViewController.navigationItem.title, "0x1000…0000")
     }
 
     func testTabBarItemTitle() {
         Config.setLocale(AppLocale.english)
-        
+
         let coordinator_1 = AppCoordinator(
             window: .init(),
             analytics: FakeAnalyticsService(),

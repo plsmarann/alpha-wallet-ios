@@ -57,7 +57,7 @@ final class BrowserViewController: UIViewController {
     lazy var progressView: UIProgressView = {
         let progressView = UIProgressView(progressViewStyle: .default)
         progressView.translatesAutoresizingMaskIntoConstraints = false
-        progressView.tintColor = Colors.appTint
+        progressView.tintColor = Configuration.Color.Semantic.appTint
         progressView.trackTintColor = .clear
         return progressView
     }()
@@ -91,7 +91,7 @@ final class BrowserViewController: UIViewController {
 
             errorView.anchorsConstraint(to: webView),
         ])
-        view.backgroundColor = .white
+        view.backgroundColor = Configuration.Color.Semantic.defaultViewBackground
 
         estimatedProgressObservation = webView.observe(\.estimatedProgress) { [weak self] webView, _ in
             guard let strongSelf = self else { return }

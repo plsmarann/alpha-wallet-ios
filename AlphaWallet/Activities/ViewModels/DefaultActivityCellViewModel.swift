@@ -3,6 +3,7 @@
 import UIKit
 import BigInt
 import AlphaWalletFoundation
+import Combine
 
 struct DefaultActivityCellViewModel {
     private var server: RPCServer {
@@ -14,7 +15,7 @@ struct DefaultActivityCellViewModel {
     }
 
     let activity: Activity
-
+    let tokenImageFetcher: TokenImageFetcher
     var contentsBackgroundColor: UIColor {
         if activityStateViewViewModel.isInPendingState {
             return Configuration.Color.Semantic.sendingState
@@ -188,8 +189,8 @@ struct DefaultActivityCellViewModel {
         .right
     }
 
-    var iconImage: Subscribable<TokenImage> {
-        activity.token.icon(withSize: .s120)
+    var iconImage: TokenImagePublisher {
+        tokenImageFetcher.image(token: activity.token, size: .s120)
     }
 
     var activityStateViewViewModel: ActivityStateViewViewModel {

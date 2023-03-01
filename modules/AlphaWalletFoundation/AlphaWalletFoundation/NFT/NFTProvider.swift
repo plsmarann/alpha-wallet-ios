@@ -11,75 +11,54 @@ import AlphaWalletOpenSea
 import PromiseKit
 import Combine
 
-public typealias NonFungiblesTokens = (openSea: OpenSeaAddressesToNonFungibles, enjin: EnjinTokenIdsToSemiFungibles)
+public typealias NonFungiblesTokens = (openSea: OpenSeaAddressesToNonFungibles, enjin: Void)
 
-public protocol NFTProvider: NftAssetImageProvider {
-    func collectionStats(slug: String, server: RPCServer) -> Promise<Stats>
-    func nonFungible(wallet: Wallet, server: RPCServer) -> Promise<NonFungiblesTokens>
+public protocol NFTProvider {
+    func collectionStats(collectionId: String) -> Promise<Stats>
+    func nonFungible() -> AnyPublisher<NonFungiblesTokens, Never>
+    func enjinToken(tokenId: TokenId) -> EnjinToken?
+}
+
+extension OpenSea: NftAssetImageProvider {
+    public func assetImageUrl(for url: Eip155URL) -> AnyPublisher<URL, AlphaWalletCore.PromiseError> {
+        fetchAssetImageUrl(for: url).publisher(queue: .global())
+    }
 }
 
 public final class AlphaWalletNFTProvider: NFTProvider {
     private let openSea: OpenSea
     private let enjin: Enjin
-    private var inflightPromises: AtomicDictionary<AddressAndRPCServer, Promise<NonFungiblesTokens>> = .init()
-    //TODO when we remove `queue`, it's also a good time to look at using a shared copy of `OpenSea` from `AppCoordinator`
-    private let queue = DispatchQueue(label: "org.alphawallet.swift.nftProvider")
+    private let wallet: Wallet
+    private let server: RPCServer
 
-    public init(analytics: AnalyticsLogger) {
-        enjin = Enjin()
-        openSea = OpenSea(analytics: analytics)
+    public init(analytics: AnalyticsLogger, wallet: Wallet, server: RPCServer, config: Config, storage: RealmStore) {
+        self.wallet = wallet
+        self.server = server
+        enjin = Enjin(server: server, storage: storage)
+        openSea = OpenSea(analytics: analytics, server: server, config: config)
     }
 
-    // NOTE: Its important to return value for promise and not an error. As we are using `when(fulfilled: ...)`. There is force unwrap inside the `when(fulfilled` function
-    private func getEnjinSemiFungible(account: Wallet, server: RPCServer) -> Promise<EnjinTokenIdsToSemiFungibles> {
-        return enjin.semiFungible(wallet: account, server: server)
-            .map(on: queue, { mapped -> EnjinTokenIdsToSemiFungibles in
-                var result: EnjinTokenIdsToSemiFungibles = [:]
-                let tokens = Array(mapped.values.flatMap { $0 })
-                for each in tokens {
-                    guard let tokenId = each.id else { continue }
-                    // NOTE: store with trailing zeros `70000000000019a4000000000000000000000000000000000000000000000000` instead of `70000000000019a4`
-                    result[TokenIdConverter.addTrailingZerosPadding(string: tokenId)] = each
-                }
-                return result
-            }).recover(on: queue, { _ -> Promise<EnjinTokenIdsToSemiFungibles> in
-                return .value([:])
-            })
+    private func getOpenSeaNonFungible() -> Promise<OpenSeaAddressesToNonFungibles> {
+        return openSea.nonFungible(wallet: wallet)
     }
 
-    private func getOpenSeaNonFungible(account: Wallet, server: RPCServer) -> Promise<OpenSeaAddressesToNonFungibles> {
-        return openSea.nonFungible(wallet: account, server: server)
+    public func collectionStats(collectionId: String) -> Promise<Stats> {
+        openSea.collectionStats(collectionId: collectionId)
     }
 
-    public func assetImageUrl(for url: Eip155URL) -> AnyPublisher<URL, PromiseError> {
-        openSea.fetchAssetImageUrl(for: url, server: .main).publisher(queue: queue)
+    public func enjinToken(tokenId: TokenId) -> EnjinToken? {
+        enjin.token(tokenId: tokenId)
     }
 
-    public func collectionStats(slug: String, server: RPCServer) -> Promise<Stats> {
-        openSea.collectionStats(slug: slug, server: server)
-    }
-
-    public func nonFungible(wallet: Wallet, server: RPCServer) -> Promise<NonFungiblesTokens> {
+    public func nonFungible() -> AnyPublisher<NonFungiblesTokens, Never> {
         let key = AddressAndRPCServer(address: wallet.address, server: server)
 
-        if let promise = inflightPromises[key] {
-            return promise
-        } else {
-            let tokensFromOpenSeaPromise = getOpenSeaNonFungible(account: wallet, server: server)
-            let enjinTokensPromise = getEnjinSemiFungible(account: wallet, server: server)
+        let tokensFromOpenSeaPromise = getOpenSeaNonFungible().publisher(queue: .global()).replaceError(with: [:])
+        let enjinTokensPromise = enjin.fetchTokens(wallet: wallet).receive(on: DispatchQueue.global()).mapToVoid().replaceError(with: ())
 
-            let promise = firstly {
-                when(fulfilled: tokensFromOpenSeaPromise, enjinTokensPromise)
-            }.map(on: queue, { (contractToOpenSeaNonFungibles, enjinTokens) -> NonFungiblesTokens in
-                return (contractToOpenSeaNonFungibles, enjinTokens)
-            }).ensure(on: queue, {
-                self.inflightPromises[key] = .none
-            })
-
-            inflightPromises[key] = promise
-
-            return promise
-        }
+        return Publishers.CombineLatest(tokensFromOpenSeaPromise, enjinTokensPromise)
+            .map { ($0, $1) }
+            .eraseToAnyPublisher()
     }
 
 }

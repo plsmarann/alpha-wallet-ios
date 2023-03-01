@@ -7,14 +7,16 @@ import AlphaWalletLogger
 
 struct FungibleTokenDetailsViewModelInput {
     let willAppear: AnyPublisher<Void, Never>
+    let action: AnyPublisher<TokenInstanceAction, Never>
 }
 
 struct FungibleTokenDetailsViewModelOutput {
     let viewState: AnyPublisher<FungibleTokenDetailsViewModel.ViewState, Never>
+    let action: AnyPublisher<FungibleTokenDetailsViewModel.FungibleTokenAction, Never>
 }
 
 final class FungibleTokenDetailsViewModel {
-    private var chartHistoriesSubject: CurrentValueSubject<[ChartHistoryPeriod: ChartHistory], Never> = .init([:])
+    private let chartHistoriesSubject: CurrentValueSubject<[ChartHistoryPeriod: ChartHistory], Never> = .init([:])
     private let coinTickersFetcher: CoinTickersFetcher
     private let tokensService: TokenViewModelState
     private var cancelable = Set<AnyCancellable>()
@@ -24,18 +26,37 @@ final class FungibleTokenDetailsViewModel {
             .map { $0?.balance.ticker }
             .eraseToAnyPublisher()
     }()
-    private lazy var tokenHolder: TokenHolder = token.getTokenHolder(assetDefinitionStore: assetDefinitionStore, forWallet: session.account)
+    private lazy var tokenHolder: TokenHolder = session.tokenAdaptor.getTokenHolder(token: token)
     private let session: WalletSession
     private let assetDefinitionStore: AssetDefinitionStore
     private let tokenActionsProvider: SupportedTokenActionsProvider
     private (set) var actions: [TokenInstanceAction] = []
     private let currencyService: CurrencyService
+    private let tokenImageFetcher: TokenImageFetcher
+
     let token: Token
-    lazy var chartViewModel = TokenHistoryChartViewModel(chartHistories: chartHistoriesSubject.eraseToAnyPublisher(), coinTicker: coinTicker, currencyService: currencyService)
-    lazy var headerViewModel = FungibleTokenHeaderViewModel(token: token, tokensService: tokensService)
+    lazy var chartViewModel = TokenHistoryChartViewModel(
+        chartHistories: chartHistoriesSubject.eraseToAnyPublisher(),
+        coinTicker: coinTicker,
+        currencyService: currencyService)
+
+    lazy var headerViewModel = FungibleTokenHeaderViewModel(
+        token: token,
+        tokensService: tokensService,
+        tokenImageFetcher: tokenImageFetcher)
+
     var wallet: Wallet { session.account }
 
-    init(token: Token, coinTickersFetcher: CoinTickersFetcher, tokensService: TokenViewModelState, session: WalletSession, assetDefinitionStore: AssetDefinitionStore, tokenActionsProvider: SupportedTokenActionsProvider, currencyService: CurrencyService) {
+    init(token: Token,
+         coinTickersFetcher: CoinTickersFetcher,
+         tokensService: TokenViewModelState,
+         session: WalletSession,
+         assetDefinitionStore: AssetDefinitionStore,
+         tokenActionsProvider: SupportedTokenActionsProvider,
+         currencyService: CurrencyService,
+         tokenImageFetcher: TokenImageFetcher) {
+
+        self.tokenImageFetcher = tokenImageFetcher
         self.currencyService = currencyService
         self.tokenActionsProvider = tokenActionsProvider
         self.session = session
@@ -54,14 +75,36 @@ final class FungibleTokenDetailsViewModel {
         let viewTypes = Publishers.CombineLatest(coinTicker, chartHistoriesSubject)
             .compactMap { [weak self] ticker, _ in self?.buildViewTypes(for: ticker) }
 
-        let viewState = Publishers.CombineLatest(tokenActionsPublisher(), viewTypes)
-            .map { FungibleTokenDetailsViewModel.ViewState(actions: $0, views: $1) }
-            .eraseToAnyPublisher()
+        let viewState = Publishers.CombineLatest(tokenActionButtonsPublisher(), viewTypes)
+            .map { FungibleTokenDetailsViewModel.ViewState(actionButtons: $0, views: $1) }
 
-        return .init(viewState: viewState)
+        let action = input.action
+            .compactMap { self.buildFungibleTokenAction(for: $0) }
+
+        return .init(
+            viewState: viewState.eraseToAnyPublisher(),
+            action: action.eraseToAnyPublisher())
     }
 
-    private func tokenActionsPublisher() -> AnyPublisher<[TokenInstanceAction], Never> {
+    private func buildFungibleTokenAction(for action: TokenInstanceAction) -> FungibleTokenAction? {
+        switch action.type {
+        case .swap: return .swap(swapTokenFlow: .swapToken(token: token))
+        case .erc20Send: return .erc20Transfer(token: token)
+        case .erc20Receive: return .erc20Receive(token: token)
+        case .nftRedeem, .nftSell, .nonFungibleTransfer: return nil
+        case .tokenScript:
+            if let message = tokenScriptWarningMessage(for: action) {
+                guard case .warning(let string) = message else { return nil }
+                return .display(warning: string)
+            } else {
+                return .tokenScript(action: action, token: token)
+            }
+        case .bridge(let service): return .bridge(token: token, service: service)
+        case .buy(let service): return .buy(token: token, service: service)
+        }
+    }
+
+    private func tokenActionButtonsPublisher() -> AnyPublisher<[ActionButton], Never> {
         let whenTokenHolderHasChanged = tokenHolder.objectWillChange
             .map { [tokensService, token] _ in tokensService.tokenViewModel(for: token) }
             .receive(on: RunLoop.main)
@@ -75,13 +118,19 @@ final class FungibleTokenDetailsViewModel {
         let tokenViewModel = tokensService.tokenViewModelPublisher(for: token)
 
         return Publishers.MergeMany(tokenViewModel, whenTokenHolderHasChanged, whenTokenActionsHasChanged)
-            .compactMap { _ in self.buildTokenActions() }
-            .handleEvents(receiveOutput: { self.actions = $0 })
-            .eraseToAnyPublisher()
+            .compactMap { _ in self.buildTokenInstanceActions() }
+            .map { actions in
+                actions.map {
+                    ActionButton(
+                        actionType: $0,
+                        name: $0.name,
+                        state: self.buttonState(for: $0))
+                }
+            }.eraseToAnyPublisher()
     }
 
-    private func buildTokenActions() -> [TokenInstanceAction] {
-        let xmlHandler = XMLHandler(token: token, assetDefinitionStore: assetDefinitionStore)
+    private func buildTokenInstanceActions() -> [TokenInstanceAction] {
+        let xmlHandler = session.tokenAdaptor.xmlHandler(token: token)
         let actionsFromTokenScript = xmlHandler.actions
         infoLog("[TokenScript] actions names: \(actionsFromTokenScript.map(\.name))")
         if actionsFromTokenScript.isEmpty {
@@ -145,7 +194,7 @@ final class FungibleTokenDetailsViewModel {
         return views
     }
 
-    func tokenScriptWarningMessage(for action: TokenInstanceAction) -> TokenScriptWarningMessage? {
+    private func tokenScriptWarningMessage(for action: TokenInstanceAction) -> TokenScriptWarningMessage? {
         let fungibleBalance = tokensService.tokenViewModel(for: token)?.balance.value
         if let selection = action.activeExcludingSelection(selectedTokenHolders: [tokenHolder], forWalletAddress: wallet.address, fungibleBalance: fungibleBalance) {
             if let denialMessage = selection.denial {
@@ -159,7 +208,7 @@ final class FungibleTokenDetailsViewModel {
         }
     }
 
-    func buttonState(for action: TokenInstanceAction) -> ActionButtonState {
+    private func buttonState(for action: TokenInstanceAction) -> ActionButtonState {
         func _configButton(action: TokenInstanceAction) -> ActionButtonState {
             let fungibleBalance = tokensService.tokenViewModel(for: token)?.balance.value
             if let selection = action.activeExcludingSelection(selectedTokenHolders: [tokenHolder], forWalletAddress: wallet.address, fungibleBalance: fungibleBalance) {
@@ -259,7 +308,7 @@ final class FungibleTokenDetailsViewModel {
 
     private func attributedHistoryValue(period: ChartHistoryPeriod) -> NSAttributedString {
         let result: (string: String, foregroundColor: UIColor) = {
-            guard let history = chartHistories[period] else { return ("-", Colors.black) }
+            guard let history = chartHistories[period] else { return ("-", Configuration.Color.Semantic.defaultForegroundText) }
 
             let result = HistoryHelper(history: history)
 
@@ -275,7 +324,7 @@ final class FungibleTokenDetailsViewModel {
 
                 return ("\(v) (\(p)%)", Configuration.Color.Semantic.depreciation)
             case .none:
-                return ("-", Colors.black)
+                return ("-", Configuration.Color.Semantic.defaultForegroundText)
             }
         }()
 
@@ -284,6 +333,7 @@ final class FungibleTokenDetailsViewModel {
 }
 
 extension FungibleTokenDetailsViewModel {
+    
     enum TokenScriptWarningMessage {
         case warning(string: String)
         case undefined
@@ -303,7 +353,23 @@ extension FungibleTokenDetailsViewModel {
     }
 
     struct ViewState {
-        let actions: [TokenInstanceAction]
+        let actionButtons: [ActionButton]
         let views: [FungibleTokenDetailsViewModel.ViewType]
+    }
+
+    struct ActionButton {
+        let actionType: TokenInstanceAction
+        let name: String
+        let state: ActionButtonState
+    }
+
+    enum FungibleTokenAction {
+        case swap(swapTokenFlow: SwapTokenFlow)
+        case erc20Transfer(token: Token)
+        case erc20Receive(token: Token)
+        case tokenScript(action: TokenInstanceAction, token: Token)
+        case bridge(token: Token, service: TokenActionProvider)
+        case buy(token: Token, service: TokenActionProvider)
+        case display(warning: String)
     }
 }

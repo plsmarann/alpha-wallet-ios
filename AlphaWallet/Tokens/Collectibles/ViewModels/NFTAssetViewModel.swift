@@ -46,11 +46,6 @@ class NFTAssetViewModel {
         return TransactionType(nonFungibleToken: token, tokenHolders: [tokenHolder])
     }
 
-    var sellTransactionType: TransactionType {
-        tokenHolder.select(with: .allFor(tokenId: tokenHolder.tokenId))
-        return TransactionType(nonFungibleToken: token, tokenHolders: [tokenHolder])
-    }
-
     var previewViewType: NFTPreviewViewType {
         switch OpenSeaBackedNonFungibleTokenHandling(token: token, assetDefinitionStore: assetDefinitionStore, tokenViewType: .viewIconified) {
         case .backedByOpenSea:
@@ -65,10 +60,10 @@ class NFTAssetViewModel {
         case .tokenCardView:
             return .tokenScriptWebView(tokenHolder: tokenHolder, tokenId: tokenId)
         case .imageView:
-            let tokenImage = tokenHolder.assetImageUrl(tokenId: tokenId)
-                .flatMap { TokenImage(image: .url($0), symbol: "", isFinal: true, overlayServerIcon: nil) }
-
-            return .image(iconImage: .init(tokenImage))
+            let assetImage = tokenHolder.assetImageUrl(tokenId: tokenId)
+                .flatMap { TokenImage(image: .url($0), isFinal: true, overlayServerIcon: nil) }
+            
+            return .image(iconImage: .just(assetImage))
         }
     }
 
@@ -79,7 +74,7 @@ class NFTAssetViewModel {
             if let color = tokenHolder.values.backgroundColorStringValue.nilIfEmpty {
                 return UIColor(hex: color)
             } else {
-                return UIColor(red: 247, green: 197, blue: 196)
+                return Configuration.Color.Semantic.NFTAssetViewPreviewViewContentBackgroundColor
             }
         }
     }
@@ -109,8 +104,8 @@ class NFTAssetViewModel {
 
     func transform(input: NFTAssetViewModelInput) -> NFTAssetViewModelOutput {
         let whenOpenSeaStatsHasChanged = PassthroughSubject<Void, Never>()
-        if let openSeaSlug = tokenHolder.values.slug, openSeaSlug.trimmed.nonEmpty {
-            nftProvider.collectionStats(slug: openSeaSlug, server: token.server).done { [weak self] stats in
+        if let collectionId = tokenHolder.values.collectionId, collectionId.trimmed.nonEmpty {
+            nftProvider.collectionStats(collectionId: collectionId).done { [weak self] stats in
                 self?.configure(overiddenOpenSeaStats: stats)
                 whenOpenSeaStatsHasChanged.send(())
             }.cauterize()

@@ -40,6 +40,7 @@ public final class WalletDataProcessingPipeline: TokensProcessingPipeline {
     private let wallet: Wallet
     private let queue = DispatchQueue(label: "org.alphawallet.swift.walletData.processingPipeline", qos: .utility)
     private let currencyService: CurrencyService
+    private let sessionsProvider: SessionsProvider
 
     public var tokenViewModels: AnyPublisher<[TokenViewModel], Never> {
         let whenTickersChanged = coinTickersFetcher.tickersDidUpdate.dropFirst()
@@ -74,7 +75,15 @@ public final class WalletDataProcessingPipeline: TokensProcessingPipeline {
             .eraseToAnyPublisher()
     }
 
-    public init(wallet: Wallet, tokensService: TokensService, coinTickersFetcher: CoinTickersFetcher, assetDefinitionStore: AssetDefinitionStore, eventsDataStore: NonActivityEventsDataStore, currencyService: CurrencyService) {
+    public init(wallet: Wallet,
+                tokensService: TokensService,
+                coinTickersFetcher: CoinTickersFetcher,
+                assetDefinitionStore: AssetDefinitionStore,
+                eventsDataStore: NonActivityEventsDataStore,
+                currencyService: CurrencyService,
+                sessionsProvider: SessionsProvider) {
+
+        self.sessionsProvider = sessionsProvider
         self.wallet = wallet
         self.currencyService = currencyService
         self.eventsDataStore = eventsDataStore
@@ -151,17 +160,18 @@ public final class WalletDataProcessingPipeline: TokensProcessingPipeline {
     }
 
     public func tokenHolders(for token: TokenIdentifiable) -> [TokenHolder] {
-        tokenViewModel(for: token.contractAddress, server: token.server).flatMap { [assetDefinitionStore, eventsDataStore, wallet] in
-            $0.getTokenHolders(assetDefinitionStore: assetDefinitionStore, eventsDataStore: eventsDataStore, forWallet: wallet)
-        } ?? []
+        guard let session = sessionsProvider.session(for: token.server) else { return [] }
+        let tokenAdaptor = session.tokenAdaptor
+        return tokenViewModel(for: token.contractAddress, server: token.server).flatMap { tokenAdaptor.getTokenHolders(token: $0) } ?? []
     }
 
     public func tokenHoldersPublisher(for token: TokenIdentifiable) -> AnyPublisher<[TokenHolder], Never> {
-        tokenViewModelPublisher(for: token.contractAddress, server: token.server)
+        guard let session = sessionsProvider.session(for: token.server) else { return .empty() }
+        let tokenAdaptor = session.tokenAdaptor
+        return tokenViewModelPublisher(for: token.contractAddress, server: token.server)
             .compactMap { $0 }
-            .map { [assetDefinitionStore, eventsDataStore, wallet] in
-                $0.getTokenHolders(assetDefinitionStore: assetDefinitionStore, eventsDataStore: eventsDataStore, forWallet: wallet)
-            }.eraseToAnyPublisher()
+            .map { tokenAdaptor.getTokenHolders(token: $0) }
+            .eraseToAnyPublisher()
     }
 
     public func token(for contract: AlphaWallet.Address) -> Token? {
@@ -219,7 +229,9 @@ public final class WalletDataProcessingPipeline: TokensProcessingPipeline {
 
     private func applyTokenScriptOverrides(tokens: [TokenViewModel]) -> AnyPublisher<[TokenViewModel], Never> {
         let overrides = tokens.map { token -> TokenViewModel in
-            let overrides = TokenScriptOverrides(token: token, assetDefinitionStore: assetDefinitionStore, wallet: wallet, eventsDataStore: eventsDataStore)
+            guard let session = sessionsProvider.session(for: token.server) else { return token }
+            let overrides = session.tokenAdaptor.tokenScriptOverrides(token: token)
+
             return token.override(tokenScriptOverrides: overrides)
         }
         return .just(overrides)
@@ -227,8 +239,8 @@ public final class WalletDataProcessingPipeline: TokensProcessingPipeline {
 
     private func applyTokenScriptOverrides(token: TokenViewModel?) -> TokenViewModel? {
         guard let token = token else { return token }
-
-        let overrides = TokenScriptOverrides(token: token, assetDefinitionStore: assetDefinitionStore, wallet: wallet, eventsDataStore: eventsDataStore)
+        guard let session = sessionsProvider.session(for: token.server) else { return token }
+        let overrides = session.tokenAdaptor.tokenScriptOverrides(token: token)
         return token.override(tokenScriptOverrides: overrides)
     }
 

@@ -146,7 +146,7 @@ final class WalletConnectV2Provider: WalletConnectServer {
         })
     }
 
-    private func reject(request: WalletConnectSwiftV2.Request, error: AlphaWallet.WalletConnect.ResponseError) {
+    private func reject(request: WalletConnectSwiftV2.Request, error: JsonRpcError) {
         infoLog("[WalletConnect2] WC: Did reject session proposal: \(request) with error: \(error.message)")
 
         client.respond(topic: request.topic, requestId: request.id, response: .error(.init(code: error.code, message: error.message)))
@@ -165,16 +165,17 @@ final class WalletConnectV2Provider: WalletConnectServer {
             return reject(request: request, error: .requestRejected)
         }
 
-        let requestV2: AlphaWallet.WalletConnect.Session.Request = .v2(request: request)
-        decoder.decode(request: requestV2)
-            .map { AlphaWallet.WalletConnect.Action(type: $0) }
-            .done { action in
-                self.delegate?.server(self, action: action, request: requestV2, session: .init(multiServerSession: session))
-            }.catch { error in
-                self.delegate?.server(self, didFail: error)
-                //NOTE: we need to reject request if there is some arrays
-                self.reject(request: request, error: .requestRejected)
-            }
+        do {
+            let request: AlphaWallet.WalletConnect.Session.Request = .v2(request: request)
+            let action = AlphaWallet.WalletConnect.Action(type: try decoder.decode(request: request))
+            self.delegate?.server(self, action: action, request: request, session: .init(multiServerSession: session))
+        } catch let error as JsonRpcError {
+            self.delegate?.server(self, didFail: error)
+            //NOTE: we need to reject request if there is some arrays
+            self.reject(request: request, error: error)
+        } catch {
+            //no-op
+        }
     }
 
     private func didDelete(topic: String, reason: WalletConnectSwiftV2.Reason) {
@@ -210,54 +211,25 @@ final class WalletConnectV2Provider: WalletConnectServer {
             return
         }
 
-        do {
-            try WalletConnectV2Provider.validateProposalForMixedMainnetOrTestnet(proposal)
+        delegate.server(self, shouldConnectFor: .init(proposal: proposal)) { [weak self, caip10AccountProvidable] response in
+            guard let strongSelf = self else { return }
 
-            delegate.server(self, shouldConnectFor: .init(proposal: proposal)) { [weak self, caip10AccountProvidable] response in
-                guard let strongSelf = self else { return }
-
-                guard response.shouldProceed else {
-                    strongSelf.currentProposal = .none
-                    reject(proposal: proposal)
-                    return
-                }
-
-                do {
-                    let namespaces = try caip10AccountProvidable.namespaces(proposalOrServer: .proposal(proposal))
-                    strongSelf.client.approve(proposalId: proposal.id, namespaces: namespaces)
-                    strongSelf.currentProposal = .none
-
-                    completion()
-                } catch {
-                    delegate.server(strongSelf, didFail: error)
-                    //NOTE: for now we dont throw any error, just rejecting connection proposal
-                    reject(proposal: proposal)
-                }
+            guard response.shouldProceed else {
+                strongSelf.currentProposal = .none
+                reject(proposal: proposal)
+                return
             }
-        } catch {
-            delegate.server(self, didFail: error)
-            //NOTE: for now we dont throw any error, just rejecting connection proposal
-            reject(proposal: proposal)
-            return
-        }
-    }
 
-    //NOTE: Throws an error in case when `sessionProposal` contains mainnets as well as testnets
-    private static func validateProposalForMixedMainnetOrTestnet(_ proposal: WalletConnectSwiftV2.Session.Proposal) throws {
-        struct MixedMainnetsOrTestnetsError: Error {}
-        for namespace in proposal.requiredNamespaces.values {
-            let blockchains = Set(namespace.chains.map { $0.absoluteString })
-            let servers = RPCServer.decodeEip155Array(values: blockchains)
-            let allAreTestnets = servers.allSatisfy { $0.isTestnet }
-            if allAreTestnets {
-                //no-op
-            } else {
-                let allAreMainnets = servers.allSatisfy { !$0.isTestnet }
-                if allAreMainnets {
-                    //no-op
-                } else {
-                    throw MixedMainnetsOrTestnetsError()
-                }
+            do {
+                let namespaces = try caip10AccountProvidable.namespaces(proposalOrServer: .proposal(proposal))
+                strongSelf.client.approve(proposalId: proposal.id, namespaces: namespaces)
+                strongSelf.currentProposal = .none
+
+                completion()
+            } catch {
+                delegate.server(strongSelf, didFail: error)
+                //NOTE: for now we dont throw any error, just rejecting connection proposal
+                reject(proposal: proposal)
             }
         }
     }

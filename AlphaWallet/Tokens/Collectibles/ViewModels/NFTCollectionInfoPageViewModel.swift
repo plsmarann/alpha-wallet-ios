@@ -9,6 +9,7 @@ import UIKit
 import BigInt
 import Combine
 import AlphaWalletFoundation
+import AlphaWalletCore
 
 struct NFTCollectionInfoPageViewModelInput {
 }
@@ -18,27 +19,18 @@ struct NFTCollectionInfoPageViewModelOutput {
 }
 
 final class NFTCollectionInfoPageViewModel {
-    private let tokenHolderHelper: TokenInstanceViewConfigurationHelper
+    private var tokenHolderHelper: TokenInstanceViewConfigurationHelper?
     private var viewTypes: [NFTCollectionInfoPageViewModel.ViewType] = []
-    private let tokenHolders: AnyPublisher<[TokenHolder], Never>
+    private let tokenHolder: AnyPublisher<TokenHolder?, Never>
     private let nftProvider: NFTProvider
-    private var tokenHolder: TokenHolder
-    private var tokenId: TokenId
+    private let assetDefinitionStore: AssetDefinitionStore
+    private let tokenImageFetcher: TokenImageFetcher
 
     var tabTitle: String { return R.string.localizable.tokenTabInfo() }
     let token: Token
     var contractAddress: AlphaWallet.Address { token.contractAddress }
     var tokenImagePlaceholder: UIImage? { return R.image.tokenPlaceholderLarge() }
     let previewViewType: NFTPreviewViewType
-
-    var previewViewParams: NFTPreviewViewType.Params {
-        switch previewViewType {
-        case .tokenCardView:
-            return .tokenScriptWebView(tokenHolder: tokenHolder, tokenId: tokenId)
-        case .imageView:
-            return .image(iconImage: token.icon(withSize: .s750))
-        }
-    }
 
     var previewEdgeInsets: UIEdgeInsets {
         switch previewViewType {
@@ -51,14 +43,19 @@ final class NFTCollectionInfoPageViewModel {
 
     var previewViewContentBackgroundColor: UIColor { return Configuration.Color.Semantic.defaultViewBackground }
 
-    init(token: Token, previewViewType: NFTPreviewViewType, tokenHolder: TokenHolder, tokenId: TokenId, tokenHolders: AnyPublisher<[TokenHolder], Never>, nftProvider: NFTProvider, assetDefinitionStore: AssetDefinitionStore) {
+    init(token: Token,
+         previewViewType: NFTPreviewViewType,
+         tokenHolder: AnyPublisher<TokenHolder?, Never>,
+         nftProvider: NFTProvider,
+         assetDefinitionStore: AssetDefinitionStore,
+         tokenImageFetcher: TokenImageFetcher) {
+
+        self.tokenImageFetcher = tokenImageFetcher
         self.previewViewType = previewViewType
         self.nftProvider = nftProvider
-        self.tokenHolders = tokenHolders
-        self.token = token
         self.tokenHolder = tokenHolder
-        self.tokenId = tokenId
-        self.tokenHolderHelper = TokenInstanceViewConfigurationHelper(tokenId: tokenId, tokenHolder: tokenHolder, assetDefinitionStore: assetDefinitionStore)
+        self.token = token
+        self.assetDefinitionStore = assetDefinitionStore
     }
 
     var blockChainTagViewModel: BlockchainTagLabelViewModel {
@@ -66,34 +63,78 @@ final class NFTCollectionInfoPageViewModel {
     }
 
     func transform(input: NFTCollectionInfoPageViewModelInput) -> NFTCollectionInfoPageViewModelOutput {
-        let whenOpenSeaStatsHasChanged = PassthroughSubject<Void, Never>()
+        let helper = buildViewHelper(for: tokenHolder)
 
-        if let openSeaSlug = tokenHolder.values.slug, openSeaSlug.trimmed.nonEmpty {
-            nftProvider.collectionStats(slug: openSeaSlug, server: token.server).done { [tokenHolderHelper] overiddenOpenSeaStats in
-                tokenHolderHelper.overiddenOpenSeaStats = overiddenOpenSeaStats
-                whenOpenSeaStatsHasChanged.send(())
-            }.cauterize()
-        }
+        let viewState = Publishers.CombineLatest(previewViewParams(for: helper), viewTypes(for: helper))
+            .map { [previewViewContentBackgroundColor] params, viewTypes in
+                ViewState(
+                    previewViewParams: params,
+                    previewViewContentBackgroundColor: previewViewContentBackgroundColor,
+                    viewTypes: viewTypes)
+            }.eraseToAnyPublisher()
 
-        let tokenHolder = tokenHolders.compactMap { $0.first }
+        return .init(viewState: viewState)
+    }
 
-        let whenTokehHolderHasChanged = tokenHolder.map { tokenHolder -> (tokenHolder: TokenHolder, tokenId: TokenId) in
-            return (tokenHolder: tokenHolder, tokenId: tokenHolder.tokenId)
-        }.handleEvents(receiveOutput: { [weak self, tokenHolderHelper] in
-            self?.tokenId = $0.tokenId
-            self?.tokenHolder = $0.tokenHolder
-            tokenHolderHelper.update(tokenHolder: $0.tokenHolder, tokenId: $0.tokenId)
-        }).map { _ in }
+    private func loadCollectionStats(for tokenHolder: AnyPublisher<TokenHolder?, Never>) -> AnyPublisher<Loadable<Stats, PromiseError>, Never> {
+        return tokenHolder
+            .flatMapLatest { [nftProvider] tokenHolder -> AnyPublisher<Loadable<Stats, PromiseError>, Never> in
+                if let collectionId = tokenHolder?.values.collectionId, collectionId.trimmed.nonEmpty {
+                    return nftProvider.collectionStats(collectionId: collectionId)
+                        .publisher()
+                        .map { stats -> Loadable<Stats, PromiseError> in .done(stats) }
+                        .catch { return Just(.failure($0)) }
+                        .eraseToAnyPublisher()
+                } else {
+                    struct OpenSeaCollectionStatsNotFoundError: Error {}
+                    return .just(.failure(PromiseError(error: OpenSeaCollectionStatsNotFoundError())))
+                }
+            }.prepend(.loading)
+            .eraseToAnyPublisher()
+    }
 
-        let viewTypes = Publishers.Merge(whenTokehHolderHasChanged, whenOpenSeaStatsHasChanged)
-            .compactMap { [tokenHolderHelper, weak self] _ in self?.buildViewTypes(helper: tokenHolderHelper) }
-            .handleEvents(receiveOutput: { [weak self] in self?.viewTypes = $0 })
+    private func previewViewParams(for helper: AnyPublisher<TokenInstanceViewConfigurationHelper?, Never>) -> AnyPublisher<NFTPreviewViewType.Params, Never> {
+        helper.map { [token, previewViewType, tokenImageFetcher] helper in
+            guard let helper = helper else { return .image(iconImage: .just(nil)) }
 
-        let viewState = viewTypes.map {
-            NFTCollectionInfoPageViewModel.ViewState(previewViewParams: self.previewViewParams, previewViewContentBackgroundColor: self.previewViewContentBackgroundColor, viewTypes: $0)
-        }
+            switch previewViewType {
+            case .tokenCardView:
+                return .tokenScriptWebView(tokenHolder: helper.tokenHolder, tokenId: helper.tokenId)
+            case .imageView:
+                let iconImage = tokenImageFetcher.image(token: token, size: .s750)
+                return .image(iconImage: iconImage )
+            }
+        }.eraseToAnyPublisher()
+    }
 
-        return .init(viewState: viewState.eraseToAnyPublisher())
+    private func viewTypes(for helper: AnyPublisher<TokenInstanceViewConfigurationHelper?, Never>) -> AnyPublisher<[NFTCollectionInfoPageViewModel.ViewType], Never> {
+        helper.map { [weak self] helper in
+            guard let strongSelf = self, let helper = helper else { return [] }
+            return strongSelf.buildViewTypes(helper: helper)
+        }.handleEvents(receiveOutput: { [weak self] in self?.viewTypes = $0 })
+        .eraseToAnyPublisher()
+    }
+
+    private func buildViewHelper(for tokenHolder: AnyPublisher<TokenHolder?, Never>) -> AnyPublisher<TokenInstanceViewConfigurationHelper?, Never> {
+        //TODO: move loadCollectionStats to other place, looks not correctly here, but good for now.
+        return Publishers.CombineLatest(loadCollectionStats(for: tokenHolder), tokenHolder)
+            .map { [assetDefinitionStore] stats, tokenHolder -> TokenInstanceViewConfigurationHelper? in
+                guard let tokenHolder = tokenHolder, let tokenId = tokenHolder.tokens.first?.id else {
+                    return nil
+                }
+                //TODO: add support of loadable fields, make tokenHolderHelpers fields depended from open sea stats loadable to display loading process, for better ux
+                let helper = TokenInstanceViewConfigurationHelper(tokenId: tokenId, tokenHolder: tokenHolder, assetDefinitionStore: assetDefinitionStore)
+                switch stats {
+                case .done(let stats):
+                    helper.overiddenOpenSeaStats = stats
+                case .loading, .failure:
+                    helper.overiddenOpenSeaStats = nil
+                }
+
+                return helper
+            }.handleEvents(receiveOutput: { [weak self] in self?.tokenHolderHelper = $0 })
+            .share(replay: 1)
+            .eraseToAnyPublisher()
     }
 
     private func buildViewTypes(helper tokenHolderHelper: TokenInstanceViewConfigurationHelper) -> [NFTCollectionInfoPageViewModel.ViewType] {
@@ -179,18 +220,18 @@ final class NFTCollectionInfoPageViewModel {
 
     func urlForField(indexPath: IndexPath) -> URL? {
         switch viewTypes[indexPath.row] {
-        case .field(let vm) where tokenHolderHelper.wikiUrlViewModel == vm:
-            return tokenHolderHelper.wikiUrlViewModel?.value.flatMap { URL(string: $0) }
-        case .field(let vm) where tokenHolderHelper.instagramUsernameViewModel == vm:
-            return tokenHolderHelper.instagramUsernameViewModel?.value.flatMap { SocialNetworkUrlProvider.resolveUrl(for: $0, urlProvider: .instagram) }
-        case .field(let vm) where tokenHolderHelper.twitterUsernameViewModel == vm:
-            return tokenHolderHelper.twitterUsernameViewModel?.value.flatMap { SocialNetworkUrlProvider.resolveUrl(for: $0, urlProvider: .twitter) }
-        case .field(let vm) where tokenHolderHelper.discordUrlViewModel == vm:
-            return tokenHolderHelper.discordUrlViewModel?.value.flatMap { SocialNetworkUrlProvider.resolveUrl(for: $0, urlProvider: .discord) }
-        case .field(let vm) where tokenHolderHelper.telegramUrlViewModel == vm:
-            return tokenHolderHelper.telegramUrlViewModel?.value.flatMap { SocialNetworkUrlProvider.resolveUrl(for: $0, urlProvider: .telegram) }
-        case .field(let vm) where tokenHolderHelper.externalUrlViewModel == vm:
-            return tokenHolderHelper.externalUrlViewModel?.value.flatMap { URL(string: $0) }
+        case .field(let vm) where tokenHolderHelper?.wikiUrlViewModel == vm:
+            return tokenHolderHelper?.wikiUrlViewModel?.value.flatMap { URL(string: $0) }
+        case .field(let vm) where tokenHolderHelper?.instagramUsernameViewModel == vm:
+            return tokenHolderHelper?.instagramUsernameViewModel?.value.flatMap { SocialNetworkUrlProvider.resolveUrl(for: $0, urlProvider: .instagram) }
+        case .field(let vm) where tokenHolderHelper?.twitterUsernameViewModel == vm:
+            return tokenHolderHelper?.twitterUsernameViewModel?.value.flatMap { SocialNetworkUrlProvider.resolveUrl(for: $0, urlProvider: .twitter) }
+        case .field(let vm) where tokenHolderHelper?.discordUrlViewModel == vm:
+            return tokenHolderHelper?.discordUrlViewModel?.value.flatMap { SocialNetworkUrlProvider.resolveUrl(for: $0, urlProvider: .discord) }
+        case .field(let vm) where tokenHolderHelper?.telegramUrlViewModel == vm:
+            return tokenHolderHelper?.telegramUrlViewModel?.value.flatMap { SocialNetworkUrlProvider.resolveUrl(for: $0, urlProvider: .telegram) }
+        case .field(let vm) where tokenHolderHelper?.externalUrlViewModel == vm:
+            return tokenHolderHelper?.externalUrlViewModel?.value.flatMap { URL(string: $0) }
         case .header, .field:
             return .none
         }

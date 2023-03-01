@@ -40,13 +40,12 @@ class NFTCollectionViewController: UIViewController {
 
     private lazy var activitiesPageView: ActivitiesPageView = {
         let viewModel: ActivityPageViewModel = .init(activitiesViewModel: .init(collection: .init()))
-        let view = ActivitiesPageView(analytics: analytics, keystore: keystore, wallet: self.viewModel.wallet, viewModel: viewModel, sessions: sessions, assetDefinitionStore: assetDefinitionStore)
+        let view = ActivitiesPageView(analytics: analytics, keystore: keystore, wallet: self.viewModel.wallet, viewModel: viewModel, sessions: sessions, assetDefinitionStore: assetDefinitionStore, tokenImageFetcher: tokenImageFetcher)
         view.delegate = self
 
         return view
     }()
     private let appear = PassthroughSubject<Void, Never>()
-    private let _pullToRefresh = PassthroughSubject<Void, Never>()
 
     private lazy var nftAssetsPageView: NFTAssetsPageView = {
         let view = NFTAssetsPageView(tokenCardViewFactory: tokenCardViewFactory, viewModel: viewModel.nftAssetsPageViewModel)
@@ -63,11 +62,21 @@ class NFTCollectionViewController: UIViewController {
     private let keystore: Keystore
     private var cancellable = Set<AnyCancellable>()
     private let tokenCardViewFactory: TokenCardViewFactory
+    private let tokenImageFetcher: TokenImageFetcher
 
     let viewModel: NFTCollectionViewModel
     weak var delegate: NFTCollectionViewControllerDelegate?
 
-    init(keystore: Keystore, session: WalletSession, assetDefinition: AssetDefinitionStore, analytics: AnalyticsLogger, viewModel: NFTCollectionViewModel, sessions: ServerDictionary<WalletSession>, tokenCardViewFactory: TokenCardViewFactory) {
+    init(keystore: Keystore,
+         session: WalletSession,
+         assetDefinition: AssetDefinitionStore,
+         analytics: AnalyticsLogger,
+         viewModel: NFTCollectionViewModel,
+         sessions: ServerDictionary<WalletSession>,
+         tokenCardViewFactory: TokenCardViewFactory,
+         tokenImageFetcher: TokenImageFetcher) {
+
+        self.tokenImageFetcher = tokenImageFetcher
         self.tokenCardViewFactory = tokenCardViewFactory
         self.viewModel = viewModel
         self.sessions = sessions
@@ -142,11 +151,6 @@ class NFTCollectionViewController: UIViewController {
 
         view.backgroundColor = Configuration.Color.Semantic.defaultViewBackground
         bind(viewModel: viewModel)
-        refreshControl.addTarget(self, action: #selector(pullToRefresh), for: .valueChanged)
-    }
-
-    @objc private func pullToRefresh(_ sender: UIRefreshControl) {
-        _pullToRefresh.send(())
     }
 
     private func bind(viewModel: NFTCollectionViewModel) {
@@ -154,7 +158,7 @@ class NFTCollectionViewController: UIViewController {
 
         let input = NFTCollectionViewModelInput(
             appear: appear.eraseToAnyPublisher(),
-            pullToRefresh: _pullToRefresh.eraseToAnyPublisher())
+            pullToRefresh: refreshControl.publisher(forEvent: .valueChanged).eraseToAnyPublisher())
 
         let output = viewModel.transform(input: input)
 
@@ -171,23 +175,26 @@ class NFTCollectionViewController: UIViewController {
         output.pullToRefreshState
             .sink { [refreshControl] state in
                 switch state {
-                case .endLoading:
-                    refreshControl.endRefreshing()
-                case .beginLoading:
-                    refreshControl.beginRefreshing()
+                case .done, .failure: refreshControl.endRefreshing()
+                case .loading: refreshControl.beginRefreshing()
                 }
             }.store(in: &cancellable)
     }
 
     //NOTE: there is only one possible action for now
     private func buildBarButtons(from actions: [NFTCollectionViewModel.NonFungibleTokenAction]) {
+        buttonsBar.cancellable.cancellAll()
         if actions.isEmpty {
             buttonsBar.configure(.empty)
         } else {
-            buttonsBar.configure(.secondary(buttons: 1))
-            let button = buttonsBar.buttons[0]
-            button.setTitle(R.string.localizable.openOnOpenSea(), for: .normal)
-            button.addTarget(self, action: #selector(actionButtonTapped), for: .touchUpInside)
+            buttonsBar.configure(.secondary(buttons: actions.count))
+            for (index, each) in actions.enumerated() {
+                let button = buttonsBar.buttons[index]
+                button.setTitle(each.name, for: .normal)
+                button.publisher(forEvent: .touchUpInside)
+                    .sink { [weak self] _ in self?.perform(action: each) }
+                    .store(in: &buttonsBar.cancellable)
+            }
         }
     }
 
@@ -219,9 +226,11 @@ class NFTCollectionViewController: UIViewController {
         }
     }
 
-    @objc private func actionButtonTapped(sender: UIButton) {
-        guard let url = viewModel.openInUrl else { return }
-        delegate?.didPressOpenWebPage(url, in: self)
+    private func perform(action: NFTCollectionViewModel.NonFungibleTokenAction) {
+        switch action {
+        case .openInUrl(let url):
+            delegate?.didPressOpenWebPage(url, in: self)
+        }
     }
 }
 

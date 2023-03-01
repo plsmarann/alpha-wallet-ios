@@ -14,6 +14,7 @@ protocol NFTCollectionInfoPageViewDelegate: AnyObject {
     func didPressViewContractWebPage(forContract contract: AlphaWallet.Address, in view: NFTCollectionInfoPageView)
 }
 
+//TODO: move to separate view controller like fungible screen does
 class NFTCollectionInfoPageView: ScrollableStackView, PageViewType {
     private var previewView: NFTPreviewViewRepresentable
     private let viewModel: NFTCollectionInfoPageViewModel
@@ -23,9 +24,12 @@ class NFTCollectionInfoPageView: ScrollableStackView, PageViewType {
     var rightBarButtonItem: UIBarButtonItem?
     var title: String { return viewModel.tabTitle }
 
-    init(viewModel: NFTCollectionInfoPageViewModel, session: WalletSession, tokenCardViewFactory: TokenCardViewFactory) {
+    init(viewModel: NFTCollectionInfoPageViewModel,
+         session: WalletSession,
+         tokenCardViewFactory: TokenCardViewFactory) {
+
         self.viewModel = viewModel
-        self.previewView = tokenCardViewFactory.createPreview(of: viewModel.previewViewType, session: session, edgeInsets: viewModel.previewEdgeInsets)
+        self.previewView = tokenCardViewFactory.createPreview(of: viewModel.previewViewType, session: session, edgeInsets: viewModel.previewEdgeInsets, playButtonPositioning: .bottomRight)
         self.previewView.rounding = .custom(20)
         self.previewView.contentMode = .scaleAspectFill
         super.init()
@@ -75,11 +79,12 @@ class NFTCollectionInfoPageView: ScrollableStackView, PageViewType {
         let input = NFTCollectionInfoPageViewModelInput()
         let output = viewModel.transform(input: input)
 
-        output.viewState.sink { [weak self, weak previewView] state in
-            self?.generateSubviews(for: state.viewTypes)
-            previewView?.configure(params: state.previewViewParams)
-            previewView?.contentBackgroundColor = state.previewViewContentBackgroundColor
-        }.store(in: &cancelable)
+        output.viewState
+            .sink { [weak self, weak previewView] state in
+                self?.generateSubviews(for: state.viewTypes)
+                previewView?.configure(params: state.previewViewParams)
+                previewView?.contentBackgroundColor = state.previewViewContentBackgroundColor
+            }.store(in: &cancelable)
     }
 
     required init?(coder: NSCoder) {

@@ -10,43 +10,11 @@ import Combine
 import CombineExt
 import AlphaWalletFoundation
 import AlphaWalletLogger
-import PromiseKit
 import AlphaWalletCore
 
-protocol WalletConnectProviderDelegate: AnyObject {
+protocol WalletConnectProviderDelegate: AnyObject, DappRequesterDelegate {
     func provider(_ provider: WalletConnectProvider, didConnect session: AlphaWallet.WalletConnect.Session)
     func provider(_ provider: WalletConnectProvider, shouldConnectFor proposal: AlphaWallet.WalletConnect.Proposal, completion: @escaping (AlphaWallet.WalletConnect.ProposalResponse) -> Void)
-
-    func requestGetTransactionCount(session: WalletSession) -> AnyPublisher<AlphaWallet.WalletConnect.Response, PromiseError>
-
-    func requestSignMessage(message: SignMessageType,
-                            account: AlphaWallet.Address,
-                            requester: RequesterViewModel) -> AnyPublisher<AlphaWallet.WalletConnect.Response, PromiseError>
-
-    func requestSendRawTransaction(session: WalletSession,
-                                   requester: DappRequesterViewModel,
-                                   transaction: String,
-                                   configuration: TransactionType.Configuration) -> AnyPublisher<AlphaWallet.WalletConnect.Response, PromiseError>
-
-    func requestSendTransaction(session: WalletSession,
-                                requester: DappRequesterViewModel,
-                                transaction: UnconfirmedTransaction,
-                                configuration: TransactionType.Configuration) -> AnyPublisher<AlphaWallet.WalletConnect.Response, PromiseError>
-
-    func requestSingTransaction(session: WalletSession,
-                                requester: DappRequesterViewModel,
-                                transaction: UnconfirmedTransaction,
-                                configuration: TransactionType.Configuration) -> AnyPublisher<AlphaWallet.WalletConnect.Response, PromiseError>
-
-    func requestAddCustomChain(server: RPCServer,
-                               callbackId: SwitchCustomChainCallbackId,
-                               customChain: WalletAddEthereumChainObject) -> AnyPublisher<AlphaWallet.WalletConnect.Response, PromiseError>
-
-    func requestSwitchChain(server: RPCServer,
-                            currentUrl: URL?,
-                            callbackID: SwitchCustomChainCallbackId,
-                            targetChain: WalletSwitchEthereumChainObject) -> AnyPublisher<AlphaWallet.WalletConnect.Response, PromiseError>
-
     func provider(_ provider: WalletConnectProvider, didFail error: WalletConnectError)
     func provider(_ provider: WalletConnectProvider, tookTooLongToConnectToUrl url: AlphaWallet.WalletConnect.ConnectionUrl)
 }
@@ -153,37 +121,40 @@ extension WalletConnectProvider: WalletConnectServerDelegate {
         infoLog("[WalletConnect] action: \(action)")
 
         do {
-            let wallet = try self.wallet(session: session)
+            let wallet = try wallet(session: session, action: action)
 
-            guard let dep = dependencies[wallet] else { throw PMKError.cancelled }
-            guard let walletSession = request.server.flatMap({ dep.sessionsProvider.session(for: $0) }) else { throw PMKError.cancelled }
+            guard let dep = dependencies[wallet] else { throw WalletConnectError.cancelled }
+            guard let walletSession = request.server.flatMap({ dep.sessionsProvider.session(for: $0) }) else { throw WalletConnectError.cancelled }
 
             let requester = DappRequesterViewModel(requester: Requester(walletConnectSession: session, request: request))
 
             buildOperation(for: action, walletSession: walletSession, dep: dep, request: request, session: session, requester: requester)
                 .sink(receiveCompletion: { result in
                     if case .failure(let error) = result {
-                        if error.embedded is DelayWalletConnectResponseError {
-                            //no-op
-                        } else {
-                            self.delegate?.provider(self, didFail: WalletConnectError(error: error.embedded))
-                            try? server.respond(.init(error: .requestRejected), request: request)
+                        switch error {
+                        case .internal, .cancelled, .walletsNotFound, .onlyForWatchWallet, .callbackIdMissing, .connectionFailure:
+                            self.delegate?.provider(self, didFail: error)
+                            try? server.respond(.init(error: error.asJsonRpcError), request: request)
+                            JumpBackToPreviousApp.goBack(forWalletConnectAction: action)
+                        case .delayedOperation:
+                            break
                         }
+                    } else {
+                        JumpBackToPreviousApp.goBack(forWalletConnectAction: action)
                     }
-                    JumpBackToPreviousApp.goBack(forWalletConnectAction: action)
                 }, receiveValue: { response in
                     try? server.respond(response, request: request)
                 }).store(in: &cancellable)
-        } catch {
+        } catch let error as WalletConnectError {
             JumpBackToPreviousApp.goBack(forWalletConnectAction: action)
 
-            delegate?.provider(self, didFail: WalletConnectError(error: error))
-            try? server.respond(.init(error: .requestRejected), request: request)
-        }
+            delegate?.provider(self, didFail: error)
+            try? server.respond(.init(error: error.asJsonRpcError), request: request)
+        } catch { /*no-op*/ }
     }
 
     func server(_ server: WalletConnectServer, didFail error: Error) {
-        delegate?.provider(self, didFail: WalletConnectError(error: error))
+        delegate?.provider(self, didFail: WalletConnectError(error: PromiseError(error: error)))
     }
 
     func server(_ server: WalletConnectServer,
@@ -192,8 +163,9 @@ extension WalletConnectProvider: WalletConnectServerDelegate {
         delegate?.provider(self, tookTooLongToConnectToUrl: url)
     }
 
+    //TODO: extract logic of performing actions in separate provider, dapp browser and wallet connect performing same actions
     /// Returns first available wallet matched in session, basically there always one address, but could support multiple in future
-    private func wallet(session: AlphaWallet.WalletConnect.Session) throws -> Wallet {
+    private func wallet(session: AlphaWallet.WalletConnect.Session, action: AlphaWallet.WalletConnect.Action) throws -> Wallet {
         guard let wallet = keystore.wallets.filter({ addr in session.accounts.contains(where: { $0 == addr.address }) }).first else {
             throw WalletConnectError.walletsNotFound(addresses: session.accounts)
         }
@@ -204,7 +176,12 @@ extension WalletConnectProvider: WalletConnectServerDelegate {
             if config.development.shouldPretendIsRealWallet {
                 break
             } else {
-                throw WalletConnectError.onlyForWatchWallet(address: wallet.address)
+                switch action.type {
+                case .signEip712v3And4, .sendRawTransaction, .typedMessage, .sendTransaction, .signMessage, .signPersonalMessage, .signTransaction:
+                    throw WalletConnectError.onlyForWatchWallet(address: wallet.address)
+                case .walletAddEthereumChain, .walletSwitchEthereumChain, .getTransactionCount:
+                    break
+                }
             }
         }
 
@@ -213,24 +190,45 @@ extension WalletConnectProvider: WalletConnectServerDelegate {
 
     private func addCustomChain(object customChain: WalletAddEthereumChainObject,
                                 request: AlphaWallet.WalletConnect.Session.Request,
-                                walletConnectSession: AlphaWallet.WalletConnect.Session) -> AnyPublisher<AlphaWallet.WalletConnect.Response, PromiseError> {
-        guard let dappRequestProvider = delegate else { return .fail(PromiseError(error: PMKError.cancelled)) }
+                                walletConnectSession: AlphaWallet.WalletConnect.Session) -> AnyPublisher<AlphaWallet.WalletConnect.Response, WalletConnectError> {
+
+        guard let dappRequestProvider = delegate else { return .fail(.cancelled) }
 
         infoLog("[WalletConnect] addCustomChain: \(customChain)")
         guard let server = walletConnectSession.servers.first else {
-            return .fail(PromiseError(error: AlphaWallet.WalletConnect.ResponseError.requestRejected))
+            return .fail(.internal(.requestRejected))
         }
 
-        let callbackId: SwitchCustomChainCallbackId = .walletConnect(request: request)
-        return dappRequestProvider.requestAddCustomChain(server: server, callbackId: callbackId, customChain: customChain)
+        return dappRequestProvider.requestAddCustomChain(server: server, customChain: customChain)
+            .map { [weak self] operation -> AlphaWallet.WalletConnect.Response in
+                switch operation {
+                case .notifySuccessful:
+                    //NOTE: it was like this before
+                    //try? walletConnectProvider.responseServerChangeSucceed(request: request)
+                    //try? walletConnectProvider.notifyUpdateServers(request: request, server: server)
+
+                    try? self?.notifyUpdateServers(request: request, server: server)
+                    return .init(data: nil)
+                case .restartToEnableAndSwitchBrowserToServer:
+                    try? self?.notifyUpdateServers(request: request, server: server)
+                    return .init(data: nil)
+                case .restartToAddEnableAndSwitchBrowserToServer:
+                    try? self?.notifyUpdateServers(request: request, server: server)
+                    return .init(data: nil)
+                case .switchBrowserToExistingServer:
+                    try? self?.notifyUpdateServers(request: request, server: server)
+                    return .init(data: nil)
+                }
+            }.mapError { WalletConnectError(error: $0) }
+            .eraseToAnyPublisher()
     }
 
     private func switchChain(object targetChain: WalletSwitchEthereumChainObject,
                              request: AlphaWallet.WalletConnect.Session.Request,
                              walletConnectSession: AlphaWallet.WalletConnect.Session,
-                             dep: AppCoordinator.WalletDependencies) -> AnyPublisher<AlphaWallet.WalletConnect.Response, PromiseError> {
+                             dep: AppCoordinator.WalletDependencies) -> AnyPublisher<AlphaWallet.WalletConnect.Response, WalletConnectError> {
 
-        guard let dappRequestProvider = delegate else { return .fail(PromiseError(error: PMKError.cancelled)) }
+        guard let dappRequestProvider = delegate else { return .fail(.cancelled) }
 
         infoLog("[WalletConnect] switchChain: \(targetChain)")
 
@@ -243,72 +241,150 @@ extension WalletConnectProvider: WalletConnectServerDelegate {
 
         guard let server = firstEnabledRPCServer(), targetChain.server != nil else {
             //TODO: implement switch chain if its available, but disabled
-            return .fail(PromiseError(error: AlphaWallet.WalletConnect.ResponseError.unsupportedChain(chainId: targetChain.chainId)))
+            return .fail(.internal(.unsupportedChain(chainId: targetChain.chainId)))
         }
 
-        let callbackID: SwitchCustomChainCallbackId = .walletConnect(request: request)
-
-        return dappRequestProvider.requestSwitchChain(server: server, currentUrl: nil, callbackID: callbackID, targetChain: targetChain)
+        return dappRequestProvider.requestSwitchChain(server: server, currentUrl: nil, targetChain: targetChain)
+            .map { [weak self] operation -> AlphaWallet.WalletConnect.Response in
+                switch operation {
+                case .notifySuccessful:
+                    try? self?.notifyUpdateServers(request: request, server: server)
+                    return .init(data: nil)
+                case .restartToEnableAndSwitchBrowserToServer:
+                    try? self?.notifyUpdateServers(request: request, server: server)
+                    return .init(data: nil)
+                case .switchBrowserToExistingServer:
+                    try? self?.notifyUpdateServers(request: request, server: server)
+                    return .init(data: nil)
+                }
+            }
+            .mapError { WalletConnectError(error: $0) }
+            .eraseToAnyPublisher()
     }
 
+    private func validateMessage(session: AlphaWallet.WalletConnect.Session,
+                                 message: SignMessageType,
+                                 source: Analytics.SignMessageRequestSource) -> AnyPublisher<Void, PromiseError> {
+
+        do {
+            switch message {
+            case .eip712v3And4(let typedData):
+                let validator = WalletConnectEip712v3And4Validator(session: session, source: source)
+                try validator.validate(message: typedData)
+            case .typedMessage(let typedData):
+                let validator = TypedMessageValidator()
+                try validator.validate(message: typedData)
+            case .message, .personalMessage:
+                break
+            }
+            return .just(())
+        } catch {
+            return .fail(PromiseError(error: error))
+        }
+    }
+
+    // swiftlint:disable function_body_length
     private func buildOperation(for action: AlphaWallet.WalletConnect.Action,
                                 walletSession: WalletSession,
                                 dep: AppCoordinator.WalletDependencies,
                                 request: AlphaWallet.WalletConnect.Session.Request,
                                 session: AlphaWallet.WalletConnect.Session,
-                                requester: DappRequesterViewModel) -> AnyPublisher<AlphaWallet.WalletConnect.Response, PromiseError> {
+                                requester: DappRequesterViewModel) -> AnyPublisher<AlphaWallet.WalletConnect.Response, WalletConnectError> {
 
-        guard let dappRequestProvider = delegate else { return .fail(PromiseError(error: PMKError.cancelled)) }
+        guard let dappRequestProvider = delegate else { return .fail(.cancelled) }
 
         switch action.type {
         case .signTransaction(let transaction):
             return dappRequestProvider.requestSingTransaction(
                 session: walletSession,
+                source: .walletConnect,
                 requester: requester,
                 transaction: transaction,
                 configuration: .walletConnect(confirmType: .sign, requester: requester))
+            .mapError { WalletConnectError(error: $0) }
+            .map { .value($0) }
+            .eraseToAnyPublisher()
         case .sendTransaction(let transaction):
             return dappRequestProvider.requestSendTransaction(
                 session: walletSession,
+                source: .walletConnect,
                 requester: requester,
                 transaction: transaction,
                 configuration: .walletConnect(confirmType: .signThenSend, requester: requester))
+            .mapError { WalletConnectError(error: $0) }
+            .map { .value(Data(_hex: $0.id)) }
+            .eraseToAnyPublisher()
         case .signMessage(let hexMessage):
-            return dappRequestProvider.requestSignMessage(
-                message: .message(hexMessage.asSignableMessageData),
-                account: walletSession.account.address,
-                requester: requester)
+            return validateMessage(session: session, message: .message(hexMessage.asSignableMessageData), source: request.source)
+                .flatMap { _ in
+                    dappRequestProvider.requestSignMessage(
+                        message: .message(hexMessage.asSignableMessageData),
+                        server: walletSession.server,
+                        account: walletSession.account.address,
+                        source: request.source,
+                        requester: requester)
+                }.mapError { WalletConnectError(error: $0) }
+                .map { .value($0) }
+                .eraseToAnyPublisher()
         case .signPersonalMessage(let hexMessage):
-            return dappRequestProvider.requestSignMessage(
-                message: .personalMessage(hexMessage.asSignableMessageData),
-                account: walletSession.account.address,
-                requester: requester)
-        case .signTypedMessageV3(let typedData):
-            return dappRequestProvider.requestSignMessage(
-                message: .eip712v3And4(typedData),
-                account: walletSession.account.address,
-                requester: requester)
+            return validateMessage(session: session, message: .personalMessage(hexMessage.asSignableMessageData), source: request.source)
+                .flatMap { _ in
+                    dappRequestProvider.requestSignMessage(
+                        message: .personalMessage(hexMessage.asSignableMessageData),
+                        server: walletSession.server,
+                        account: walletSession.account.address,
+                        source: request.source,
+                        requester: requester)
+                }.mapError { WalletConnectError(error: $0) }
+                .map { .value($0) }
+                .eraseToAnyPublisher()
+        case .signEip712v3And4(let typedData):
+            return validateMessage(session: session, message: .eip712v3And4(typedData), source: request.source)
+                .flatMap { _ in
+                    dappRequestProvider.requestSignMessage(
+                        message: .eip712v3And4(typedData),
+                        server: walletSession.server,
+                        account: walletSession.account.address,
+                        source: request.source,
+                        requester: requester)
+                }.mapError { WalletConnectError(error: $0) }
+                .map { .value($0) }
+                .eraseToAnyPublisher()
         case .typedMessage(let typedData):
-            return dappRequestProvider.requestSignMessage(
-                message: .typedMessage(typedData),
-                account: walletSession.account.address,
-                requester: requester)
+            return validateMessage(session: session, message: .typedMessage(typedData), source: request.source)
+                .flatMap { _ in
+                    dappRequestProvider.requestSignMessage(
+                        message: .typedMessage(typedData),
+                        server: walletSession.server,
+                        account: walletSession.account.address,
+                        source: request.source,
+                        requester: requester)
+                }.mapError { WalletConnectError(error: $0) }
+                .map { .value($0) }
+                .eraseToAnyPublisher()
         case .sendRawTransaction(let transaction):
             return dappRequestProvider.requestSendRawTransaction(
                 session: walletSession,
+                source: .walletConnect,
                 requester: requester,
-                transaction: transaction,
-                configuration: .approve)
+                transaction: transaction)
+            .mapError { WalletConnectError(error: $0) }
+            .map { .value(Data(_hex: $0)) }
+            .eraseToAnyPublisher()
         case .getTransactionCount:
-            return dappRequestProvider.requestGetTransactionCount(session: walletSession)
-        case .unknown:
-            return .fail(PromiseError(error: AlphaWallet.WalletConnect.ResponseError.requestRejected))
+            return dappRequestProvider.requestGetTransactionCount(
+                session: walletSession,
+                source: request.source)
+            .mapError { WalletConnectError(error: $0) }
+            .map { .value($0) }
+            .eraseToAnyPublisher()
         case .walletAddEthereumChain(let object):
             return addCustomChain(object: object, request: request, walletConnectSession: session)
         case .walletSwitchEthereumChain(let object):
             return switchChain(object: object, request: request, walletConnectSession: session, dep: dep)
         }
     }
+    // swiftlint:enable function_body_length
 }
 
 class JumpBackToPreviousApp {
@@ -332,9 +408,9 @@ class JumpBackToPreviousApp {
 extension AlphaWallet.WalletConnect.Action.ActionType {
     var shouldGoBackToPreviousAppAfterAction: Bool {
         switch self {
-        case .signMessage, .signPersonalMessage, .signTypedMessageV3, .signTransaction, .sendTransaction, .typedMessage, .sendRawTransaction, .walletSwitchEthereumChain, .walletAddEthereumChain:
+        case .signMessage, .signPersonalMessage, .signEip712v3And4, .signTransaction, .sendTransaction, .typedMessage, .sendRawTransaction, .walletSwitchEthereumChain, .walletAddEthereumChain:
             return true
-        case .getTransactionCount, .unknown:
+        case .getTransactionCount:
             return false
         }
     }

@@ -33,7 +33,7 @@ class ImportMagicLinkCoordinator: Coordinator {
          tokensService: TokenViewModelState & TokenProvidable,
          networkService: NetworkService,
          domainResolutionService: DomainResolutionServiceType,
-         importToken: ImportToken,
+         importToken: TokenImportable & TokenOrContractFetchable,
          reachability: ReachabilityManagerProtocol) {
 
         self.networkService = networkService
@@ -107,9 +107,7 @@ class ImportMagicLinkCoordinator: Coordinator {
         guard let presentingViewController = delegate?.viewControllerForPresenting(in: self) else { return }
 
         let viewController = ImportMagicTokenViewController(
-            analytics: analytics,
             assetDefinitionStore: assetDefinitionStore,
-            keystore: keystore,
             session: session,
             viewModel: .init(state: .validating, server: session.server))
         viewController.delegate = self

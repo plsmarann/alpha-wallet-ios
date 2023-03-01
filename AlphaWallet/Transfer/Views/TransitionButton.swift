@@ -20,9 +20,9 @@ public enum StopAnimationStyle {
 
 /// UIButton sublass for loading and transition animation. Useful for network based application or where you need to animate an action button while doing background tasks.
 @IBDesignable open class TransitionButton: UIButton, CAAnimationDelegate {
-    var shrinkBorderColor: UIColor = .lightGray
+    var shrinkBorderColor: UIColor = AlphaWallet.Configuration.Color.Semantic.transitionButtonShrinkBorder
     var shrinkBorderWidth: CGFloat = 3.0
-    var shrinkBackgroundColor: UIColor = Colors.appWhite
+    var shrinkBackgroundColor: UIColor = AlphaWallet.Configuration.Color.Semantic.defaultButtonBackground
 
     private var cachedTitle: String?
     private var cachedImage: UIImage?

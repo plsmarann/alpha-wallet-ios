@@ -15,14 +15,12 @@ struct AccountsViewModelInput {
 
 struct AccountsViewModelOutput {
     let viewState: AnyPublisher<AccountsViewModel.ViewState, Never>
-    //TODO: replace later with
     let reloadBalanceState: AnyPublisher<Loadable<Void, Error>, Never>
     let walletDelated: AnyPublisher<Wallet, Never>
     let copiedToClipboard: AnyPublisher<String, Never>
 }
 
 final class AccountsViewModel {
-    private var config: Config
     private var viewModels: [AccountsViewModel.SectionViewModel] = []
     private let keystore: Keystore
     private let analytics: AnalyticsLogger
@@ -48,7 +46,7 @@ final class AccountsViewModel {
         case .changeWallets:
             return false
         case .summary:
-            return !Config().enabledServers.allSatisfy { $0.isTestnet }
+            return true
         }
     }
 
@@ -61,14 +59,12 @@ final class AccountsViewModel {
     }
 
     init(keystore: Keystore,
-         config: Config,
          configuration: AccountsCoordinatorViewModel.Configuration,
          analytics: AnalyticsLogger,
          walletBalanceService: WalletBalanceService,
          blockiesGenerator: BlockiesGenerator,
          domainResolutionService: DomainResolutionServiceType) {
 
-        self.config = config
         self.keystore = keystore
         self.configuration = configuration
         self.analytics = analytics
@@ -97,13 +93,11 @@ final class AccountsViewModel {
             .flatMapLatest { $0.combineLatest() }
 
         let walletsSummary = input.willAppear
-            .flatMapLatest { [walletBalanceService] _ in
-                walletBalanceService.walletsSummary
-            }.map { [config] in WalletSummaryViewModel(walletSummary: $0, config: config) }
+            .flatMapLatest { [walletBalanceService] _ in walletBalanceService.walletsSummary }
+            .map { WalletSummaryViewModel(walletSummary: $0) }
 
         let viewState = Publishers.CombineLatest(accountRowViewModels, walletsSummary)
-            //NOTE: .uniqued() looks liek doesn't work
-            .map { self.buildViewModels(sections: self.sections, accountViewModels: $0, summary: $1).uniqued() }
+            .map { self.buildViewModels(sections: self.sections, accountViewModels: $0, summary: $1) }
             .handleEvents(receiveOutput: { self.viewModels = $0 })
             .map { self.buildSnapshot(for: $0) }
             .map { [configuration] snapshot in AccountsViewModel.ViewState(title: configuration.title, snapshot: snapshot) }
@@ -338,7 +332,7 @@ extension AccountsViewModel {
 
         var backgroundColor: UIColor {
             switch self {
-            case .copyToClipboard: return Colors.appTint
+            case .copyToClipboard: return Configuration.Color.Semantic.appTint
             case .deleteWallet: return Configuration.Color.Semantic.dangerBackground
             }
         }
@@ -410,24 +404,3 @@ extension AccountsViewModel {
 extension AccountsViewModel.AccountRowViewModel: Hashable { }
 extension AccountsViewModel.ViewModelType: Hashable { }
 extension AccountsViewModel.SectionViewModel: Hashable { }
-
-enum Loadable<T, F> {
-    case loading
-    case done(T)
-    case failure(F)
-}
-
-extension Loadable: Equatable where T: Equatable, F: Equatable {
-    static func == (lhs: Loadable<T, F>, rhs: Loadable<T, F>) -> Bool {
-        switch (lhs, rhs) {
-        case (.loading, .loading):
-            return true
-        case (.done(let v1), .done(let v2)):
-            return v1 == v2
-        case (.failure(let f1), .failure(let f2)):
-            return f1 == f2
-        case (.done, .loading), (.failure, .done), (.failure, .loading), (.loading, .failure), (.loading, .done), (.done, .failure):
-            return false
-        }
-    }
-}

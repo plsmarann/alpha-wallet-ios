@@ -24,7 +24,7 @@ class Erc875NonFungibleRowView: TokenCardViewRepresentable {
     }()
 
     private lazy var tokenCardWebView: TokenCardWebView = {
-        return TokenCardWebView(analytics: analytics, server: token.server, tokenView: .viewIconified, assetDefinitionStore: assetDefinitionStore, keystore: keystore, wallet: wallet)
+        return TokenCardWebView(server: token.server, tokenView: .viewIconified, assetDefinitionStore: assetDefinitionStore, wallet: wallet)
     }()
 
     private var tokenIconImageView: TokenImageView = {
@@ -45,19 +45,25 @@ class Erc875NonFungibleRowView: TokenCardViewRepresentable {
     private var imageSmallSizeContraints: [NSLayoutConstraint] = []
     private var imageLargeSizeContraints: [NSLayoutConstraint] = []
     private let tokenType: OpenSeaBackedNonFungibleTokenHandling
-    private let analytics: AnalyticsLogger
-    private let keystore: Keystore
     private let assetDefinitionStore: AssetDefinitionStore
     private let wallet: Wallet
     private let token: Token
+    private let tokenImageFetcher: TokenImageFetcher
 
-    init(token: Token, tokenType: OpenSeaBackedNonFungibleTokenHandling, analytics: AnalyticsLogger, keystore: Keystore, assetDefinitionStore: AssetDefinitionStore, wallet: Wallet, layout: GridOrListLayout, gridEdgeInsets: UIEdgeInsets = .zero, listEdgeInsets: UIEdgeInsets = .init(top: 0, left: 16, bottom: 0, right: 16)) {
+    init(token: Token,
+         tokenType: OpenSeaBackedNonFungibleTokenHandling,
+         assetDefinitionStore: AssetDefinitionStore,
+         wallet: Wallet,
+         layout: GridOrListLayout,
+         gridEdgeInsets: UIEdgeInsets = .zero,
+         listEdgeInsets: UIEdgeInsets = .init(top: 0, left: 16, bottom: 0, right: 16),
+         tokenImageFetcher: TokenImageFetcher) {
+
+        self.tokenImageFetcher = tokenImageFetcher
         self.gridEdgeInsets = gridEdgeInsets
         self.listEdgeInsets = listEdgeInsets
         self.tokenType = tokenType
 
-        self.analytics = analytics
-        self.keystore = keystore
         self.assetDefinitionStore = assetDefinitionStore
         self.wallet = wallet
         self.token = token
@@ -180,7 +186,7 @@ class Erc875NonFungibleRowView: TokenCardViewRepresentable {
         titleLabel.textColor = viewModel.titleTextForegroundColor
         titleLabel.text = viewModel.titleText
 
-        tokenIconImageView.subscribable = token.icon(withSize: .s300)
+        tokenIconImageView.set(imageSource: tokenImageFetcher.image(token: token, size: .s300))
     }
 
     func configure(tokenHolder: TokenHolder, tokenId: TokenId) {

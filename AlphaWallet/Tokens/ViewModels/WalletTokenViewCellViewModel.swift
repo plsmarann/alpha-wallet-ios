@@ -8,12 +8,18 @@
 import UIKit
 import BigInt
 import AlphaWalletFoundation
+import Combine
 
 struct WalletTokenViewCellViewModel {
     private let token: TokenViewModel
     private let isVisible: Bool
+    private let tokenImageFetcher: TokenImageFetcher
 
-    init(token: TokenViewModel, isVisible: Bool = true) {
+    init(token: TokenViewModel,
+         isVisible: Bool = true,
+         tokenImageFetcher: TokenImageFetcher) {
+
+        self.tokenImageFetcher = tokenImageFetcher
         self.token = token
         self.isVisible = isVisible
     }
@@ -26,7 +32,7 @@ struct WalletTokenViewCellViewModel {
     }
 
     var titleAttributedString: NSAttributedString {
-        return NSAttributedString(string: token.tokenScriptOverrides?.titleInPluralForm ?? "", attributes: [
+        return NSAttributedString(string: token.tokenScriptOverrides?.safeShortTitleInPluralForm ?? "", attributes: [
             .foregroundColor: Configuration.Color.Semantic.defaultForegroundText,
             .font: Screen.TokenCard.Font.title
         ])
@@ -36,8 +42,8 @@ struct WalletTokenViewCellViewModel {
         return isVisible ? 1.0 : 0.4
     }
 
-    var iconImage: Subscribable<TokenImage> {
-        token.icon(withSize: .s300)
+    var iconImage: TokenImagePublisher {
+        tokenImageFetcher.image(token: token, size: .s300)
     }
 
     var blockChainTagViewModel: BlockchainTagLabelViewModel {

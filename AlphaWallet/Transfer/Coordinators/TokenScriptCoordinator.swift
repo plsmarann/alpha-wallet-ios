@@ -9,6 +9,7 @@ import UIKit
 import BigInt
 import Combine
 import AlphaWalletFoundation
+import AlphaWalletCore
 
 protocol TokenScriptCoordinatorDelegate: CanOpenURL, SendTransactionDelegate, BuyCryptoDelegate {
     func didFinish(_ result: ConfirmResult, in coordinator: TokenScriptCoordinator)
@@ -118,6 +119,24 @@ class TokenScriptCoordinator: Coordinator {
 }
 
 extension TokenScriptCoordinator: TokenInstanceActionViewControllerDelegate {
+
+    func requestSignMessage(message: SignMessageType,
+                            server: RPCServer,
+                            account: AlphaWallet.Address,
+                            source: Analytics.SignMessageRequestSource,
+                            requester: RequesterViewModel?) -> AnyPublisher<Data, PromiseError> {
+
+        return SignMessageCoordinator.promise(
+            analytics: analytics,
+            navigationController: navigationController,
+            keystore: keystore,
+            coordinator: self,
+            signType: message,
+            account: account,
+            source: source,
+            requester: requester)
+            .publisher(queue: .main)
+    }
 
     func didClose(in viewController: TokenInstanceActionViewController) {
         delegate?.didCancel(in: self)

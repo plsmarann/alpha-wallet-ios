@@ -71,9 +71,7 @@ class SetTransferTokensCardExpiryDateViewController: UIViewController, TokenVeri
         return noteBorderView
     }()
     private let buttonsBar = HorizontalButtonsBar(configuration: .primary(buttons: 1))
-    private var viewModel: SetTransferTokensCardExpiryDateViewModel
-    private let analytics: AnalyticsLogger
-    private let tokenHolder: TokenHolder
+    private (set) var viewModel: SetTransferTokensCardExpiryDateViewModel
 
     var contract: AlphaWallet.Address {
         return viewModel.token.contractAddress
@@ -82,7 +80,6 @@ class SetTransferTokensCardExpiryDateViewController: UIViewController, TokenVeri
         return viewModel.token.server
     }
     let assetDefinitionStore: AssetDefinitionStore
-    let paymentFlow: PaymentFlow
     weak var delegate: SetTransferTokensCardExpiryDateViewControllerDelegate?
 
     private let containerView: ScrollableStackView = {
@@ -93,18 +90,10 @@ class SetTransferTokensCardExpiryDateViewController: UIViewController, TokenVeri
         return view
     }()
 
-    init(
-        analytics: AnalyticsLogger,
-        tokenHolder: TokenHolder,
-        paymentFlow: PaymentFlow,
-        viewModel: SetTransferTokensCardExpiryDateViewModel,
-        assetDefinitionStore: AssetDefinitionStore,
-        keystore: Keystore,
-        session: WalletSession
-    ) {
-        self.analytics = analytics
-        self.tokenHolder = tokenHolder
-        self.paymentFlow = paymentFlow
+    init(viewModel: SetTransferTokensCardExpiryDateViewModel,
+         assetDefinitionStore: AssetDefinitionStore,
+         session: WalletSession) {
+
         self.viewModel = viewModel
         self.assetDefinitionStore = assetDefinitionStore
 
@@ -113,7 +102,7 @@ class SetTransferTokensCardExpiryDateViewController: UIViewController, TokenVeri
         case .backedByOpenSea:
             tokenRowView = OpenSeaNonFungibleTokenCardRowView(tokenView: .viewIconified)
         case .notBackedByOpenSea:
-            tokenRowView = TokenCardRowView(analytics: analytics, server: viewModel.token.server, tokenView: .viewIconified, assetDefinitionStore: assetDefinitionStore, keystore: keystore, wallet: session.account)
+            tokenRowView = TokenCardRowView(server: viewModel.token.server, tokenView: .viewIconified, assetDefinitionStore: assetDefinitionStore, wallet: session.account)
         }
 
         super.init(nibName: nil, bundle: nil)
@@ -217,7 +206,7 @@ class SetTransferTokensCardExpiryDateViewController: UIViewController, TokenVeri
             return
         }
 
-        delegate?.didPressNext(tokenHolder: tokenHolder, linkExpiryDate: expiryDate, in: self)
+        delegate?.didPressNext(tokenHolder: viewModel.tokenHolder, linkExpiryDate: expiryDate, in: self)
     }
 
     private func linkExpiryDate() -> Date {
@@ -259,7 +248,7 @@ class SetTransferTokensCardExpiryDateViewController: UIViewController, TokenVeri
         updateNavigationRightBarButtons(withTokenScriptFileStatus: tokenScriptFileStatus)
 
         navigationItem.title = viewModel.headerTitle
-        tokenRowView.configure(tokenHolder: tokenHolder)
+        tokenRowView.configure(tokenHolder: viewModel.tokenHolder)
 
         tokenRowView.stateLabel.isHidden = true
         linkExpiryDateLabel.text = viewModel.linkExpiryDateLabelText

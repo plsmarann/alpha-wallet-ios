@@ -3,6 +3,7 @@
 import Foundation
 import UIKit
 import AlphaWalletFoundation
+import Combine
 
 enum HorizontalButtonsBarConfiguration {
     case empty
@@ -138,7 +139,7 @@ class HorizontalButtonsBar: UIView, ButtonsBarViewType {
             didUpdateView(with: configuration)
         }
     }
-
+    var cancellable = Set<AnyCancellable>()
     weak var viewController: UIViewController?
 
     init(configuration: HorizontalButtonsBarConfiguration = .primary(buttons: 1)) {
@@ -360,27 +361,27 @@ struct ButtonsBarViewModel {
     )
 
     static let systemButton = ButtonsBarViewModel(
-        buttonBackgroundColor: Colors.appWhite,
-        highlightedButtonBackgroundColor: Colors.appWhite,
-        disabledButtonBackgroundColor: Colors.appWhite,
-        disabledButtonBorderColor: Colors.appWhite,
-        highlightedButtonTitleColor: Colors.appTint.withAlphaComponent(0.3),
-        disabledButtonTitleColor: Colors.appTint.withAlphaComponent(0.3),
+        buttonBackgroundColor: Configuration.Color.Semantic.defaultButtonBackground,
+        highlightedButtonBackgroundColor: Configuration.Color.Semantic.defaultButtonBackground,
+        disabledButtonBackgroundColor: Configuration.Color.Semantic.defaultButtonBackground,
+        disabledButtonBorderColor: Configuration.Color.Semantic.defaultButtonBackground,
+        highlightedButtonTitleColor: Configuration.Color.Semantic.appTint.withAlphaComponent(0.3),
+        disabledButtonTitleColor: Configuration.Color.Semantic.appTint.withAlphaComponent(0.3),
         buttonFont: Fonts.regular(size: ScreenChecker().isNarrowScreen ? 16 : 20),
         buttonBorderWidth: 0.0
     )
 
     static let moreButton = ButtonsBarViewModel(buttonBorderWidth: 0)
 
-    var buttonBackgroundColor: UIColor = Colors.appWhite
+    var buttonBackgroundColor: UIColor = Configuration.Color.Semantic.defaultButtonBackground
 
     var highlightedButtonBackgroundColor: UIColor?
     var disabledButtonBackgroundColor: UIColor = Configuration.Color.Semantic.disabledActionButton
     var disabledButtonBorderColor: UIColor = Configuration.Color.Semantic.disabledActionButton
 
-    var buttonTitleColor: UIColor = Colors.appTint
+    var buttonTitleColor: UIColor = Configuration.Color.Semantic.appTint
     var highlightedButtonTitleColor: UIColor?
-    var disabledButtonTitleColor: UIColor = Colors.appWhite
+    var disabledButtonTitleColor: UIColor = Configuration.Color.Semantic.defaultButtonBackground
 
     var buttonCornerRadius: CGFloat {
         return HorizontalButtonsBar.buttonsHeight / 2.0
@@ -404,7 +405,7 @@ struct ButtonsBarViewModel {
 
     var buttonFont: UIFont = Fonts.semibold(size: ScreenChecker().isNarrowScreen ? 16 : 20)
 
-    var buttonBorderColor: UIColor = Colors.appTint
+    var buttonBorderColor: UIColor = Configuration.Color.Semantic.appTint
 
     var buttonBorderWidth: CGFloat = 1.0
 }

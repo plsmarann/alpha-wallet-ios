@@ -14,25 +14,33 @@ public final class WalletSession: Equatable {
     public let server: RPCServer
     public let config: Config
     public let blockNumberProvider: BlockNumberProvider
-    public lazy private (set) var tokenProvider: TokenProviderType = {
-        return TokenProvider(account: account, blockchainProvider: blockchainProvider)
-    }()
+    public let tokenProvider: TokenProviderType
+    public let importToken: TokenImportable & TokenOrContractFetchable
     public var sessionID: String {
         return WalletSession.functional.sessionID(account: account, server: server)
     }
     public let blockchainProvider: BlockchainProvider
+    public let nftProvider: NFTProvider
+    public let tokenAdaptor: TokenAdaptor
 
     public init(account: Wallet,
                 server: RPCServer,
                 config: Config,
                 analytics: AnalyticsLogger,
-                blockchainProvider: BlockchainProvider) {
+                ercTokenProvider: TokenProviderType,
+                importToken: TokenImportable & TokenOrContractFetchable,
+                blockchainProvider: BlockchainProvider,
+                nftProvider: NFTProvider,
+                tokenAdaptor: TokenAdaptor) {
 
+        self.tokenAdaptor = tokenAdaptor
+        self.nftProvider = nftProvider
         self.analytics = analytics
         self.account = account
         self.server = server
         self.config = config
-
+        self.importToken = importToken
+        self.tokenProvider = ercTokenProvider
         self.blockchainProvider = blockchainProvider
         self.blockNumberProvider = BlockNumberProvider(storage: config, blockchainProvider: blockchainProvider)
 

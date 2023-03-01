@@ -16,10 +16,9 @@ final class FakeNetworkService: NetworkService {
 
     func upload(multipartFormData: @escaping (MultipartFormData) -> Void,
                 usingThreshold: UInt64,
-                to url: URLConvertible,
-                method: HTTPMethod,
-                headers: HTTPHeaders?,
-                callbackQueue: DispatchQueue = .main) -> AnyPublisher<Alamofire.DataResponse<Any>, SessionTaskError> {
+                with request: AlphaWalletFoundation.URLRequestConvertible,
+                callbackQueue: DispatchQueue) -> AnyPublisher<URLRequest.Response, SessionTaskError> {
+
         return .empty()
     }
 
@@ -43,21 +42,6 @@ final class FakeNetworkService: NetworkService {
 
             }
         }.eraseToAnyPublisher()
-    }
-
-    func dataTaskPromise(_ request: AlphaWalletFoundation.URLRequestConvertible, callbackQueue: DispatchQueue = .main) -> Promise<URLRequest.Response> {
-        PromiseKit.Promise<URLRequest.Response>.init { [callbackQueue, delay] seal in
-            callbackQueue.asyncAfter(deadline: .now() + delay) {
-                switch self.response {
-                case .success(let value):
-                    seal.fulfill(value)
-                case .failure(let error):
-                    seal.reject(error)
-                case .none:
-                    seal.reject(PMKError.cancelled)
-                }
-            }
-        }
     }
 }
 
@@ -108,7 +92,6 @@ class ActiveWalletViewTests: XCTestCase {
             assetDefinitionStore: .make(),
             config: config,
             analytics: FakeAnalyticsService(),
-            nftProvider: FakeNftProvider(),
             restartQueue: .init(),
             universalLinkCoordinator: FakeUniversalLinkCoordinator.make(),
             accountsCoordinator: ac,
@@ -122,7 +105,6 @@ class ActiveWalletViewTests: XCTestCase {
             tokenSwapper: TokenSwapper.make(),
             sessionsProvider: dep.sessionsProvider,
             tokenCollection: dep.pipeline,
-            importToken: dep.importToken,
             transactionsDataStore: dep.transactionsDataStore,
             tokensService: dep.tokensService,
             lock: FakeLock(),
@@ -130,7 +112,8 @@ class ActiveWalletViewTests: XCTestCase {
             tokenScriptOverridesFileManager: .fake(),
             networkService: FakeNetworkService(),
             promptBackup: .make(),
-            caip10AccountProvidable: AnyCAIP10AccountProvidable.make())
+            caip10AccountProvidable: AnyCAIP10AccountProvidable.make(),
+            tokenImageFetcher: FakeTokenImageFetcher())
 
         coordinator.start(animated: false)
 
@@ -192,7 +175,6 @@ class ActiveWalletViewTests: XCTestCase {
             assetDefinitionStore: .make(),
             config: .make(),
             analytics: FakeAnalyticsService(),
-            nftProvider: FakeNftProvider(),
             restartQueue: .init(),
             universalLinkCoordinator: FakeUniversalLinkCoordinator.make(),
             accountsCoordinator: ac,
@@ -206,7 +188,6 @@ class ActiveWalletViewTests: XCTestCase {
             tokenSwapper: TokenSwapper.make(),
             sessionsProvider: dep1.sessionsProvider,
             tokenCollection: dep1.pipeline,
-            importToken: dep1.importToken,
             transactionsDataStore: dep1.transactionsDataStore,
             tokensService: dep1.tokensService,
             lock: FakeLock(),
@@ -214,7 +195,8 @@ class ActiveWalletViewTests: XCTestCase {
             tokenScriptOverridesFileManager: .fake(),
             networkService: FakeNetworkService(),
             promptBackup: .make(),
-            caip10AccountProvidable: AnyCAIP10AccountProvidable.make())
+            caip10AccountProvidable: AnyCAIP10AccountProvidable.make(),
+            tokenImageFetcher: FakeTokenImageFetcher())
 
         c1.start(animated: false)
 
@@ -230,7 +212,6 @@ class ActiveWalletViewTests: XCTestCase {
             assetDefinitionStore: .make(),
             config: .make(),
             analytics: FakeAnalyticsService(),
-            nftProvider: FakeNftProvider(),
             restartQueue: .init(),
             universalLinkCoordinator: FakeUniversalLinkCoordinator.make(),
             accountsCoordinator: ac,
@@ -244,7 +225,6 @@ class ActiveWalletViewTests: XCTestCase {
             tokenSwapper: TokenSwapper.make(),
             sessionsProvider: dep2.sessionsProvider,
             tokenCollection: dep2.pipeline,
-            importToken: dep2.importToken,
             transactionsDataStore: dep2.transactionsDataStore,
             tokensService: dep2.tokensService,
             lock: FakeLock(),
@@ -252,7 +232,8 @@ class ActiveWalletViewTests: XCTestCase {
             tokenScriptOverridesFileManager: .fake(),
             networkService: FakeNetworkService(),
             promptBackup: .make(),
-            caip10AccountProvidable: AnyCAIP10AccountProvidable.make())
+            caip10AccountProvidable: AnyCAIP10AccountProvidable.make(),
+            tokenImageFetcher: FakeTokenImageFetcher())
 
         c1.start(animated: false)
 
@@ -286,7 +267,6 @@ class ActiveWalletViewTests: XCTestCase {
                 assetDefinitionStore: .make(),
                 config: .make(),
                 analytics: FakeAnalyticsService(),
-                nftProvider: FakeNftProvider(),
                 restartQueue: .init(),
                 universalLinkCoordinator: FakeUniversalLinkCoordinator.make(),
                 accountsCoordinator: ac,
@@ -300,7 +280,6 @@ class ActiveWalletViewTests: XCTestCase {
                 tokenSwapper: TokenSwapper.make(),
                 sessionsProvider: dep.sessionsProvider,
                 tokenCollection: dep.pipeline,
-                importToken: dep.importToken,
                 transactionsDataStore: dep.transactionsDataStore,
                 tokensService: dep.tokensService,
                 lock: FakeLock(),
@@ -308,7 +287,8 @@ class ActiveWalletViewTests: XCTestCase {
                 tokenScriptOverridesFileManager: .fake(),
                 networkService: FakeNetworkService(),
                 promptBackup: .make(),
-                caip10AccountProvidable: AnyCAIP10AccountProvidable.make())
+                caip10AccountProvidable: AnyCAIP10AccountProvidable.make(),
+                tokenImageFetcher: FakeTokenImageFetcher())
 
         coordinator.start(animated: false)
         coordinator.showPaymentFlow(
@@ -346,7 +326,6 @@ class ActiveWalletViewTests: XCTestCase {
             assetDefinitionStore: .make(),
             config: .make(),
             analytics: FakeAnalyticsService(),
-            nftProvider: FakeNftProvider(),
             restartQueue: .init(),
             universalLinkCoordinator: FakeUniversalLinkCoordinator.make(),
             accountsCoordinator: ac,
@@ -360,7 +339,6 @@ class ActiveWalletViewTests: XCTestCase {
             tokenSwapper: TokenSwapper.make(),
             sessionsProvider: dep.sessionsProvider,
             tokenCollection: dep.pipeline,
-            importToken: dep.importToken,
             transactionsDataStore: dep.transactionsDataStore,
             tokensService: dep.tokensService,
             lock: FakeLock(),
@@ -368,7 +346,8 @@ class ActiveWalletViewTests: XCTestCase {
             tokenScriptOverridesFileManager: .fake(),
             networkService: FakeNetworkService(),
             promptBackup: .make(),
-            caip10AccountProvidable: AnyCAIP10AccountProvidable.make())
+            caip10AccountProvidable: AnyCAIP10AccountProvidable.make(),
+            tokenImageFetcher: FakeTokenImageFetcher())
 
         coordinator.start(animated: false)
         coordinator.showPaymentFlow(for: .request, server: .main, navigationController: coordinator.navigationController)
@@ -403,7 +382,6 @@ class ActiveWalletViewTests: XCTestCase {
             assetDefinitionStore: .make(),
             config: .make(),
             analytics: FakeAnalyticsService(),
-            nftProvider: FakeNftProvider(),
             restartQueue: .init(),
             universalLinkCoordinator: FakeUniversalLinkCoordinator.make(),
             accountsCoordinator: ac,
@@ -417,7 +395,6 @@ class ActiveWalletViewTests: XCTestCase {
             tokenSwapper: TokenSwapper.make(),
             sessionsProvider: dep.sessionsProvider,
             tokenCollection: dep.pipeline,
-            importToken: dep.importToken,
             transactionsDataStore: dep.transactionsDataStore,
             tokensService: dep.tokensService,
             lock: FakeLock(),
@@ -425,7 +402,8 @@ class ActiveWalletViewTests: XCTestCase {
             tokenScriptOverridesFileManager: .fake(),
             networkService: FakeNetworkService(),
             promptBackup: .make(),
-            caip10AccountProvidable: AnyCAIP10AccountProvidable.make())
+            caip10AccountProvidable: AnyCAIP10AccountProvidable.make(),
+            tokenImageFetcher: FakeTokenImageFetcher())
         coordinator.start(animated: false)
 
         let viewController = (coordinator.tabBarController.selectedViewController as? UINavigationController)?.viewControllers[0]
@@ -482,7 +460,6 @@ class ActiveWalletViewTests: XCTestCase {
                         assetDefinitionStore: .make(),
                         config: .make(),
                         analytics: FakeAnalyticsService(),
-                        nftProvider: FakeNftProvider(),
                         restartQueue: .init(),
                         universalLinkCoordinator: FakeUniversalLinkCoordinator.make(),
                         accountsCoordinator: ac,
@@ -496,7 +473,6 @@ class ActiveWalletViewTests: XCTestCase {
                         tokenSwapper: TokenSwapper.make(),
                         sessionsProvider: dep.sessionsProvider,
                         tokenCollection: dep.pipeline,
-                        importToken: dep.importToken,
                         transactionsDataStore: dep.transactionsDataStore,
                         tokensService: dep.tokensService,
                         lock: FakeLock(),
@@ -504,7 +480,8 @@ class ActiveWalletViewTests: XCTestCase {
                         tokenScriptOverridesFileManager: .fake(),
                         networkService: FakeNetworkService(),
                         promptBackup: .make(),
-                        caip10AccountProvidable: AnyCAIP10AccountProvidable.make())
+                        caip10AccountProvidable: AnyCAIP10AccountProvidable.make(),
+                        tokenImageFetcher: FakeTokenImageFetcher())
 
                 coordinator.start(animated: false)
 

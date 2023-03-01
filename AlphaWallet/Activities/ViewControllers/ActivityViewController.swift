@@ -3,8 +3,9 @@
 import UIKit
 import Combine
 import AlphaWalletFoundation
+import AlphaWalletCore
 
-protocol ActivityViewControllerDelegate: AnyObject {
+protocol ActivityViewControllerDelegate: AnyObject, RequestSignMessageDelegate {
     func reinject(viewController: ActivityViewController)
     func goToToken(viewController: ActivityViewController)
     func speedupTransaction(transactionId: String, server: RPCServer, viewController: ActivityViewController)
@@ -14,7 +15,6 @@ protocol ActivityViewControllerDelegate: AnyObject {
 }
 
 class ActivityViewController: UIViewController {
-    private let analytics: AnalyticsLogger
     private let roundedBackground = RoundedBackground()
     private let wallet: Wallet
     private let assetDefinitionStore: AssetDefinitionStore
@@ -27,7 +27,7 @@ class ActivityViewController: UIViewController {
     private let separator = UIView()
     private let bottomFiller = UIView.spacerWidth()
     lazy private var tokenScriptRendererView: TokenInstanceWebView = {
-        let webView = TokenInstanceWebView(analytics: analytics, server: server, wallet: wallet, assetDefinitionStore: assetDefinitionStore, keystore: keystore)
+        let webView = TokenInstanceWebView(server: server, wallet: wallet, assetDefinitionStore: assetDefinitionStore)
         webView.isWebViewInteractionEnabled = true
         webView.delegate = self
         webView.isStandalone = true
@@ -36,22 +36,24 @@ class ActivityViewController: UIViewController {
     }()
     private var isFirstLoad = true
     private let defaultErc20ActivityView = DefaultActivityView()
-
+    private let service: ActivitiesServiceType
+    private var cancelable = Set<AnyCancellable>()
     private var server: RPCServer {
         viewModel.activity.token.server
     }
+    private let tokenImageFetcher: TokenImageFetcher
 
     var viewModel: ActivityViewModel
-
     weak var delegate: ActivityViewControllerDelegate?
-    private let service: ActivitiesServiceType
-    private let keystore: Keystore
-    private var cancelable = Set<AnyCancellable>()
 
-    init(analytics: AnalyticsLogger, wallet: Wallet, assetDefinitionStore: AssetDefinitionStore, viewModel: ActivityViewModel, service: ActivitiesServiceType, keystore: Keystore) {
-        self.keystore = keystore
+    init(wallet: Wallet,
+         assetDefinitionStore: AssetDefinitionStore,
+         viewModel: ActivityViewModel,
+         service: ActivitiesServiceType,
+         tokenImageFetcher: TokenImageFetcher) {
+
+        self.tokenImageFetcher = tokenImageFetcher
         self.service = service
-        self.analytics = analytics
         self.wallet = wallet
         self.assetDefinitionStore = assetDefinitionStore
         self.viewModel = viewModel
@@ -121,10 +123,10 @@ class ActivityViewController: UIViewController {
 
         service.didUpdateActivityPublisher
             .receive(on: RunLoop.main)
-            .sink { [weak self] activity in
+            .sink { [weak self, tokenImageFetcher] activity in
                 guard let strongSelf = self, strongSelf.isForActivity(activity) else { return }
 
-                strongSelf.configure(viewModel: .init(activity: activity))
+                strongSelf.configure(viewModel: .init(activity: activity, tokenImageFetcher: tokenImageFetcher))
             }.store(in: &cancelable)
     }
 
@@ -155,7 +157,7 @@ class ActivityViewController: UIViewController {
         timestampLabel.font = viewModel.timestampFont
         timestampLabel.text = viewModel.timestamp
 
-        tokenImageView.subscribable = viewModel.iconImage
+        tokenImageView.set(imageSource: viewModel.iconImage)
         stateView.configure(viewModel: viewModel.activityStateViewViewModel)
 
         timestampLabel.textAlignment = .center
@@ -234,9 +236,21 @@ class ActivityViewController: UIViewController {
 }
 
 extension ActivityViewController: TokenInstanceWebViewDelegate {
-    //TODO not good. But quick and dirty to ship
-    func navigationControllerFor(tokenInstanceWebView: TokenInstanceWebView) -> UINavigationController? {
-        navigationController
+    
+    func requestSignMessage(message: SignMessageType,
+                            server: RPCServer,
+                            account: AlphaWallet.Address,
+                            source: Analytics.SignMessageRequestSource,
+                            requester: RequesterViewModel?) -> AnyPublisher<Data, PromiseError> {
+
+        guard let delegate = delegate else { return .empty() }
+
+        return delegate.requestSignMessage(
+            message: message,
+            server: server,
+            account: account,
+            source: source,
+            requester: requester)
     }
 
     func shouldClose(tokenInstanceWebView: TokenInstanceWebView) {

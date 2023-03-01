@@ -5,30 +5,30 @@ import UIKit
 import AlphaWalletFoundation
 
 func applyStyle() {
-    UIBarButtonItem.appearance(whenContainedInInstancesOf: [UIDocumentBrowserViewController.self]).tintColor = Configuration.Color.Semantic.navigationbarButtonItemTint
-    UIWindow.appearance().tintColor = Colors.appTint
+    UIBarButtonItem.appearance(whenContainedInInstancesOf: [UIDocumentBrowserViewController.self]).tintColor = Configuration.Color.Semantic.navigationBarButtonItemTint
+    UIWindow.appearance().tintColor = Configuration.Color.Semantic.appTint
 
-    UINavigationBar.appearance().shadowImage = UIImage(color: Configuration.Color.Semantic.navigationbarSeparator, size: CGSize(width: 0.25, height: 0.25))
+    UINavigationBar.appearance().shadowImage = UIImage(color: Configuration.Color.Semantic.navigationBarSeparator, size: CGSize(width: 0.25, height: 0.25))
     UINavigationBar.appearance().compactAppearance = UINavigationBarAppearance.defaultAppearence
     UINavigationBar.appearance().standardAppearance = UINavigationBarAppearance.defaultAppearence
     UINavigationBar.appearance().scrollEdgeAppearance = UINavigationBarAppearance.defaultAppearence
 
     //We could have set the backBarButtonItem with an empty title for every view controller. Using appearance here, while a hack is still more convenient though, since we don't have to do it for every view controller instance
     UIBarButtonItem.appearance().setBackButtonTitlePositionAdjustment(UIOffset(horizontal: -200, vertical: 0), for: .default)
-    UIBarButtonItem.appearance().tintColor = Configuration.Color.Semantic.navigationbarButtonItemTint
-    UIBarButtonItem.appearance(whenContainedInInstancesOf: [UIToolbar.self]).tintColor = Configuration.Color.Semantic.navigationbarButtonItemTint
+    UIBarButtonItem.appearance().tintColor = Configuration.Color.Semantic.navigationBarButtonItemTint
+    UIBarButtonItem.appearance(whenContainedInInstancesOf: [UIToolbar.self]).tintColor = Configuration.Color.Semantic.navigationBarButtonItemTint
 
-    UIToolbar.appearance().tintColor = Colors.appTint
+    UIToolbar.appearance().tintColor = Configuration.Color.Semantic.appTint
 
     //Background (not needed in iOS 12.1 on simulator)
     //Cancel button
-    UISearchBar.appearance().tintColor = Configuration.Color.Semantic.searchbarTint
+    UISearchBar.appearance().tintColor = Configuration.Color.Semantic.searchBarTint
     //Cursor color
-    UITextField.appearance(whenContainedInInstancesOf: [UISearchBar.self]).tintColor = Configuration.Color.Semantic.searchbarTint
+    UITextField.appearance(whenContainedInInstancesOf: [UISearchBar.self]).tintColor = Configuration.Color.Semantic.searchBarTint
 
     UIRefreshControl.appearance().tintColor = Configuration.Color.Semantic.refreshControl
 
-    UISwitch.appearance().onTintColor = Colors.appTint
+    UISwitch.appearance().onTintColor = Configuration.Color.Semantic.appTint
 
     UITableView.appearance().separatorColor = Configuration.Color.Semantic.tableViewSeparator
 }
@@ -37,21 +37,21 @@ extension UINavigationBarAppearance {
     static var defaultAppearence: UINavigationBarAppearance {
         let appearance = UINavigationBarAppearance()
         appearance.configureWithOpaqueBackground()
-        appearance.backgroundColor = Configuration.Color.Semantic.navigationbarBackgroundColor
-        appearance.shadowColor = Configuration.Color.Semantic.navigationbarSeparator
+        appearance.backgroundColor = Configuration.Color.Semantic.navigationBarBackgroundColor
+        appearance.shadowColor = Configuration.Color.Semantic.navigationBarSeparator
         appearance.shadowImage = nil
         appearance.setBackIndicatorImage(R.image.backWhite(), transitionMaskImage: R.image.backWhite())
         appearance.titleTextAttributes = [
-            .foregroundColor: Configuration.Color.Semantic.navigationbarPrimaryFont,
+            .foregroundColor: Configuration.Color.Semantic.navigationBarPrimaryFont,
             .font: Fonts.semibold(size: 17) as Any
         ]
         appearance.largeTitleTextAttributes = [
-            .foregroundColor: Configuration.Color.Semantic.navigationbarPrimaryFont,
+            .foregroundColor: Configuration.Color.Semantic.navigationBarPrimaryFont,
             .font: Fonts.bold(size: 36) as Any,
         ]
         //NOTE: Hides back button text
         appearance.backButtonAppearance.normal.titleTextAttributes = [
-            .foregroundColor: UIColor.clear
+            .foregroundColor: Configuration.Color.Semantic.backButtonText
         ]
 
         return appearance
@@ -69,11 +69,11 @@ extension UITabBarAppearance {
 
         tabBarItemAppearance.normal.titleTextAttributes = [
             .font: Fonts.regular(size: 13),
-            .foregroundColor: Colors.dove
+            .foregroundColor: Configuration.Color.Semantic.tabBarUnselected
         ]
         tabBarItemAppearance.selected.titleTextAttributes = [
             .font: Fonts.semibold(size: 13),
-            .foregroundColor: Colors.appTint
+            .foregroundColor: Configuration.Color.Semantic.appTint
         ]
 
         tabBarAppearance.stackedLayoutAppearance = tabBarItemAppearance
@@ -97,20 +97,6 @@ extension UITabBarController {
 
         return tabBarController
     }
-}
-
-struct Colors {
-    static let appText = R.color.black()!
-    static let appTint = R.color.azure()!
-    static let appWhite = UIColor.white
-    static let black = UIColor(hex: "313849")
-    static let concrete = R.color.concrete()!
-    static let darkGray = UIColor(hex: "2f2f2f")
-    static let dove = R.color.dove()!
-    static let gray = UIColor.gray
-    static let lightBlack = UIColor(hex: "313849")
-    static let lightGray = UIColor.lightGray
-    static let navigationTitleColor = UIColor.black
 }
 
 struct Fonts {
@@ -149,7 +135,7 @@ enum DataEntry {
                 static let shadowOffset = CGSize(width: 0, height: 0)
                 static let shadowOpacity = Float(0.15)
                 static let shadowRadius = CGFloat(6)
-                static let shadowColor = UIColor.black
+                static let shadowColor = Configuration.Color.Semantic.dappsIconShadow
             }
         }
 

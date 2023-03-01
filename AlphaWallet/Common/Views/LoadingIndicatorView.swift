@@ -10,18 +10,18 @@ import UIKit
 class ActivityLoadingIndicatorView: UIView {
 
     var lineWidth: CGFloat = 2
-    var lineColor: UIColor = .red {
+    var lineColor: UIColor = Configuration.Color.Semantic.circularLoadingIndicatorLine {
         didSet {
             circleLayer.strokeColor = lineColor.cgColor
         }
     }
-    var backgroundLineColor: UIColor = .lightGray {
+    var backgroundLineColor: UIColor = Configuration.Color.Semantic.backgroundLine {
         didSet {
             backgroundLayer.strokeColor = backgroundLineColor.cgColor
         }
     }
 
-    var backgroundFillColor: UIColor = .white {
+    var backgroundFillColor: UIColor = Configuration.Color.Semantic.loadingIndicatorBackground {
         didSet {
             backgroundLayer.fillColor = backgroundFillColor.cgColor
         }

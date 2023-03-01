@@ -3,6 +3,7 @@
 import Foundation
 import UIKit
 import AlphaWalletFoundation
+import Combine
 
 struct OpenSeaNonFungibleTokenViewCellViewModel {
     private let token: TokenViewModel
@@ -20,12 +21,13 @@ struct OpenSeaNonFungibleTokenViewCellViewModel {
             .foregroundColor: Configuration.Color.Semantic.defaultForegroundText
         ])
     }
-    var tokenIcon: Subscribable<TokenImage> {
-        token.icon(withSize: .s750)
-    }
+    let tokenIcon: TokenImagePublisher
 
-    init(token: TokenViewModel) {
-        self.token = token 
+    init(token: TokenViewModel,
+         tokenImageFetcher: TokenImageFetcher) {
+        
+        self.token = token
+        self.tokenIcon = tokenImageFetcher.image(token: token, size: .s750)
     }
 
     var backgroundColor: UIColor {

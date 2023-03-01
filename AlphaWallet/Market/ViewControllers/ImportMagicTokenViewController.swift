@@ -9,8 +9,7 @@ protocol ImportMagicTokenViewControllerDelegate: AnyObject, CanOpenURL {
 }
 
 class ImportMagicTokenViewController: UIViewController, OptionalTokenVerifiableStatusViewController {
-    private let analytics: AnalyticsLogger
-    lazy private var tokenCardRowView = TokenCardRowView(analytics: analytics, server: session.server, tokenView: .viewIconified, assetDefinitionStore: assetDefinitionStore, keystore: keystore, wallet: session.account)
+    lazy private var tokenCardRowView = TokenCardRowView(server: session.server, tokenView: .viewIconified, assetDefinitionStore: assetDefinitionStore, wallet: session.account)
     private let statusLabel = UILabel()
     private let activityIndicator: UIActivityIndicatorView = {
         let activityIndicator = UIActivityIndicatorView(style: .large)
@@ -25,7 +24,7 @@ class ImportMagicTokenViewController: UIViewController, OptionalTokenVerifiableS
     private let dollarCostLabelLabel = UILabel()
     private let dollarCostLabel = PaddedLabel()
     private let buttonsBar = HorizontalButtonsBar(configuration: .custom(types: [.primary, .secondary]))
-    private (set) var viewModel: ImportMagicTokenViewControllerViewModel
+    private (set) var viewModel: ImportMagicTokenViewModel
 
     let assetDefinitionStore: AssetDefinitionStore
     weak var delegate: ImportMagicTokenViewControllerDelegate?
@@ -40,7 +39,7 @@ class ImportMagicTokenViewController: UIViewController, OptionalTokenVerifiableS
     var url: URL? {
         didSet { updateNavigationRightBarButtons(withTokenScriptFileStatus: nil, hasShowInfoButton: false) }
     }
-    private let keystore: Keystore
+
     private let session: WalletSession
     private lazy var containerView: ScrollableStackView = {
         let containerView = ScrollableStackView()
@@ -50,16 +49,12 @@ class ImportMagicTokenViewController: UIViewController, OptionalTokenVerifiableS
         return containerView
     }()
 
-    init(analytics: AnalyticsLogger,
-         assetDefinitionStore: AssetDefinitionStore,
-         keystore: Keystore,
+    init(assetDefinitionStore: AssetDefinitionStore,
          session: WalletSession,
-         viewModel: ImportMagicTokenViewControllerViewModel) {
+         viewModel: ImportMagicTokenViewModel) {
 
         self.viewModel = viewModel
-        self.analytics = analytics
         self.assetDefinitionStore = assetDefinitionStore
-        self.keystore = keystore
         self.session = session
 
         super.init(nibName: nil, bundle: nil)
@@ -134,11 +129,11 @@ class ImportMagicTokenViewController: UIViewController, OptionalTokenVerifiableS
         fatalError("init(coder:) has not been implemented")
     }
 
-    func configure(viewModel: ImportMagicTokenViewControllerViewModel) {
+    func configure(viewModel: ImportMagicTokenViewModel) {
         self.viewModel = viewModel
         navigationItem.title = viewModel.headerTitle
 
-        tokenCardRowView.configure(viewModel: ImportMagicTokenCardRowViewModel(importMagicTokenViewControllerViewModel: viewModel, assetDefinitionStore: assetDefinitionStore))
+        tokenCardRowView.configure(viewModel: ImportMagicTokenCardRowViewModel(viewModel: viewModel, assetDefinitionStore: assetDefinitionStore))
 
         tokenCardRowView.isHidden = !viewModel.showTokenRow
         tokenCardRowView.stateLabel.isHidden = true

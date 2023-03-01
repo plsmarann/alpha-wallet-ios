@@ -3,10 +3,12 @@
 import Foundation
 import UIKit
 import AlphaWalletFoundation
+import Combine
 
 struct TransactionHeaderViewModel {
     private let transactionViewModel: TransactionViewModel
     private let tokensService: TokenViewModelState
+    private let tokenImageFetcher: TokenImageFetcher
 
     var server: RPCServer { transactionViewModel.server }
     var amount: NSAttributedString {
@@ -16,7 +18,11 @@ struct TransactionHeaderViewModel {
         ])
     }
 
-    init(transactionViewModel: TransactionViewModel, tokensService: TokenViewModelState) {
+    init(transactionViewModel: TransactionViewModel,
+         tokensService: TokenViewModelState,
+         tokenImageFetcher: TokenImageFetcher) {
+
+        self.tokenImageFetcher = tokenImageFetcher
         self.transactionViewModel = transactionViewModel
         self.tokensService = tokensService
     }
@@ -75,14 +81,18 @@ struct TransactionHeaderViewModel {
         }
     }
 
-    var subscribable: Subscribable<TokenImage>? {
+    var tokenImageSource: TokenImagePublisher {
         let server = transactionViewModel.transactionRow.server
 
         guard let operation = operation, let contractAddress = operation.contractAddress else {
             let token = MultipleChainsTokensDataStore.functional.etherToken(forServer: server)
-            return token.icon(withSize: .s300)
+            return tokenImageFetcher.image(token: token, size: .s300)
         }
-        return tokensService.tokenViewModel(for: contractAddress, server: server)?.icon(withSize: .s300)
+        guard let token = tokensService.tokenViewModel(for: contractAddress, server: server) else {
+            return .just(nil)
+        }
+
+        return tokenImageFetcher.image(token: token, size: .s300)
     }
 
 }
@@ -170,6 +180,6 @@ class TransactionHeaderView: UIView {
         titleLabel.text = viewModel.title
         titleLabel.textColor = viewModel.titleTextColor
         toLabel.text = viewModel.subTitle
-        tokenIconImageView.subscribable = viewModel.subscribable
+        tokenIconImageView.set(imageSource: viewModel.tokenImageSource)
     }
 }
