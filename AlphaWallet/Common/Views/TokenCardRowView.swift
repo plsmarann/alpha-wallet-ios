@@ -194,9 +194,11 @@ class TokenCardRowView: UIView, TokenCardRowViewProtocol {
         lastTokenHolder = tokenHolder
         configure(viewModel: TokenCardRowViewModel(tokenHolder: tokenHolder, tokenView: tokenView, assetDefinitionStore: assetDefinitionStore))
     }
+    private var cancellable = Set<AnyCancellable>()
 
         // swiftlint:disable function_body_length
     func configure(viewModel: TokenCardRowViewModelProtocol) {
+        cancellable.cancellAll()
         backgroundColor = viewModel.contentsBackgroundColor
         background.backgroundColor = viewModel.contentsBackgroundColor
 
@@ -261,17 +263,17 @@ class TokenCardRowView: UIView, TokenCardRowViewProtocol {
             teamsLabel.text = viewModel.match
             matchLabel.text = viewModel.numero
 
-            viewModel.subscribeBuilding { [weak self] building in
-                self?.venueLabel.text = building
-            }
+            viewModel.buildingPublisher()
+                .assign(to: \.text, on: venueLabel)
+                .store(in: &cancellable)
 
-            viewModel.subscribeStreetLocalityStateCountry { [weak self] streetLocalityStateCountry in
-                guard let strongSelf = self else { return }
-                strongSelf.timeLabel.text = ""
-                strongSelf.cityLabel.text = "\(viewModel.time), \(streetLocalityStateCountry)"
-            }
+            viewModel.streetLocalityStateCountryPublisher()
+                .sink { [weak self] string in
+                    self?.timeLabel.text = ""
+                    self?.cityLabel.text = "\(viewModel.time), \(string)"
+                }.store(in: &cancellable)
         } else {
-                //do nothing
+            //do nothing
         }
 
         if viewModel.hasTokenScriptHtml {
@@ -345,7 +347,7 @@ extension TokenCardRowView: TokenInstanceWebViewDelegate {
                             source: Analytics.SignMessageRequestSource,
                             requester: RequesterViewModel?) -> AnyPublisher<Data, PromiseError> {
         
-        return .fail(PromiseError(error: DAppError.cancelled))
+        return .fail(PromiseError(error: JsonRpcError.requestRejected))
     }
 
     func shouldClose(tokenInstanceWebView: TokenInstanceWebView) {

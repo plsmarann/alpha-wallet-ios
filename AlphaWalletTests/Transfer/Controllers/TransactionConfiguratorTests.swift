@@ -7,45 +7,49 @@ import AlphaWalletFoundation
 
 class TransactionConfiguratorTests: XCTestCase {
     func testAdjustGasPrice() {
-        let gasPrice = BigUInt(1000000000)
-        let analytics = FakeAnalyticsService()
+        let gasPrice = GasPrice.legacy(gasPrice: BigUInt(1000000000))
         let configurator = TransactionConfigurator(
             session: .make(),
-            analytics: analytics,
             transaction: .make(gasPrice: gasPrice),
-            networkService: FakeNetworkService())
-        XCTAssertEqual(gasPrice, configurator.currentConfiguration.gasPrice)
+            networkService: FakeNetworkService(),
+            tokensService: WalletDataProcessingPipeline.make(wallet: .make(), server: .main).pipeline,
+            configuration: .sendFungiblesTransaction(confirmType: .signThenSend))
+
+        XCTAssertEqual(gasPrice, configurator.gasPriceEstimator.gasPrice.value)
     }
 
     func testMinGasPrice() {
-        let analytics = FakeAnalyticsService()
         let configurator = TransactionConfigurator(
             session: .make(),
-            analytics: analytics,
-            transaction: .make(gasPrice: BigUInt(1000000000)),
-            networkService: FakeNetworkService())
-        XCTAssertEqual(GasPriceConfiguration.minPrice, configurator.currentConfiguration.gasPrice)
+            transaction: .make(gasPrice: .legacy(gasPrice: BigUInt(1000000000))),
+            networkService: FakeNetworkService(),
+            tokensService: WalletDataProcessingPipeline.make(wallet: .make(), server: .main).pipeline,
+            configuration: .sendFungiblesTransaction(confirmType: .signThenSend))
+
+        XCTAssertEqual(GasPriceConfiguration.minPrice, configurator.gasPriceEstimator.gasPrice.value.max)
     }
 
     func testMaxGasPrice() {
-        let analytics = FakeAnalyticsService()
         let configurator = TransactionConfigurator(
             session: .make(),
-            analytics: analytics,
-            transaction: .make(gasPrice: BigUInt(990000000000)),
-            networkService: FakeNetworkService())
-        XCTAssertEqual(GasPriceConfiguration.maxPrice, configurator.currentConfiguration.gasPrice)
+            transaction: .make(gasPrice: .legacy(gasPrice: BigUInt(990000000000))),
+            networkService: FakeNetworkService(),
+            tokensService: WalletDataProcessingPipeline.make(wallet: .make(), server: .main).pipeline,
+            configuration: .sendFungiblesTransaction(confirmType: .signThenSend))
+
+        XCTAssertEqual(GasPriceConfiguration.maxPrice, configurator.gasPriceEstimator.gasPrice.value.max)
     }
 
     func testSendEtherGasPriceAndLimit() {
-        let analytics = FakeAnalyticsService()
         let configurator = TransactionConfigurator(
             session: .make(),
-            analytics: analytics,
             transaction: .make(gasLimit: nil, gasPrice: nil),
-            networkService: FakeNetworkService())
-        XCTAssertEqual(BigUInt(GasPriceConfiguration.defaultPrice), configurator.currentConfiguration.gasPrice)
+            networkService: FakeNetworkService(),
+            tokensService: WalletDataProcessingPipeline.make(wallet: .make(), server: .main).pipeline,
+            configuration: .sendFungiblesTransaction(confirmType: .signThenSend))
+        XCTAssertEqual(BigUInt(GasPriceConfiguration.defaultPrice), configurator.gasPriceEstimator.gasPrice.value.max)
+
         //gas limit is always 21k for native ether transfers
-        XCTAssertEqual(BigUInt(21000), configurator.currentConfiguration.gasLimit)
+        XCTAssertEqual(BigUInt(21000), configurator.gasLimit.value)
     }
 }

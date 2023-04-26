@@ -13,11 +13,11 @@ public typealias Image = UIImage
 public typealias TokenImagePublisher = AnyPublisher<TokenImage?, Never>
 
 public struct TokenImage {
-    public let image: ImageOrWebImageUrl
+    public let image: ImageOrWebImageUrl<RawImage>
     public let isFinal: Bool
     public let overlayServerIcon: UIImage?
 
-    public init(image: ImageOrWebImageUrl, isFinal: Bool, overlayServerIcon: UIImage?) {
+    public init(image: ImageOrWebImageUrl<RawImage>, isFinal: Bool, overlayServerIcon: UIImage?) {
         self.image = image
         self.isFinal = isFinal
         self.overlayServerIcon = overlayServerIcon
@@ -71,14 +71,21 @@ public protocol TokenImageFetcher {
 
 public class TokenImageFetcherImpl: TokenImageFetcher {
     private let networking: ImageFetcher
+    private let tokenGroupsIdentifier: TokenGroupIdentifierProtocol
+    private let spamImage: UIImage
     private let subscribables: AtomicDictionary<String, CurrentValueSubject<TokenImage?, Never>> = .init()
 
     enum ImageAvailabilityError: LocalizedError {
         case notAvailable
     }
 
-    public init(networking: ImageFetcher) {
+    public init(networking: ImageFetcher,
+                tokenGroupIdentifier: TokenGroupIdentifierProtocol,
+                spamImage: UIImage) {
+        
         self.networking = networking
+        self.tokenGroupsIdentifier = tokenGroupIdentifier
+        self.spamImage = spamImage
     }
 
     private static func programmaticallyGenerateIcon(for contractAddress: AlphaWallet.Address,
@@ -132,12 +139,12 @@ public class TokenImageFetcherImpl: TokenImageFetcher {
 
         switch type {
         case .nativeCryptocurrency:
-            if let img = serverIconImage {
-                return .init(image: .image(.loaded(image: img)), isFinal: true, overlayServerIcon: nil)
+            if let img = iconImageForContractAndChainID(image: serverIconImage, address: contractAddress.eip55String, chainID: server.chainID) {
+                return TokenImage(image: .image(.loaded(image: img)), isFinal: true, overlayServerIcon: nil)
             }
         case .erc20, .erc875, .erc721, .erc721ForTickets, .erc1155:
-            if let img = tokenImage {
-                return .init(image: .image(.loaded(image: img)), isFinal: true, overlayServerIcon: staticOverlayIcon)
+            if let img = iconImageForContractAndChainID(image: tokenImage, address: contractAddress.eip55String, chainID: server.chainID) {
+                return TokenImage(image: .image(.loaded(image: img)), isFinal: true, overlayServerIcon: staticOverlayIcon)
             }
         }
 
@@ -149,6 +156,13 @@ public class TokenImageFetcherImpl: TokenImageFetcher {
             colors: colors,
             staticOverlayIcon: staticOverlayIcon,
             blockChainNameColor: blockChainNameColor)
+    }
+
+    private func iconImageForContractAndChainID(image iconImage: UIImage?, address: String, chainID: Int) -> UIImage? {
+        if tokenGroupsIdentifier.isSpam(address: address, chainID: chainID) {
+            return spamImage
+        }
+        return iconImage
     }
 
     public func image(contractAddress: AlphaWallet.Address,
@@ -225,7 +239,7 @@ public class TokenImageFetcherImpl: TokenImageFetcher {
     //TODO: refactor and rename
     private static func nftCollectionImageUrl(_ type: TokenType,
                                               balance: NonFungibleFromJson?,
-                                              size: GoogleContentSize) throws -> ImageOrWebImageUrl {
+                                              size: GoogleContentSize) throws -> ImageOrWebImageUrl<RawImage> {
 
         switch type {
         case .erc721, .erc1155:
@@ -271,7 +285,7 @@ class GithubAssetsURLResolver {
     }
 }
 
-public typealias ImagePublisher = AnyPublisher<Image?, Never>
+public typealias ImagePublisher = AnyPublisher<ImageOrWebImageUrl<Image>?, Never>
 
 public class RPCServerImageFetcher {
     public static var instance = RPCServerImageFetcher()
@@ -281,7 +295,7 @@ public class RPCServerImageFetcher {
         if let sub = subscribables[server.chainID] {
             return sub
         } else {
-            let sub = CurrentValueSubject<Image?, Never>(iconImage)
+            let sub = CurrentValueSubject<ImageOrWebImageUrl<Image>?, Never>(.image(iconImage))
             subscribables[server.chainID] = sub.eraseToAnyPublisher()
 
             return sub.eraseToAnyPublisher()

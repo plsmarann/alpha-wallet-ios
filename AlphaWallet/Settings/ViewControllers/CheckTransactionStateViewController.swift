@@ -5,8 +5,7 @@
 //  Created by Vladyslav Shepitko on 07.03.2022.
 //
 
-import Foundation
-import PromiseKit
+import UIKit
 
 protocol SelectTransactionHashViewControllerDelegate: AnyObject {
     func didClose(in viewController: CheckTransactionStateViewController)
@@ -28,7 +27,7 @@ class CheckTransactionStateViewController: ModalViewController {
     }()
 
     private lazy var textField: TextField = {
-        let textField: TextField = .textField
+        let textField = TextField.buildTextField()
         textField.keyboardType = .emailAddress
         textField.returnKeyType = .done
         textField.delegate = self

@@ -1,7 +1,6 @@
 // Copyright © 2021 Stormbird PTE. LTD.
 
 import UIKit
-import PromiseKit
 import AlphaWalletFoundation
 import AlphaWalletCore
 import Combine
@@ -16,19 +15,29 @@ class DappRequestSwitchExistingChainCoordinator: NSObject, Coordinator {
     private let config: Config
     private let server: RPCServer
     private let targetChain: WalletSwitchEthereumChainObject
-    private let restartQueue: RestartTaskQueue
+    private let restartHandler: RestartQueueHandler
     private let analytics: AnalyticsLogger
     private let currentUrl: URL?
     private let viewController: UIViewController
     private let subject = PassthroughSubject<SwitchExistingChainOperation, PromiseError>()
+    private let serversProvider: ServersProvidable
 
     var coordinators: [Coordinator] = []
 
-    init(config: Config, server: RPCServer, targetChain: WalletSwitchEthereumChainObject, restartQueue: RestartTaskQueue, analytics: AnalyticsLogger, currentUrl: URL?, inViewController viewController: UIViewController) {
+    init(config: Config,
+         server: RPCServer,
+         targetChain: WalletSwitchEthereumChainObject,
+         restartHandler: RestartQueueHandler,
+         analytics: AnalyticsLogger,
+         currentUrl: URL?,
+         serversProvider: ServersProvidable,
+         viewController: UIViewController) {
+
+        self.serversProvider = serversProvider
         self.config = config
         self.server = server
         self.targetChain = targetChain
-        self.restartQueue = restartQueue
+        self.restartHandler = restartHandler
         self.analytics = analytics
         self.currentUrl = currentUrl
         self.viewController = viewController
@@ -36,10 +45,10 @@ class DappRequestSwitchExistingChainCoordinator: NSObject, Coordinator {
 
     func start() -> AnyPublisher<SwitchExistingChainOperation, PromiseError> {
         guard let targetChainId = Int(chainId0xString: targetChain.chainId) else {
-            return .fail(PromiseError(error: DAppError.nodeError(R.string.localizable.switchChainErrorInvalidChainId(targetChain.chainId))))
+            return .fail(PromiseError(error: JsonRpcError.internalError(message: R.string.localizable.switchChainErrorInvalidChainId(targetChain.chainId))))
         }
         if let existingServer = ServersCoordinator.serversOrdered.first(where: { $0.chainID == targetChainId }) {
-            if config.enabledServers.contains(where: { $0.chainID == targetChainId }) {
+            if serversProvider.enabledServers.contains(where: { $0.chainID == targetChainId }) {
                 if server.chainID == targetChainId {
                     //This is really only (and should only be) fired when the chain is already enabled and activated in browser. i.e. we are not supposed to have restarted the app UI or browser. It's a no-op. If DApps detect that the browser is already connected to the right chain, they might not even trigger this
                     return .just(.notifySuccessful)
@@ -50,7 +59,7 @@ class DappRequestSwitchExistingChainCoordinator: NSObject, Coordinator {
                 promptAndActivateExistingServer(existingServer: existingServer, inViewController: viewController)
             }
         } else {
-            return .fail(PromiseError(error: DAppError.nodeError(R.string.localizable.switchChainErrorNotSupportedChainId(targetChain.chainId))))
+            return .fail(PromiseError(error: JsonRpcError.unsupportedChain(chainId: targetChain.chainId)))
         }
 
         return subject.eraseToAnyPublisher()
@@ -58,7 +67,7 @@ class DappRequestSwitchExistingChainCoordinator: NSObject, Coordinator {
 
     private func promptAndActivateExistingServer(existingServer: RPCServer, inViewController viewController: UIViewController) {
         func runEnableChain() {
-            let enableChain = EnableChain(existingServer, restartQueue: restartQueue, url: currentUrl)
+            let enableChain = EnableChain(existingServer, restartHandler: restartHandler, url: currentUrl)
             enableChain.delegate = self
             enableChain.run()
         }
@@ -70,7 +79,7 @@ class DappRequestSwitchExistingChainCoordinator: NSObject, Coordinator {
             case .action:
                 runEnableChain()
             case .canceled:
-                subject.send(completion: .failure(PromiseError(error: DAppError.cancelled)))
+                subject.send(completion: .failure(PromiseError(error: JsonRpcError.requestRejected)))
             }
         }.cauterize()
     }
@@ -84,7 +93,7 @@ class DappRequestSwitchExistingChainCoordinator: NSObject, Coordinator {
                 subject.send(.switchBrowserToExistingServer(existingServer, url: self.currentUrl))
                 subject.send(completion: .finished)
             case .canceled:
-                subject.send(completion: .failure(PromiseError(error: DAppError.cancelled)))
+                subject.send(completion: .failure(PromiseError(error: JsonRpcError.requestRejected)))
             }
         }.cauterize()
     }

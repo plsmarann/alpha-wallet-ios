@@ -9,7 +9,6 @@ protocol TokensViewControllerDelegate: AnyObject {
     func didSelect(token: Token, in viewController: UIViewController)
     func didTapOpenConsole(in viewController: UIViewController)
     func walletConnectSelected(in viewController: UIViewController)
-    func whereAreMyTokensSelected(in viewController: UIViewController)
     func buyCryptoSelected(in viewController: UIViewController)
 }
 
@@ -36,7 +35,7 @@ final class TokensViewController: UIViewController {
     }()
 
     private lazy var tableView: UITableView = {
-        let tableView = UITableView.grouped
+        let tableView = UITableView.buildGroupedTableView()
 
         tableView.register(FungibleTokenViewCell.self)
         tableView.register(EthTokenViewCell.self)
@@ -95,14 +94,6 @@ final class TokensViewController: UIViewController {
         keyboardChecker.constraints = [bottomConstraint]
 
         return keyboardChecker
-    }()
-
-    private lazy var whereAreMyTokensView: AddHideTokensView = {
-        let view = AddHideTokensView()
-        view.delegate = self
-        view.configure(viewModel: ShowAddHideTokensViewModel.configuredForTestnet())
-
-        return view
     }()
 
     private var isConsoleButtonHidden: Bool {
@@ -492,13 +483,6 @@ fileprivate extension TokensViewController {
     }
 }
 
-extension TokensViewController: AddHideTokensViewDelegate {
-
-    func view(_ view: AddHideTokensView, didSelectAddHideTokensButton sender: UIButton) {
-        delegate?.whereAreMyTokensSelected(in: self)
-    }
-}
-
 extension TokensViewController {
     @objc func didTapSegment(_ control: ScrollableSegmentedControl) {
         guard let filter = viewModel.convertSegmentedControlSelectionToFilter(control.selectedSegment) else { return }
@@ -624,7 +608,7 @@ extension TokensViewController {
 }
 
 extension TokensViewController {
-    class functional {}
+    enum functional {}
 }
 
 extension TokensViewController.functional {

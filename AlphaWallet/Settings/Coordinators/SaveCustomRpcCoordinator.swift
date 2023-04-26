@@ -6,13 +6,11 @@
 //
 
 import UIKit
-import PromiseKit
 import AlphaWalletFoundation
 import Combine
 
 protocol SaveCustomRpcCoordinatorDelegate: AnyObject {
     func didDismiss(in coordinator: SaveCustomRpcCoordinator)
-    func restartToEdit(in coordinator: SaveCustomRpcCoordinator)
 }
 
 typealias OverallProtocol = SaveCustomRpcHandleUrlFailure & HandleAddMultipleCustomRpcViewControllerResponse
@@ -21,7 +19,7 @@ class SaveCustomRpcCoordinator: NSObject, Coordinator {
 
     private let navigationController: UINavigationController
     private let config: Config
-    private let restartQueue: RestartTaskQueue
+    private let restartHandler: RestartQueueHandler
     private let analytics: AnalyticsLogger
     private let operation: SaveOperationType
     private var activeViewController: OverallProtocol?
@@ -31,7 +29,7 @@ class SaveCustomRpcCoordinator: NSObject, Coordinator {
 
     init(navigationController: UINavigationController,
          config: Config,
-         restartQueue: RestartTaskQueue,
+         restartHandler: RestartQueueHandler,
          analytics: AnalyticsLogger,
          operation: SaveOperationType,
          networkService: NetworkService) {
@@ -39,7 +37,7 @@ class SaveCustomRpcCoordinator: NSObject, Coordinator {
         self.networkService = networkService
         self.navigationController = navigationController
         self.config = config
-        self.restartQueue = restartQueue
+        self.restartHandler = restartHandler
         self.analytics = analytics
         self.operation = operation
     }
@@ -95,11 +93,11 @@ class SaveCustomRpcCoordinator: NSObject, Coordinator {
 extension SaveCustomRpcCoordinator: SaveCustomRpcEntryViewControllerDataDelegate {
 
     func didFinish(in viewController: SaveCustomRpcManualEntryViewController, customRpc: CustomRPC) {
-        let explorerEndpoints: [String]?
+        let explorerEndpoints: [WalletAddEthereumChainObject.ExplorerUrl]?
         let defaultDecimals = 18
 
         if let endpoint = customRpc.explorerEndpoint {
-            explorerEndpoints = [endpoint]
+            explorerEndpoints = [.init(name: "", url: endpoint)]
         } else {
             explorerEndpoints = nil
         }
@@ -116,7 +114,7 @@ extension SaveCustomRpcCoordinator: SaveCustomRpcEntryViewControllerDataDelegate
         let saveCustomChain = AddCustomChain(
             customChain,
             isTestnet: customRpc.isTestnet,
-            restartQueue: restartQueue,
+            restartHandler: restartHandler,
             url: nil,
             operation: operation,
             chainNameFallback: R.string.localizable.addCustomChainUnnamed(),
@@ -136,7 +134,7 @@ extension SaveCustomRpcCoordinator: SaveCustomRpcBrowseViewControllerDataDelegat
         let addViewController = AddMultipleCustomRpcViewController(
             model: model,
             analytics: analytics,
-            restartQueue: restartQueue,
+            restartHandler: restartHandler,
             networkService: networkService)
 
         addViewController.delegate = self
@@ -160,7 +158,7 @@ extension SaveCustomRpcCoordinator: AddCustomChainDelegate {
         case .edit:
             analytics.log(action: Analytics.Action.editCustomChain, properties: [Analytics.Properties.addCustomChainType.rawValue: "user"])
         }
-        delegate?.restartToEdit(in: self)
+        restartHandler.processTasks()
     }
 
     func notifyAddCustomChainFailed(error: AddCustomChainError, in addCustomChain: AddCustomChain) {
@@ -180,7 +178,7 @@ extension SaveCustomRpcCoordinator: AddCustomChainDelegate {
 extension SaveCustomRpcCoordinator: AddMultipleCustomRpcViewControllerResponse {
 
     func addMultipleCustomRpcCompleted() {
-        delegate?.restartToEdit(in: self)
+        restartHandler.processTasks()
     }
 
     func addMultipleCustomRpcFailed(added: NSArray, failed: NSArray, duplicates: NSArray, remaining: NSArray) {

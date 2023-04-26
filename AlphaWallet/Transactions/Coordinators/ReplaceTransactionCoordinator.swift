@@ -15,10 +15,10 @@ class ReplaceTransactionCoordinator: Coordinator {
         case cancel
     }
 
-    private let tokensService: TokenViewModelState
+    private let tokensService: TokensProcessingPipeline
     private let analytics: AnalyticsLogger
     private let domainResolutionService: DomainResolutionServiceType
-    private let pendingTransactionInformation: (server: RPCServer, data: Data, transactionType: TransactionType, gasPrice: BigUInt)
+    private let pendingTransactionInformation: (server: RPCServer, data: Data, transactionType: TransactionType, gasPrice: GasPrice)
     private let nonce: BigUInt
     private let keystore: Keystore
     private let presentingViewController: UIViewController
@@ -26,7 +26,6 @@ class ReplaceTransactionCoordinator: Coordinator {
     private let transaction: TransactionInstance
     private let mode: Mode
     private var transactionConfirmationResult: ConfirmResult? = .none
-    private let assetDefinitionStore: AssetDefinitionStore
     private let networkService: NetworkService
     private var recipient: AlphaWallet.Address? {
         switch transactionType {
@@ -88,9 +87,9 @@ class ReplaceTransactionCoordinator: Coordinator {
           session: WalletSession,
           transaction: TransactionInstance,
           mode: Mode,
-          assetDefinitionStore: AssetDefinitionStore,
-          tokensService: TokenViewModelState,
+          tokensService: TokensProcessingPipeline,
           networkService: NetworkService) {
+        
         guard let pendingTransactionInformation = TransactionDataStore.pendingTransactionsInformation[transaction.id] else { return nil }
         guard let nonce = BigUInt(transaction.nonce) else { return nil }
         self.networkService = networkService
@@ -104,7 +103,6 @@ class ReplaceTransactionCoordinator: Coordinator {
         self.transaction = transaction
         self.mode = mode
         self.nonce = nonce
-        self.assetDefinitionStore = assetDefinitionStore
     }
 
     func start() {
@@ -125,10 +123,9 @@ class ReplaceTransactionCoordinator: Coordinator {
             analytics: analytics,
             domainResolutionService: domainResolutionService,
             keystore: keystore,
-            assetDefinitionStore: assetDefinitionStore,
             tokensService: tokensService,
             networkService: networkService)
-        
+
         coordinator.delegate = self
         addCoordinator(coordinator)
 
@@ -140,8 +137,13 @@ class ReplaceTransactionCoordinator: Coordinator {
         }
     }
 
-    private func computeGasPriceForReplacementTransaction(_ gasPrice: BigUInt) -> BigUInt {
-        gasPrice * 110 / 100
+    private func computeGasPriceForReplacementTransaction(_ gasPrice: GasPrice) -> GasPrice {
+        switch gasPrice {
+        case .legacy(let gasPrice):
+            return .legacy(gasPrice: gasPrice * 110 / 100)
+        case .eip1559(let maxFeePerGas, let maxPriorityFeePerGas):
+            return .eip1559(maxFeePerGas: maxFeePerGas * 110 / 100, maxPriorityFeePerGas: maxPriorityFeePerGas)
+        }
     }
 }
 
@@ -149,7 +151,7 @@ extension ReplaceTransactionCoordinator: TransactionConfirmationCoordinatorDeleg
     func coordinator(_ coordinator: TransactionConfirmationCoordinator, didFailTransaction error: Error) {
         UIApplication.shared
             .presentedViewController(or: presentingViewController)
-            .displayError(message: error.prettyError)
+            .displayError(message: error.localizedDescription)
     }
 
     func didSendTransaction(_ transaction: SentTransaction, inCoordinator coordinator: TransactionConfirmationCoordinator) {

@@ -13,6 +13,10 @@ class FungibleTokenHeaderView: UIView {
         let imageView = TokenImageView()
         imageView.translatesAutoresizingMaskIntoConstraints = false
         imageView.isUserInteractionEnabled = true
+        imageView.contentMode = .scaleAspectFit
+        imageView.rounding = .circle
+        imageView.placeholderRounding = .circle
+        
         return imageView
     }()
 

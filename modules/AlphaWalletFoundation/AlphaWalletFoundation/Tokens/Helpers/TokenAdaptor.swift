@@ -11,28 +11,6 @@ import AlphaWalletOpenSea
 import BigInt
 import Combine
 
-public protocol TokenHolderState {
-    func tokenHolders(for token: TokenIdentifiable) -> [TokenHolder]
-    func tokenHoldersPublisher(for token: TokenIdentifiable) -> AnyPublisher<[TokenHolder], Never>
-    func tokenHolderPublisher(for token: TokenIdentifiable, tokenId: TokenId) -> AnyPublisher<TokenHolder?, Never>
-}
-
-extension TokenHolderState {
-    public func tokenHolderPublisher(for token: TokenIdentifiable, tokenId: TokenId) -> AnyPublisher<TokenHolder?, Never> {
-        tokenHoldersPublisher(for: token)
-            .map { tokenHolders in
-                switch token.type {
-                case .erc721, .erc875, .erc721ForTickets:
-                    return tokenHolders.first { $0.tokens[0].id == tokenId }
-                case .erc1155:
-                    return tokenHolders.first(where: { $0.tokens.contains(where: { $0.id == tokenId }) })
-                case .nativeCryptocurrency, .erc20:
-                    return nil
-                }
-            }.eraseToAnyPublisher()
-    }
-}
-
 extension TokenHolder: ObservableObject { }
 
 public struct TokenAdaptor {
@@ -54,6 +32,10 @@ public struct TokenAdaptor {
 
     public func xmlHandler(token: TokenScriptSupportable) -> XMLHandler {
         return XMLHandler(token: token, assetDefinitionStore: assetDefinitionStore)
+    }
+
+    public func xmlHandler(contract: AlphaWallet.Address, tokenType: TokenType) -> XMLHandler {
+        return XMLHandler(contract: contract, tokenType: tokenType, assetDefinitionStore: assetDefinitionStore)
     }
 
     public func tokenScriptOverrides(token: TokenScriptSupportable) -> TokenScriptOverrides {
@@ -106,7 +88,7 @@ public struct TokenAdaptor {
         } else {
             for each in subscribablesForAttributeValues {
                 guard let subscribable = each.subscribableValue else { continue }
-                subscribable.subscribe { [weak tokenHolder] _ in
+                subscribable.sinkAsync { [weak tokenHolder] _ in
                     tokenHolder?.objectWillChange.send()
                 }
             }

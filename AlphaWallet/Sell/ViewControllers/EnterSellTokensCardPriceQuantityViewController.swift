@@ -111,9 +111,8 @@ class EnterSellTokensCardPriceQuantityViewController: UIViewController, TokenVer
         return textField
     }()
 
-    private let walletSession: WalletSession
     private var cancelable = Set<AnyCancellable>()
-    private let service: TokenViewModelState
+    private let service: TokensProcessingPipeline
     private let containerView: ScrollableStackView = {
         let containerView = ScrollableStackView()
         containerView.stackView.axis = .vertical
@@ -134,15 +133,13 @@ class EnterSellTokensCardPriceQuantityViewController: UIViewController, TokenVer
 
     init(viewModel: EnterSellTokensCardPriceQuantityViewModel,
          assetDefinitionStore: AssetDefinitionStore,
-         walletSession: WalletSession,
-         service: TokenViewModelState,
+         service: TokensProcessingPipeline,
          currencyService: CurrencyService,
          tokenImageFetcher: TokenImageFetcher) {
 
         self.tokenImageFetcher = tokenImageFetcher
         self.currencyService = currencyService
         self.service = service
-        self.walletSession = walletSession
         self.viewModel = viewModel
         self.assetDefinitionStore = assetDefinitionStore
 
@@ -151,7 +148,7 @@ class EnterSellTokensCardPriceQuantityViewController: UIViewController, TokenVer
         case .backedByOpenSea:
             tokenRowView = OpenSeaNonFungibleTokenCardRowView(tokenView: .viewIconified)
         case .notBackedByOpenSea:
-            tokenRowView = TokenCardRowView(server: viewModel.token.server, tokenView: .viewIconified, assetDefinitionStore: assetDefinitionStore, wallet: walletSession.account)
+            tokenRowView = TokenCardRowView(server: viewModel.token.server, tokenView: .viewIconified, assetDefinitionStore: assetDefinitionStore, wallet: viewModel.session.account)
         }
 
         super.init(nibName: nil, bundle: nil)

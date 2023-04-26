@@ -8,11 +8,14 @@
 import Foundation
 import AlphaWalletCore
 import BigInt
-import PromiseKit
 import Combine
 import AlphaWalletWeb3
 
 final class EventForActivitiesFetcher {
+    enum FetcherError: Error {
+        case invalidParams
+        case sessionNotFound
+    }
     private let sessionsProvider: SessionsProvider
 
     init(sessionsProvider: SessionsProvider) {
@@ -24,7 +27,7 @@ final class EventForActivitiesFetcher {
             .setFailureType(to: SessionTaskError.self)
             .flatMap { [sessionsProvider] token -> AnyPublisher<[EventActivityInstance], SessionTaskError> in
                 guard let session = sessionsProvider.session(for: token.server) else {
-                    return .fail(SessionTaskError.responseError(PMKError.cancelled))
+                    return .fail(SessionTaskError(error: FetcherError.sessionNotFound))
                 }
 
                 let eventOrigin = card.eventOrigin
@@ -35,7 +38,7 @@ final class EventForActivitiesFetcher {
 
                 if filterParam.allSatisfy({ $0 == nil }) {
                     //TODO log to console as diagnostic
-                    return .fail(SessionTaskError.responseError(PMKError.cancelled))
+                    return .fail(SessionTaskError(error: FetcherError.invalidParams))
                 }
 
                 let fromBlock: (EventFilter.Block, UInt64)
@@ -43,7 +46,7 @@ final class EventForActivitiesFetcher {
                     let value = UInt64(blockNumber + 1)
                     fromBlock = (.blockNumber(value), value)
                 } else {
-                    fromBlock = (.blockNumber(0), 0)
+                    fromBlock = (.blockNumber(token.server.startBlock), token.server.startBlock)
                 }
 
                 let parameterFilters = filterParam.map { $0?.filter }
@@ -67,18 +70,15 @@ final class EventForActivitiesFetcher {
                             guard let blockNumber = event.eventLog?.blockNumber else {
                                 return .just(nil)
                             }
-
-                            return session.blockchainProvider
-                                .block(by: blockNumber)
+                            return session.blockchainProvider.block(by: blockNumber)
                                 .map { block in
                                     EventSourceForActivities.functional.convertEventToDatabaseObject(
                                         event,
-                                        date: block,
+                                        date: block.timestamp,
                                         filterParam: filterParam,
                                         eventOrigin: eventOrigin,
                                         tokenContract: token.contractAddress,
                                         server: token.server)
-
                                 }.replaceError(with: nil)
                                 .eraseToAnyPublisher()
                         }

@@ -2,8 +2,9 @@
 
 import Foundation
 import AlphaWalletFoundation
+import AlphaWalletCore
 
-extension KeystoreError {
+extension KeystoreError: LocalizedError {
     public var errorDescription: String? {
         switch self {
         case .failedToDeleteAccount:
@@ -36,73 +37,47 @@ extension KeystoreError {
             return R.string.localizable.keystoreAccessKeyCancelled()
         case .signDataIsEmpty:
             return R.string.localizable.accountsErrorFailedToSignEmptyMessage()
+        case .failedToEncodeRLP:
+            return R.string.localizable.accountsErrorFailedToSignTransaction()
         }
     }
 }
 
-public struct UndefinedError: LocalizedError { }
-public struct UnknownError: LocalizedError { }
-
 extension Error {
-    public var prettyError: String {
-        //TODO figure out how we can remove this switch-cases. Too fragile
-        switch self {
-        case let error as BuyCryptoError:
-            return error.localizedDescription
-        case let error as ActiveWalletError:
-            return error.localizedDescription
-        case let error as SwapTokenError:
-            return error.localizedDescription
-        case let error as WalletApiError:
-            return error.localizedDescription
-        case let error as FunctionError:
-            return error.localizedDescription
-        case let error as TransactionConfiguratorError:
-            return error.localizedDescription
-        case let error as KeystoreError:
-            return error.errorDescription ?? UnknownError().localizedDescription
-        case let error as SendInputErrors:
-            return error.errorDescription ?? UnknownError().localizedDescription
-        case let error as RpcNodeRetryableRequestError:
-            return error.errorDescription ?? UnknownError().localizedDescription
-        case let error as OpenURLError:
-            return error.localizedDescription
-        case let error as ConfigureTransactionError:
-            return error.localizedDescription
-        case let error as AddCustomChainError:
-            return error.localizedDescription
-        case let error as SignMessageValidatorError:
-            return error.localizedDescription
-        case let error as LocalizedError:
-            return error.errorDescription ?? UnknownError().localizedDescription
-        case let error as NSError:
-            return error.localizedDescription
-        case let error as SessionTaskError:
-            return generatePrettyError(forSessionTaskError: error)
-        default:
-            return UndefinedError().localizedDescription
-        }
-    }
-
     public var code: Int { return (self as NSError).code }
     public var domain: String { return (self as NSError).domain }
+}
 
-    private func generatePrettyError(forSessionTaskError error: SessionTaskError) -> String {
-        switch error {
+extension PromiseError: LocalizedError {
+    public var errorDescription: String? {
+        return embedded.localizedDescription
+    }
+}
+
+extension SessionTaskError: LocalizedError {
+    public var errorDescription: String? {
+        switch self {
         case .connectionError(let error):
             return error.localizedDescription
         case .requestError(let error):
             return error.localizedDescription
         case .responseError(let error):
-            guard let JSONError = error as? JSONRPCError else {
-                return error.localizedDescription
-            }
-            switch JSONError {
-            case .responseError(_, let message, _):
-                return message
-            case .responseNotFound, .resultObjectParseError, .errorObjectParseError, .unsupportedVersion, .unexpectedTypeObject, .missingBothResultAndError, .nonArrayResponse:
-                return UndefinedError().localizedDescription
-            }
+            return error.localizedDescription
+        }
+    }
+}
+
+extension AnyCAIP10AccountProvidable.CAIP10AccountProvidableError: LocalizedError {
+    var errorDescription: String? {
+        switch self {
+        case .unavailableToBuildBlockchain:
+            return "Unavailable To Build Blockchain"
+        case .chainNotSupportedOrNotEnabled:
+            return "Chain Not Supported Or Not Enabled"
+        case .emptyNamespaces:
+            return "Empty Namespaces"
+        case .eip155NotFound:
+            return "Eip155 Not Found"
         }
     }
 }

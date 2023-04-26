@@ -1,7 +1,6 @@
 // Copyright © 2018 Stormbird PTE. LTD.
 
 import UIKit
-import PromiseKit
 import AlphaWalletFoundation
 
 protocol ServersCoordinatorDelegate: AnyObject {
@@ -17,15 +16,12 @@ class ServersCoordinator: Coordinator {
             .xDai,
             .polygon,
             .classic,
-            .poa,
             .goerli,
             .binance_smart_chain,
             .binance_smart_chain_testnet,
             .callisto,
             .heco,
             .heco_testnet,
-            .artis_sigma1,
-            .artis_tau1,
             .fantom,
             .fantom_testnet,
             .avalanche,
@@ -44,6 +40,8 @@ class ServersCoordinator: Coordinator {
             //.ioTeXTestnet,
             .palm,
             .palmTestnet,
+            .okx,
+            .sepolia
         ] + RPCServer.customServers
     }
 
@@ -61,26 +59,34 @@ class ServersCoordinator: Coordinator {
     var coordinators: [Coordinator] = []
     weak var delegate: ServersCoordinatorDelegate?
 
-    init(defaultServer: RPCServerOrAuto, config: Config, navigationController: UINavigationController) {
+    init(defaultServer: RPCServerOrAuto,
+         serversProvider: ServersProvidable,
+         navigationController: UINavigationController) {
+
         self.navigationController = navigationController
-        let serverChoices = ServersCoordinator.serverChoices(includeAny: true, config: config)
+        let serverChoices = ServersCoordinator.serverChoices(includeAny: true, serversProvider: serversProvider)
 
         self.viewModel = ServersViewModel(servers: serverChoices, selectedServers: [defaultServer])
     }
 
-    init(defaultServer: RPCServer, config: Config, navigationController: UINavigationController) {
+    init(defaultServer: RPCServer,
+         serversProvider: ServersProvidable,
+         navigationController: UINavigationController) {
+
         self.navigationController = navigationController
-        let serverChoices = ServersCoordinator.serverChoices(includeAny: false, config: config)
+        let serverChoices = ServersCoordinator.serverChoices(includeAny: false, serversProvider: serversProvider)
         self.viewModel = ServersViewModel(servers: serverChoices, selectedServers: [.server(defaultServer)])
     }
 
-    init(viewModel: ServersViewModel, navigationController: UINavigationController) {
+    init(viewModel: ServersViewModel,
+         navigationController: UINavigationController) {
+        
         self.navigationController = navigationController
         self.viewModel = viewModel
     }
 
-    static func serverChoices(includeAny: Bool, config: Config) -> [RPCServerOrAuto] {
-        let enabledServers = ServersCoordinator.serversOrdered.filter { config.enabledServers.contains($0) }
+    static func serverChoices(includeAny: Bool, serversProvider: ServersProvidable) -> [RPCServerOrAuto] {
+        let enabledServers = ServersCoordinator.serversOrdered.filter { serversProvider.enabledServers.contains($0) }
         let servers: [RPCServerOrAuto] = enabledServers.map { .server($0) }
         if includeAny {
             return [.auto] + servers
@@ -89,8 +95,8 @@ class ServersCoordinator: Coordinator {
         }
     }
 
-    func start() {
-        navigationController.pushViewController(serversViewController, animated: true)
+    func start(animated: Bool = true) {
+        navigationController.pushViewController(serversViewController, animated: animated)
     }
 }
 

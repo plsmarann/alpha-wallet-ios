@@ -10,6 +10,12 @@ import BigInt
 import Combine
 
 final class PendingTransactionProvider {
+
+    enum PendingTransactionProviderError: Error {
+        case `internal`(Error)
+        case failureToRetrieveTransaction(hash: String, error: Error)
+    }
+
     private let session: WalletSession
     private let transactionDataStore: TransactionDataStore
     private let ercTokenDetector: ErcTokenDetector
@@ -22,10 +28,17 @@ final class PendingTransactionProvider {
 
         return queue
     }()
+    private let completeTransactionSubject = PassthroughSubject<Result<TransactionInstance, PendingTransactionProviderError>, Never>()
+    private lazy var store: AtomicDictionary<String, SchedulerProtocol> = .init()
 
-    private var store: [String: SchedulerProtocol] = [:]
+    var completeTransaction: AnyPublisher<Result<TransactionInstance, PendingTransactionProviderError>, Never> {
+        completeTransactionSubject.eraseToAnyPublisher()
+    }
 
-    init(session: WalletSession, transactionDataStore: TransactionDataStore, ercTokenDetector: ErcTokenDetector) {
+    init(session: WalletSession,
+         transactionDataStore: TransactionDataStore,
+         ercTokenDetector: ErcTokenDetector) {
+
         self.session = session
         self.transactionDataStore = transactionDataStore
         self.ercTokenDetector = ercTokenDetector
@@ -41,7 +54,7 @@ final class PendingTransactionProvider {
 
     func cancelScheduler() {
         queue.async {
-            for each in self.store {
+            for each in self.store.values {
                 each.value.cancel()
             }
         }
@@ -49,14 +62,14 @@ final class PendingTransactionProvider {
 
     func resumeScheduler() {
         queue.async {
-            for each in self.store {
+            for each in self.store.values {
                 each.value.resume()
             }
         }
     }
 
     deinit {
-        for each in self.store {
+        for each in self.store.values {
             each.value.cancel()
         }
     }
@@ -72,7 +85,7 @@ final class PendingTransactionProvider {
 
             provider.responsePublisher
                 .receive(on: queue)
-                .sink { [weak self] in self?.handle(response: $0, for: provider) }
+                .sink { [weak self] in self?.handle(response: $0, provider: provider) }
                 .store(in: &cancelable)
 
             let scheduler = Scheduler(provider: provider)
@@ -82,18 +95,23 @@ final class PendingTransactionProvider {
         }
     }
 
-    private func handle(response: Result<EthereumTransaction, SessionTaskError>, for provider: PendingTransactionSchedulerProvider) {
+    private func handle(response: Result<EthereumTransaction, SessionTaskError>, provider: PendingTransactionSchedulerProvider) {
         switch response {
         case .success(let pendingTransaction):
-            didReceiveValue(transaction: provider.transaction, pendingTransaction: pendingTransaction)
+            handle(transaction: provider.transaction, pendingTransaction: pendingTransaction)
         case .failure(let error):
-            didReceiveError(error: error, forTransaction: provider.transaction)
+            handle(error: error, transaction: provider.transaction)
         }
     }
 
-    private func didReceiveValue(transaction: TransactionInstance, pendingTransaction: EthereumTransaction) {
-        transactionDataStore.update(state: .completed, for: transaction.primaryKey, withPendingTransaction: pendingTransaction)
+    private func handle(transaction: TransactionInstance, pendingTransaction: EthereumTransaction) {
+        transactionDataStore.update(state: .completed, for: transaction.primaryKey, pendingTransaction: pendingTransaction)
+
         ercTokenDetector.detect(from: [transaction])
+
+        if let transaction = transactionDataStore.transaction(withTransactionId: transaction.id, forServer: transaction.server) {
+            completeTransactionSubject.send(.success(transaction))
+        }
 
         cancelScheduler(transaction: transaction)
     }
@@ -104,7 +122,7 @@ final class PendingTransactionProvider {
         store[transaction.id] = nil
     }
 
-    private func didReceiveError(error: SessionTaskError, forTransaction transaction: TransactionInstance) {
+    private func handle(error: SessionTaskError, transaction: TransactionInstance) {
         switch error {
         case .responseError(let error):
             // TODO: Think about the logic to handle pending transactions.

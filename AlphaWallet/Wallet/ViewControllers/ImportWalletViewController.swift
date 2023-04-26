@@ -1,8 +1,9 @@
 // Copyright © 2018 Stormbird PTE. LTD.
 
 import UIKit
-import AlphaWalletFoundation
 import Combine
+import AlphaWalletFoundation
+import AlphaWalletTrustWalletCoreExtensions
 
 protocol ImportWalletViewControllerDelegate: AnyObject {
     func didImportAccount(account: Wallet, in viewController: ImportWalletViewController)
@@ -67,7 +68,7 @@ class ImportWalletViewController: UIViewController {
     }()
 
     private lazy var passwordTextField: TextField = {
-        let textField: TextField = .password
+        let textField = TextField.buildPasswordTextField()
         textField.delegate = self
         textField.returnKeyType = .done
         textField.inputAccessoryButtonType = .done
@@ -676,7 +677,7 @@ extension ImportWalletViewController: AddressTextFieldDelegate {
     }
 
     func displayError(error: Error, for textField: AddressTextField) {
-        textField.errorState = .error(error.prettyError)
+        textField.errorState = .error(error.localizedDescription)
     }
 
     func openQRCodeReader(for textField: AddressTextField) {

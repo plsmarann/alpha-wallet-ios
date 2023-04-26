@@ -21,11 +21,11 @@ public struct SwapEstimate {
         public let type: String
         public let amount: BigUInt
         public let amountUsd: String
-        public let estimate: BigUInt?
+        public let estimate: GasPrice?
         public let limit: BigUInt?
         public let token: SwapQuote.Token
         
-        public init(type: String, amount: BigUInt, amountUsd: String, estimate: BigUInt?, limit: BigUInt?, token: SwapQuote.Token) {
+        public init(type: String, amount: BigUInt, amountUsd: String, estimate: GasPrice?, limit: BigUInt?, token: SwapQuote.Token) {
             self.type = type
             self.amount = amount
             self.amountUsd = amountUsd
@@ -36,7 +36,6 @@ public struct SwapEstimate {
     }
 
     public struct SwapStep {
-        public let unsignedSwapTransaction: UnsignedSwapTransaction
         public let estimate: SwapEstimate
         public let action: SwapQuote.Action
         public let tool: String
@@ -83,7 +82,6 @@ extension SwapEstimate.SwapStep: Decodable {
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: Keys.self)
-        unsignedSwapTransaction = try container.decode(UnsignedSwapTransaction.self, forKey: .transactionRequest)
         estimate = try container.decode(SwapEstimate.self, forKey: .estimate)
         action = try container.decode(SwapQuote.Action.self, forKey: .action)
         tool = try container.decode(String.self, forKey: .tool)
@@ -134,9 +132,9 @@ extension SwapEstimate.GasCost: Decodable {
         amount = try BigUInt(amountString) ?? { throw ParsingError(fieldName: .amount) }()
         amountUsd = try container.decode(String.self, forKey: .amountUsd)
         let estimateString = try container.decode(String.self, forKey: .estimate)
-        estimate = try BigUInt(estimateString) ?? { throw ParsingError(fieldName: .amount) }()
+        estimate = .legacy(gasPrice: try BigUInt(estimateString.drop0x, radix: 16) ?? { throw ParsingError(fieldName: .estimate) }())
         let limitString = try container.decode(String.self, forKey: .estimate)
-        limit = try BigUInt(limitString) ?? { throw ParsingError(fieldName: .amount) }()
+        limit = try BigUInt(limitString) ?? { throw ParsingError(fieldName: .limit) }()
         token = try container.decode(SwapQuote.Token.self, forKey: .token)
     }
 }

@@ -10,23 +10,38 @@ import Foundation
 import AlphaWalletCore
 
 public final class CoinGeckoTickersFetcher: BaseCoinTickersFetcher, CoinTickersFetcherProvider {
-    public convenience init(storage: CoinTickersStorage & ChartHistoryStorage & TickerIdsStorage, networkService: NetworkService) {
-        let networkProvider: CoinTickerNetworkProviderType
+
+    public convenience init(storage: CoinTickersStorage & ChartHistoryStorage & TickerIdsStorage,
+                            transporter: ApiTransporter,
+                            analytics: AnalyticsLogger) {
+
+        let networking: CoinTickerNetworking
         if isRunningTests() {
-            networkProvider = FakeCoinGeckoNetworkProvider()
+            networking = FakeCoinTickerNetworking()
         } else {
-            networkProvider = CoinGeckoNetworkProvider(networkService: networkService)
+            networking = CoinGeckoCoinTickerNetworking(
+                transporter: transporter,
+                analytics: analytics)
         }
 
-        let supportedTickerIdsFetcher = SupportedTickerIdsFetcher(networkProvider: networkProvider, storage: storage, config: Config())
+        let supportedTickerIdsFetcher = SupportedTickerIdsFetcher(
+            networking: networking,
+            storage: storage,
+            config: Config())
+
         let fileTokenEntriesProvider = FileTokenEntriesProvider()
 
         let tickerIdsFetcher: TickerIdsFetcher = TickerIdsFetcherImpl(providers: [
             InMemoryTickerIdsFetcher(storage: storage),
             supportedTickerIdsFetcher,
-            AlphaWalletRemoteTickerIdsFetcher(provider: fileTokenEntriesProvider, tickerIdsFetcher: supportedTickerIdsFetcher)
+            AlphaWalletRemoteTickerIdsFetcher(
+                provider: fileTokenEntriesProvider,
+                tickerIdsFetcher: supportedTickerIdsFetcher)
         ])
 
-        self.init(networkProvider: networkProvider, storage: storage, tickerIdsFetcher: tickerIdsFetcher)
+        self.init(
+            networking: networking,
+            storage: storage,
+            tickerIdsFetcher: tickerIdsFetcher)
     }
 }

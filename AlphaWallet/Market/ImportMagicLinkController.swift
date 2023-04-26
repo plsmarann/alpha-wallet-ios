@@ -7,7 +7,6 @@
 
 import Foundation
 import BigInt
-import PromiseKit
 import Combine
 import AlphaWalletFoundation
 import AlphaWalletLogger
@@ -39,7 +38,7 @@ final class ImportMagicLinkController {
 
     private var server: RPCServer { return session.server }
 
-    private let tokensService: TokenViewModelState & TokenProvidable
+    private let tokensService: TokensProcessingPipeline
     private let session: WalletSession
     private let networking: ImportMagicLinkNetworking
     private var signedOrder: SignedOrder?
@@ -65,7 +64,7 @@ final class ImportMagicLinkController {
     init(session: WalletSession,
          assetDefinitionStore: AssetDefinitionStore,
          keystore: Keystore,
-         tokensService: TokenViewModelState & TokenProvidable,
+         tokensService: TokensProcessingPipeline,
          networkService: NetworkService,
          importToken: TokenImportable & TokenOrContractFetchable,
          reachability: ReachabilityManagerProtocol) {
@@ -115,7 +114,7 @@ final class ImportMagicLinkController {
                 name: "",
                 symbol: "",
                 decimals: 0,
-                value: BigInt(signedOrder.order.price),
+                value: signedOrder.order.price,
                 isCustom: true,
                 isDisabled: false,
                 type: .erc875)
@@ -314,7 +313,7 @@ final class ImportMagicLinkController {
                 strongSelf.updateTokenFields()
             }
 
-            if let existingToken = strongSelf.tokensService.token(for: contractAddress, server: strongSelf.server) {
+            if let existingToken = strongSelf.tokensService.tokenViewModel(for: contractAddress, server: strongSelf.server) {
                 let name = XMLHandler(token: existingToken, assetDefinitionStore: strongSelf.assetDefinitionStore).getLabel(fallback: existingToken.name)
                 makeTokenHolder(name: name, symbol: existingToken.symbol)
             } else {
@@ -337,7 +336,7 @@ final class ImportMagicLinkController {
 
     private func makeTokenHolderImpl(name: String, symbol: String, type: TokenType? = nil, bytes32Tokens: [String], contractAddress: AlphaWallet.Address) {
         //TODO pass in the wallet instead
-        guard let tokenType = type ?? (tokensService.token(for: contractAddress, server: server)?.type) else { return }
+        guard let tokenType = type ?? (tokensService.tokenViewModel(for: contractAddress, server: server)?.type) else { return }
         var tokens = [TokenScript.Token]()
         let xmlHandler = XMLHandler(contract: contractAddress, tokenType: tokenType, assetDefinitionStore: assetDefinitionStore)
         for i in 0..<bytes32Tokens.count {

@@ -6,21 +6,21 @@
 //
 
 @testable import AlphaWallet
-import PromiseKit
 import AlphaWalletCore
 import AlphaWalletFoundation
 import Combine
 
 final class FakeNftProvider: NFTProvider, NftAssetImageProvider {
     func assetImageUrl(for url: Eip155URL) -> AnyPublisher<URL, PromiseError> {
-        return .fail(PromiseError.some(error: ProviderError()))
+        return .fail(PromiseError(error: ProviderError()))
     }
 
     struct ProviderError: Error {}
 
-    func collectionStats(collectionId: String) -> Promise<Stats> {
-        return .init(error: ProviderError())
+    func collectionStats(collectionId: String) -> AnyPublisher<Stats, PromiseError> {
+        return .fail(PromiseError(error: ProviderError()))
     }
+
     func nonFungible() -> AnyPublisher<NonFungiblesTokens, Never> {
         return .just((openSea: [:], enjin: ()))
     }

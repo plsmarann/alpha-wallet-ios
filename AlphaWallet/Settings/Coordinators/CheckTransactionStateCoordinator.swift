@@ -54,16 +54,19 @@ extension CheckTransactionStateCoordinator: SelectTransactionHashViewControllerD
         guard let server = serverSelection.asServersArray.first, let session = sessionsProvider.session(for: server) else { return }
 
         rootViewController.set(isActionButtonEnable: false)
+        rootViewController.displayLoading()
 
         session.blockchainProvider
-            .transactionsState(hash: transactionHash)
+            .transactionReceipt(hash: transactionHash)
             .sink(receiveCompletion: { result in
                 if case .failure(let error) = result {
-                    self.displayErrorMessage(R.string.localizable.checkTransactionStateError(error.prettyError), title: R.string.localizable.error())
+                    self.displayErrorMessage(R.string.localizable.checkTransactionStateError(error.localizedDescription), title: R.string.localizable.error())
                 }
 
                 self.rootViewController.set(isActionButtonEnable: true)
-            }, receiveValue: { state in
+                self.rootViewController.hideLoading()
+            }, receiveValue: { receipt in
+                let state = TransactionState(status: receipt.status)
                 self.displayErrorMessage(R.string.localizable.checkTransactionStateComplete(state.description))
             }).store(in: &cancellable)
     }

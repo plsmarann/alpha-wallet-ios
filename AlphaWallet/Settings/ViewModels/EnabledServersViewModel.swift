@@ -2,123 +2,175 @@
 
 import Foundation
 import AlphaWalletFoundation
+import Combine
 
-struct EnabledServersViewModel {
-    private let mainnets: [RPCServer]
-    private let testnets: [RPCServer]
-    private let config: Config
-    private let restartQueue: RestartTaskQueue
+struct EnabledServersViewModelInput {
+    let selection: AnyPublisher<RPCServer, Never>
+    let enableTestnet: AnyPublisher<Bool, Never>
+    let deleteCustomRpc: AnyPublisher<CustomRPC, Never>
+    let reload: AnyPublisher<Void, Never>
+}
+
+struct EnabledServersViewModelOutput {
+    let viewState: AnyPublisher<EnabledServersViewModel.ViewState, Never>
+}
+
+class EnabledServersViewModel {
+    private let restartHandler: RestartQueueHandler
     private var serversSelectedInPreviousMode: [RPCServer]?
+    private let serversProvider: ServersProvidable
+    private var cancellable = Set<AnyCancellable>()
+    private let selectedServers: CurrentValueSubject<[RPCServer], Never>
 
-    var sectionIndices: IndexSet {
-        IndexSet(integersIn: Range(uncheckedBounds: (lower: 0, sections.count)))
-    }
-    let sections: [Section] = [.mainnet, .testnet]
+    init(selectedServers: [RPCServer],
+         restartHandler: RestartQueueHandler,
+         serversProvider: ServersProvidable) {
 
-    let servers: [RPCServer]
-    private (set) var selectedServers: [RPCServer]
-    var testnetEnabled: Bool
-
-    //Cannot infer `mode` from `selectedServers` because of this case: we are in testnet and tap to deselect all of them. Can't know to stay in testnet
-    init(servers: [RPCServer], selectedServers: [RPCServer], restartQueue: RestartTaskQueue, config: Config) {
-        self.servers = servers
-        self.selectedServers = selectedServers
-        self.mainnets = servers.filter { !$0.isTestnet }
-        self.testnets = servers.filter { $0.isTestnet }
-        self.restartQueue = restartQueue
-        self.config = config
-
-        testnetEnabled = selectedServers.contains(where: { $0.isTestnet })
+        self.serversProvider = serversProvider
+        self.selectedServers = .init(selectedServers)
+        self.restartHandler = restartHandler
     }
 
-    var title: String {
-        return R.string.localizable.settingsEnabledNetworksButtonTitle("(\(selectedServers.count))")
+    func transform(input: EnabledServersViewModelInput) -> EnabledServersViewModelOutput {
+        input.selection
+            .sink { [weak self] in self?.toggleSelection(server: $0) }
+            .store(in: &cancellable)
+
+        input.reload
+            .sink { [weak self] _ in self?.reloadServers() }
+            .store(in: &cancellable)
+
+        input.deleteCustomRpc
+            .sink { [weak self] in self?.delete(customRpc: $0) }
+            .store(in: &cancellable)
+
+        let testnetEnabled = testnetEnabled(input: input.enableTestnet)
+        let servers = serversProvider.enabledServersPublisher
+            .map { _ in EnabledServersCoordinator.serversOrdered }
+            .map { servers -> [RPCServer] in servers.uniqued() }
+            
+        let sections = Publishers.CombineLatest3(testnetEnabled, servers, selectedServers)
+            .map { testnetsEnabled, servers, _ -> (mainnets: [RPCServer], testnets: [RPCServer]) in
+                let mainnets = Array(servers.filter { !$0.isTestnet })
+                let testnets = Array(testnetsEnabled ? servers.filter { $0.isTestnet } : [])
+
+                return (mainnets: mainnets, testnets: testnets)
+            }
+
+        let title = selectedServers
+            .map { R.string.localizable.settingsEnabledNetworksButtonTitle("(\($0.count))") }
+
+        let viewState = Publishers.CombineLatest(sections, title)
+            .map { data, title in
+                let mainnets = data.mainnets.map { self.buildViewModel(server: $0) }
+                let testnets = data.testnets.map { self.buildViewModel(server: $0) }
+
+                return ViewState(
+                    title: title,
+                    snapshot: self.buildSnapshot(
+                        for: [
+                            SectionViewModel(section: .mainnet, isEnabled: true, viewModels: mainnets),
+                            SectionViewModel(section: .testnet, isEnabled: !testnets.isEmpty, viewModels: testnets)
+                        ]))
+            }
+
+        return .init(viewState: viewState.eraseToAnyPublisher())
     }
 
-    func serverViewModel(indexPath: IndexPath) -> ServerImageViewModel {
-        let server = server(for: indexPath)
-        
+    private func buildViewModel(server: RPCServer) -> ServerImageViewModel {
         return ServerImageViewModel(
             server: .server(server),
-            isSelected: isServerSelected(server),
+            isSelected: selectedServers.value.contains(server),
             isAvailableToSelect: !server.isDeprecated,
             warningImage: server.isDeprecated ? R.image.gasWarning() : nil)
     }
 
-    mutating func enableTestnet(_ enabled: Bool) {
-        testnetEnabled = enabled
+    private func testnetEnabled(input: AnyPublisher<Bool, Never>) -> AnyPublisher<Bool, Never> {
+        let usersInput = input
+            .handleEvents(receiveOutput: { [weak self] in self?.enableTestnet($0) })
 
-        if let serversSelectedInPreviousMode = serversSelectedInPreviousMode {
-            self.serversSelectedInPreviousMode = selectedServers
-            self.selectedServers = serversSelectedInPreviousMode
+        let isAnyOfSelectedServersIsTestnet = serversProvider.enabledServersPublisher
+            .map { $0.contains(where: { $0.isTestnet }) }
+
+        return Publishers.Merge(isAnyOfSelectedServersIsTestnet, usersInput)
+            .eraseToAnyPublisher()
+    }
+
+    private func enableTestnet(_ enabled: Bool) {
+        if let previousMode = serversSelectedInPreviousMode {
+            serversSelectedInPreviousMode = selectedServers.value
+            selectedServers.value = previousMode
         } else {
-            serversSelectedInPreviousMode = selectedServers
+            serversSelectedInPreviousMode = selectedServers.value
 
-            if testnetEnabled {
-                selectedServers = Array(Set(selectedServers + Constants.defaultEnabledTestnetServers))
+            if enabled {
+                selectedServers.value = Array(Set(selectedServers.value + Constants.defaultEnabledTestnetServers))
             } else {
-                selectedServers = selectedServers.filter { !$0.isTestnet }
+                selectedServers.value = selectedServers.value.filter { !$0.isTestnet }
             }
         }
     }
 
-    mutating func selectServer(indexPath: IndexPath) {
-        let server = server(for: indexPath)
+    private func toggleSelection(server: RPCServer) {
         let servers: [RPCServer]
-        if selectedServers.contains(server) {
-            servers = selectedServers - [server]
+        if selectedServers.value.contains(server) {
+            servers = selectedServers.value - [server]
         } else {
-            servers = selectedServers + [server]
+            servers = selectedServers.value + [server]
         }
-        self.selectedServers = servers
+        selectedServers.value = servers
     }
 
-    @discardableResult func pushReloadServersIfNeeded() -> Bool {
-        let servers = selectedServers
+    func reloadServers() {
+        let servers = selectedServers.value
         //Defensive. Shouldn't allow no server to be selected
-        guard !servers.isEmpty else { return false }
-
-        let isUnchanged = Set(config.enabledServers) == Set(servers)
+        guard !servers.isEmpty else { return }
+        
+        let isUnchanged = Set(serversProvider.enabledServers) == Set(servers)
         if isUnchanged {
             //no-op
         } else {
-            restartQueue.add(.reloadServers(servers))
+            restartHandler.add(.reloadServers(servers))
         }
-        return !isUnchanged
+
+        restartHandler.processTasks()
     }
 
-    func markForDeletion(server: RPCServer) -> Bool {
-        guard let customRpc = server.customRpc else { return false }
-        pushReloadServersIfNeeded()
-        restartQueue.add(.removeServer(customRpc))
+    private func delete(customRpc: CustomRPC) {
+        restartHandler.add(.removeServer(customRpc))
 
-        return true
+        restartHandler.processTasks()
     }
 
-    func numberOfRowsInSection(_ section: Int) -> Int {
-        switch sections[section] {
-        case .testnet:
-            return testnetEnabled ? testnets.count : 0
-        case .mainnet:
-            return mainnets.count
+    private func buildSnapshot(for viewModels: [EnabledServersViewModel.SectionViewModel]) -> EnabledServersViewModel.Snapshot {
+        var snapshot = NSDiffableDataSourceSnapshot<EnabledServersViewModel.SectionViewModel, ServerImageViewModel>()
+        let sections = viewModels
+        snapshot.appendSections(sections)
+        for each in viewModels {
+            snapshot.appendItems(each.viewModels, toSection: each)
         }
-    }
 
-    func server(for indexPath: IndexPath) -> RPCServer {
-        switch sections[indexPath.section] {
-        case .testnet:
-            return testnets[indexPath.row]
-        case .mainnet:
-            return mainnets[indexPath.row]
-        }
-    }
-
-    func isServerSelected(_ server: RPCServer) -> Bool {
-        selectedServers.contains(server)
+        return snapshot
     }
 }
 
+extension EnabledServersViewModel.SectionViewModel: Hashable {}
+extension EnabledServersViewModel.Section: Hashable {}
+
 extension EnabledServersViewModel {
+    class DataSource: UITableViewDiffableDataSource<EnabledServersViewModel.SectionViewModel, ServerImageViewModel> {}
+    typealias Snapshot = NSDiffableDataSourceSnapshot<EnabledServersViewModel.SectionViewModel, ServerImageViewModel>
+
+    struct ViewState {
+        let title: String
+        let snapshot: Snapshot
+    }
+
+    struct SectionViewModel {
+        let section: Section
+        let isEnabled: Bool
+        let viewModels: [ServerImageViewModel]
+    }
 
     enum Section {
         case testnet

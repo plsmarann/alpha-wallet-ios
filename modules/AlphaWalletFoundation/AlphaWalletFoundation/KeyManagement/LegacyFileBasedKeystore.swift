@@ -6,9 +6,6 @@ import CryptoSwift
 import TrustKeystore
 import Combine
 
-public enum FileBasedKeystoreError: LocalizedError {
-    case protectionDisabled
-}
 fileprivate typealias LegacyKeyStore = TrustKeystore.KeyStore
 
 public class LegacyFileBasedKeystore {
@@ -69,7 +66,7 @@ public class LegacyFileBasedKeystore {
             } catch {
                 return .failure(.failedToDeleteAccount)
             }
-        case .watch:
+        case .watch, .hardware:
             return .success(())
         }
     }

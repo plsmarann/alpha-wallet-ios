@@ -20,13 +20,11 @@ extension RPCServer {
     var blockChainName: String {
         switch self {
         case .xDai: return R.string.localizable.blockchainXDAI()
-        case .artis_sigma1: return R.string.localizable.blockchainARTISSigma1()
-        case .artis_tau1: return R.string.localizable.blockchainARTISTau1()
         case .binance_smart_chain: return R.string.localizable.blockchainBinance()
         case .binance_smart_chain_testnet: return R.string.localizable.blockchainBinanceTest()
         case .heco: return R.string.localizable.blockchainHeco()
         case .heco_testnet: return R.string.localizable.blockchainHecoTest()
-        case .main, .callisto, .classic, .poa, .goerli: return R.string.localizable.blockchainEthereum()
+        case .main, .callisto, .classic, .goerli: return R.string.localizable.blockchainEthereum()
         case .fantom: return R.string.localizable.blockchainFantom()
         case .fantom_testnet: return R.string.localizable.blockchainFantomTest()
         case .avalanche: return R.string.localizable.blockchainAvalanche()
@@ -46,6 +44,8 @@ extension RPCServer {
         case .ioTeXTestnet: return "IoTeX Testnet"
         case .optimismGoerli: return "Optimism Goerli"
         case .arbitrumGoerli: return "Arbitrum Goerli"
+        case .okx: return "OKXChain Mainnet"
+        case .sepolia: return "Sepolia"
         }
     }
 
@@ -53,13 +53,11 @@ extension RPCServer {
         switch self {
         case .main: return R.image.eth()
         case .xDai: return R.image.xDai()
-        case .poa: return R.image.tokenPoa()
         case .classic: return R.image.tokenEtc()
         case .callisto: return R.image.tokenCallisto()
-        case .artis_sigma1: return R.image.tokenArtis()
         case .binance_smart_chain: return R.image.tokenBnb()
         case .cronosMainnet: return R.image.cronos()
-        case .goerli, .artis_tau1, .binance_smart_chain_testnet, .cronosTestnet, .custom: return nil
+        case .goerli, .binance_smart_chain_testnet, .cronosTestnet, .custom: return nil
         case .heco: return R.image.hthecoMainnet()
         case .heco_testnet: return R.image.hthecoTestnet()
         case .fantom, .fantom_testnet: return R.image.iconsTokensFantom()
@@ -75,6 +73,8 @@ extension RPCServer {
         case .ioTeXTestnet: return R.image.ioTeXTestnet()
         case .optimismGoerli: return nil
         case .arbitrumGoerli: return nil
+        case .okx: return R.image.okc_logo()
+        case .sepolia: return R.image.sepolia()
         }
     }
 
@@ -83,11 +83,8 @@ extension RPCServer {
         case .main: return Configuration.Color.Semantic.blockChainMain
         case .classic: return Configuration.Color.Semantic.blockChainClassic
         case .callisto: return Configuration.Color.Semantic.blockChainCallisto
-        case .poa: return Configuration.Color.Semantic.blockChainPoa
         case .goerli: return Configuration.Color.Semantic.blockChainGoerli
         case .xDai: return Configuration.Color.Semantic.blockChainXDai
-        case .artis_sigma1: return Configuration.Color.Semantic.blockChainArtisSigma1
-        case .artis_tau1: return Configuration.Color.Semantic.blockChainArtisTau1
         case .binance_smart_chain, .binance_smart_chain_testnet: return Configuration.Color.Semantic.blockChainBinanceSmartChain
         case .heco, .heco_testnet: return Configuration.Color.Semantic.blockChainHeco
         case .fantom: return Configuration.Color.Semantic.blockChainFantom
@@ -108,6 +105,8 @@ extension RPCServer {
         case .optimismGoerli: return Configuration.Color.Semantic.blockChainOptimismGoerli
         case .arbitrumGoerli: return Configuration.Color.Semantic.blockChainArbitrumGoerli
         case .custom: return Configuration.Color.Semantic.blockChainCustom
+        case .okx: return Configuration.Color.Semantic.blockChainOkx
+        case .sepolia: return Configuration.Color.Semantic.blockChainSepolia
         }
     }
 
@@ -115,12 +114,10 @@ extension RPCServer {
         switch self {
         case .main: return R.image.iconsNetworkEth()
         case .xDai: return R.image.iconsNetworkXdai()
-        case .poa: return R.image.iconsNetworkPoa()
         case .classic: return nil
         case .callisto: return R.image.iconsNetworkCallisto()
-        case .artis_sigma1: return nil
         case .binance_smart_chain: return R.image.iconsNetworkBsc()
-        case .goerli, .artis_tau1, .binance_smart_chain_testnet, .cronosTestnet, .custom: return nil
+        case .goerli, .binance_smart_chain_testnet, .cronosTestnet, .custom: return nil
         case .heco, .heco_testnet: return R.image.iconsNetworkHeco()
         case .cronosMainnet: return R.image.iconsNetworkCronos()
         case .fantom, .fantom_testnet: return R.image.iconsNetworkFantom()
@@ -136,6 +133,8 @@ extension RPCServer {
         case .ioTeXTestnet: return R.image.ioTeXTestnet()
         case .optimismGoerli: return nil
         case .arbitrumGoerli: return nil
+        case .okx: return R.image.okc_logo()
+        case .sepolia: return R.image.sepolia()
         }
     }
 }

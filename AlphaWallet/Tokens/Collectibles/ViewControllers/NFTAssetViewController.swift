@@ -25,8 +25,10 @@ class NFTAssetViewController: UIViewController, TokenVerifiableStatusViewControl
     private lazy var attributesStackView = GridStackView(viewModel: .init(edgeInsets: .init(top: 0, left: 16, bottom: 15, right: 16)))
     private var cancelable = Set<AnyCancellable>()
     private let appear = PassthroughSubject<Void, Never>()
-
+    private let action = PassthroughSubject<TokenInstanceAction, Never>()
+    private let selection = PassthroughSubject<IndexPath, Never>()
     private let viewModel: NFTAssetViewModel
+
     var server: RPCServer {
         return viewModel.token.server
     }
@@ -40,7 +42,12 @@ class NFTAssetViewController: UIViewController, TokenVerifiableStatusViewControl
 
     init(viewModel: NFTAssetViewModel, tokenCardViewFactory: TokenCardViewFactory) {
         self.viewModel = viewModel
-        self.previewView = tokenCardViewFactory.createPreview(of: viewModel.previewViewType, session: viewModel.session, edgeInsets: viewModel.previewEdgeInsets, playButtonPositioning: .bottomRight)
+        self.previewView = tokenCardViewFactory.createPreview(
+            of: viewModel.previewViewType,
+            session: viewModel.session,
+            edgeInsets: viewModel.previewEdgeInsets,
+            playButtonPositioning: .bottomRight)
+        
         self.previewView.rounding = .custom(20)
         self.previewView.contentMode = .scaleAspectFill
         super.init(nibName: nil, bundle: nil)
@@ -89,68 +96,87 @@ class NFTAssetViewController: UIViewController, TokenVerifiableStatusViewControl
     override func viewDidLoad() {
         super.viewDidLoad()
 
+        view.backgroundColor = Configuration.Color.Semantic.defaultViewBackground
+        containerView.backgroundColor = Configuration.Color.Semantic.defaultViewBackground
+        updateNavigationRightBarButtons(withTokenScriptFileStatus: tokenScriptFileStatus)
+
         bind(viewModel: viewModel)
     }
 
     private func bind(viewModel: NFTAssetViewModel) {
-        view.backgroundColor = viewModel.backgroundColor
-        containerView.backgroundColor = viewModel.backgroundColor
-        updateNavigationRightBarButtons(withTokenScriptFileStatus: tokenScriptFileStatus)
         title = viewModel.title
 
-        let input = NFTAssetViewModelInput(appear: appear.eraseToAnyPublisher())
+        let input = NFTAssetViewModelInput(
+            appear: appear.eraseToAnyPublisher(),
+            action: action.eraseToAnyPublisher(),
+            selection: selection.eraseToAnyPublisher())
+
         let output = viewModel.transform(input: input)
 
-        output.state.sink { [weak self, weak previewView] state in
-            self?.title = state.title
-            previewView?.configure(params: state.previewViewParams)
-            previewView?.contentBackgroundColor = state.previewViewContentBackgroundColor
-            self?.generateSubviews(for: state.viewTypes)
-            self?.configureActionButtons(with: state.actions)
-        }.store(in: &cancelable)
+        output.state
+            .sink { [weak self, weak previewView] state in
+                self?.title = state.title
+                previewView?.configure(params: state.previewViewParams)
+                previewView?.contentBackgroundColor = state.previewViewContentBackgroundColor
+                self?.generateSubviews(for: state.viewTypes)
+                self?.configureActionButtons(state.actionButtons)
+            }.store(in: &cancelable)
+
+        output.nftAssetAction
+            .sink { [weak self] in self?.handle(action: $0) }
+            .store(in: &cancelable)
+
+        output.attributeSelectionAction
+            .sink { [weak self] in self?.handle(attributeSelectionAction: $0) }
+            .store(in: &cancelable)
     }
 
-    private func configureActionButtons(with actions: [TokenInstanceAction]) {
-        buttonsBar.configure(.combined(buttons: actions.count))
-        buttonsBar.viewController = self
-
-        for (action, button) in zip(actions, buttonsBar.buttons) {
-            button.setTitle(action.name, for: .normal)
-            button.addTarget(self, action: #selector(actionButtonTapped), for: .touchUpInside)
-
-            switch viewModel.buttonState(for: action) {
-            case .isEnabled(let isEnabled):
-                button.isEnabled = isEnabled
-            case .isDisplayed(let isDisplayed):
-                button.displayButton = isDisplayed
-            case .noOption:
-                continue
-            }
+    private func handle(attributeSelectionAction action: NFTAssetViewModel.AttributeSelectionAction) {
+        switch action {
+        case .openContractWebPage(let url):
+            delegate?.didPressViewContractWebPage(url, in: self)
+        case .showCopiedToClipboard(let title):
+            self.view.showCopiedToClipboard(title: title)
         }
     }
 
-    @objc private func actionButtonTapped(sender: UIButton) {
-        let actions = viewModel.actions
-        for (action, button) in zip(actions, buttonsBar.buttons) where button == sender {
-            switch action.type {
-            case .nftRedeem:
-                delegate?.didPressRedeem(token: viewModel.token, tokenHolder: viewModel.tokenHolder, in: self)
-            case .nftSell:
-                delegate?.didPressSell(tokenHolder: viewModel.tokenHolder, in: self)
-            case .erc20Send, .erc20Receive, .swap, .buy, .bridge:
-                //TODO when we support TokenScript views for ERC20s, we need to perform the action here
-                break
-            case .nonFungibleTransfer:
-                delegate?.didPressTransfer(token: viewModel.token, tokenHolder: viewModel.tokenHolder, paymentFlow: .send(type: .transaction(viewModel.transferTransactionType)), in: self)
-            case .tokenScript:
-                if let message = viewModel.tokenScriptWarningMessage(for: action) {
-                    guard case .warning(let denialMessage) = message else { return }
-                    UIAlertController.alert(message: denialMessage, alertButtonTitles: [R.string.localizable.oK()], alertButtonStyles: [.default], viewController: self)
-                } else {
-                    delegate?.didTap(action: action, tokenHolder: viewModel.tokenHolder, viewController: self)
-                }
+    private func handle(action: NFTAssetViewModel.NftAssetAction) {
+        switch action {
+        case .redeem(let token, let tokenHolder):
+            delegate?.didPressRedeem(token: token, tokenHolder: tokenHolder, in: self)
+        case .sell(let tokenHolder):
+            delegate?.didPressSell(tokenHolder: tokenHolder, in: self)
+        case .transfer(let token, let tokenHolder, let transactionType):
+            delegate?.didPressTransfer(token: token, tokenHolder: tokenHolder, paymentFlow: .send(type: .transaction(transactionType)), in: self)
+        case .display(let warning):
+            UIAlertController.alert(message: warning, alertButtonTitles: [R.string.localizable.oK()], alertButtonStyles: [.default], viewController: self)
+        case .tokenScript(let action, let tokenHolder):
+            delegate?.didTap(action: action, tokenHolder: tokenHolder, viewController: self)
+        }
+    }
+
+    private func configureActionButtons(_ buttons: [FungibleTokenDetailsViewModel.ActionButton]) {
+        buttonsBar.cancellable.cancellAll()
+
+        buttonsBar.configure(.combined(buttons: buttons.count))
+        buttonsBar.viewController = self
+
+        for (button, view) in zip(buttons, buttonsBar.buttons) {
+            view.setTitle(button.name, for: .normal)
+            view.publisher(forEvent: .touchUpInside)
+                .map { _ in button.actionType }
+                .multicast(subject: action)
+                .connect()
+                .store(in: &buttonsBar.cancellable)
+
+            switch button.state {
+            case .isEnabled(let isEnabled):
+                view.isEnabled = isEnabled
+            case .isDisplayed(let isDisplayed):
+                view.displayButton = isDisplayed
+            case .noOption:
+                continue
             }
-            break
         }
     }
 
@@ -204,21 +230,6 @@ extension NFTAssetViewController: VerifiableStatusViewController {
 
 extension NFTAssetViewController: TokenAttributeViewDelegate {
     func didSelect(in view: TokenAttributeView) {
-        switch viewModel.viewTypes[view.indexPath.row] {
-        case .field(let vm) where viewModel.tokenIdViewModel == vm:
-            UIPasteboard.general.string = vm.value
-
-            self.view.showCopiedToClipboard(title: R.string.localizable.copiedToClipboard())
-        case .field(let vm) where viewModel.creatorViewModel == vm:
-            guard let url = viewModel.creatorOnOpenSeaUrl else { return }
-
-            delegate?.didPressViewContractWebPage(url, in: self)
-        case .field(let vm) where viewModel.contractViewModel == vm:
-            guard let url = viewModel.contractOnExplorerUrl else { return }
-
-            delegate?.didPressViewContractWebPage(url, in: self)
-        case .header, .field, .attributeCollection:
-            break
-        }
+        selection.send(view.indexPath)
     }
 }

@@ -22,7 +22,7 @@ final class FungibleTokenHeaderViewModel {
     private var headerRefreshTimer: Timer?
     private let token: Token
     private var isShowingValueSubject: CurrentValueSubject<Bool, Never> = .init(true)
-    private let tokensService: TokenViewModelState
+    private let tokensService: TokensProcessingPipeline
     private var cancelable = Set<AnyCancellable>()
     private let tokenImageFetcher: TokenImageFetcher
 
@@ -36,7 +36,7 @@ final class FungibleTokenHeaderViewModel {
     }
 
     init(token: Token,
-         tokensService: TokenViewModelState,
+         tokensService: TokensProcessingPipeline,
          tokenImageFetcher: TokenImageFetcher) {
 
         self.tokenImageFetcher = tokenImageFetcher
@@ -125,7 +125,7 @@ final class FungibleTokenHeaderViewModel {
 }
 
 extension FungibleTokenHeaderViewModel {
-    struct functional {}
+    enum functional {}
     struct ViewState {
         let title: NSAttributedString
         let value: NSAttributedString
@@ -187,7 +187,7 @@ extension FungibleTokenHeaderViewModel.functional {
     private static func priceChange(for balance: BalanceViewModel) -> String? {
         guard let ticker = balance.ticker else { return nil }
 
-        let formatter = NumberFormatter.priceChange(currency: ticker.currency)
+        let formatter = NumberFormatter.percent
         switch TickerHelper(ticker: ticker).change24h {
         case .appreciate(let percentageChange24h):
             return "(\(formatter.string(double: percentageChange24h) ?? "")%)"

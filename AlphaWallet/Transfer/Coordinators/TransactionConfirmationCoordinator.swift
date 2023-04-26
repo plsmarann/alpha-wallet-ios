@@ -10,6 +10,7 @@ import BigInt
 import PromiseKit
 import AlphaWalletFoundation
 import AlphaWalletLogger
+import Combine
 
 protocol TransactionConfirmationCoordinatorDelegate: CanOpenURL, SendTransactionDelegate, BuyCryptoDelegate {
     func didFinish(_ result: ConfirmResult, in coordinator: TransactionConfirmationCoordinator)
@@ -21,9 +22,15 @@ class TransactionConfirmationCoordinator: Coordinator {
     private let configuration: TransactionType.Configuration
 
     private lazy var rootViewController: TransactionConfirmationViewController = {
-        let viewModel = TransactionConfirmationViewModel(configurator: configurator, configuration: configuration, assetDefinitionStore: assetDefinitionStore, domainResolutionService: domainResolutionService, tokensService: tokensService)
+        let viewModel = TransactionConfirmationViewModel.buildViewModel(
+            configurator: configurator,
+            configuration: configuration,
+            domainResolutionService: domainResolutionService,
+            tokensService: tokensService)
+
         let controller = TransactionConfirmationViewController(viewModel: viewModel)
         controller.delegate = self
+        
         return controller
     }()
     private lazy var hostViewController: FloatingPanelController = {
@@ -43,16 +50,30 @@ class TransactionConfirmationCoordinator: Coordinator {
     private var server: RPCServer { configurator.session.server }
     private let navigationController: UIViewController
     private let keystore: Keystore
-    private let assetDefinitionStore: AssetDefinitionStore
-    private let tokensService: TokenViewModelState
+    private let tokensService: TokensProcessingPipeline
+    private var cancellable = Set<AnyCancellable>()
 
     var coordinators: [Coordinator] = []
     weak var delegate: TransactionConfirmationCoordinatorDelegate?
 
-    init(presentingViewController: UIViewController, session: WalletSession, transaction: UnconfirmedTransaction, configuration: TransactionType.Configuration, analytics: AnalyticsLogger, domainResolutionService: DomainResolutionServiceType, keystore: Keystore, assetDefinitionStore: AssetDefinitionStore, tokensService: TokenViewModelState, networkService: NetworkService) {
-        configurator = TransactionConfigurator(session: session, analytics: analytics, transaction: transaction, networkService: networkService)
+    init(presentingViewController: UIViewController,
+         session: WalletSession,
+         transaction: UnconfirmedTransaction,
+         configuration: TransactionType.Configuration,
+         analytics: AnalyticsLogger,
+         domainResolutionService: DomainResolutionServiceType,
+         keystore: Keystore,
+         tokensService: TokensProcessingPipeline,
+         networkService: NetworkService) {
+
+        configurator = TransactionConfigurator(
+            session: session,
+            transaction: transaction,
+            networkService: networkService,
+            tokensService: tokensService,
+            configuration: configuration)
+
         self.keystore = keystore
-        self.assetDefinitionStore = assetDefinitionStore
         self.configuration = configuration
         self.analytics = analytics
         self.domainResolutionService = domainResolutionService
@@ -64,7 +85,6 @@ class TransactionConfirmationCoordinator: Coordinator {
         let presenter = UIApplication.shared.presentedViewController(or: navigationController)
         presenter.present(hostViewController, animated: true)
 
-        configurator.delegate = self
         configurator.start()
 
         logStartActionSheetForTransactionConfirmation(source: source)
@@ -127,34 +147,35 @@ extension TransactionConfirmationCoordinator: TransactionConfirmationViewControl
         canBeDismissed = false
         rootViewController.set(state: .pending)
 
-        firstly { () -> Promise<ConfirmResult> in
-            return sendTransaction()
-        }.done { result in
-            self.handleSendTransactionSuccessfully(result: result)
-            self.logCompleteActionSheetForTransactionConfirmationSuccessfully()
-        }.catch { error in
-            self.logActionSheetForTransactionConfirmationFailed()
-            //TODO remove delay which is currently needed because the starting animation may not have completed and internal state (whether animation is running) is in correct
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
-                self.rootViewController.set(state: .done(withError: true)) {
-                    self.handleSendTransactionError(error)
+        Task { @MainActor in
+            do {
+                let result = try await sendTransaction()
+                handleSendTransactionSuccessfully(result: result)
+                logCompleteActionSheetForTransactionConfirmationSuccessfully()
+            } catch {
+                logActionSheetForTransactionConfirmationFailed()
+                //TODO remove delay which is currently needed because the starting animation may not have completed and internal state (whether animation is running) is in correct
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                    self.rootViewController.set(state: .done(withError: true)) {
+                        self.handleSendTransactionError(error)
+                    }
                 }
             }
-        }.finally {
+
             sender.isEnabled = true
             self.canBeDismissed = true
-        }
+        }.store(in: &cancellable)
     }
 
-    private func sendTransaction() -> Promise<ConfirmResult> {
+    private func sendTransaction() async throws -> ConfirmResult {
         let prompt = R.string.localizable.keystoreAccessKeySign()
         let sender = SendTransaction(session: configurator.session, keystore: keystore, confirmType: configuration.confirmType, config: configurator.session.config, analytics: analytics, prompt: prompt)
         let transaction = configurator.formUnsignedTransaction()
         infoLog("[TransactionConfirmation] form unsigned transaction: \(transaction)")
         if configurator.session.config.development.shouldNotSendTransactions {
-            return Promise(error: DevelopmentForcedError(message: "Did not send transaction because of development flag"))
+            throw DevelopmentForcedError(message: "Did not send transaction because of development flag")
         } else {
-            return sender.send(transaction: transaction)
+            return try await sender.send(transaction: transaction)
         }
     }
 
@@ -197,8 +218,14 @@ extension TransactionConfirmationCoordinator: TransactionConfirmationViewControl
         showConfigureTransactionViewController(configurator)
     }
 
-    private func showConfigureTransactionViewController(_ configurator: TransactionConfigurator, recoveryMode: ConfigureTransactionViewModel.RecoveryMode = .none) {
-        let controller = ConfigureTransactionViewController(viewModel: .init(configurator: configurator, recoveryMode: recoveryMode, service: tokensService))
+    private func showConfigureTransactionViewController(_ configurator: TransactionConfigurator,
+                                                        recoveryMode: EditTransactionViewModel.RecoveryMode = .none) {
+        let viewModel = ConfigureTransactionViewModel(
+            configurator: configurator,
+            recoveryMode: recoveryMode,
+            service: tokensService)
+
+        let controller = ConfigureTransactionViewController(viewModel: viewModel)
         controller.delegate = self
 
         let navigationController = NavigationController(rootViewController: controller)
@@ -216,42 +243,9 @@ extension TransactionConfirmationCoordinator: TransactionConfirmationViewControl
 }
 
 extension TransactionConfirmationCoordinator: ConfigureTransactionViewControllerDelegate {
-    func didSavedToUseDefaultConfigurationType(_ configurationType: TransactionConfigurationType, in viewController: ConfigureTransactionViewController) {
-        configurator.chooseDefaultConfigurationType(configurationType)
+
+    func didSaved(in viewController: ConfigureTransactionViewController) {
         viewController.navigationController?.dismiss(animated: true)
-    }
-
-    func didSaved(customConfiguration: TransactionConfiguration, in viewController: ConfigureTransactionViewController) {
-        configurator.chooseCustomConfiguration(customConfiguration)
-        viewController.navigationController?.dismiss(animated: true)
-    }
-}
-
-extension TransactionConfirmationCoordinator: TransactionConfiguratorDelegate {
-    func configurationChanged(in configurator: TransactionConfigurator) {
-        //TODO: improve these few time view updates
-        rootViewController.viewModel.reloadView()
-        rootViewController.viewModel.updateBalance()
-    }
-
-    func gasLimitEstimateUpdated(to estimate: BigUInt, in configurator: TransactionConfigurator) {
-        configureTransactionViewController?.configure(withEstimatedGasLimit: estimate, configurator: configurator)
-
-        //TODO: improve these few time view updates
-        rootViewController.viewModel.reloadViewWithGasChanges()
-        rootViewController.viewModel.updateBalance()
-    }
-
-    func gasPriceEstimateUpdated(to estimate: BigUInt, in configurator: TransactionConfigurator) {
-        configureTransactionViewController?.configure(withEstimatedGasPrice: estimate, configurator: configurator)
-
-        //TODO: improve these few time view updates
-        rootViewController.viewModel.reloadViewWithGasChanges()
-        rootViewController.viewModel.updateBalance()
-    }
-
-    func updateNonce(to nonce: Int, in configurator: TransactionConfigurator) {
-        configureTransactionViewController?.configure(nonce: nonce, configurator: configurator)
     }
 }
 
@@ -259,7 +253,7 @@ extension TransactionConfirmationCoordinator: TransactionConfiguratorDelegate {
 extension TransactionConfirmationCoordinator {
     private func logCompleteActionSheetForTransactionConfirmationSuccessfully() {
         let speedType: Analytics.TransactionConfirmationSpeedType
-        switch configurator.selectedConfigurationType {
+        switch configurator.selectedGasSpeed {
         case .slow:
             speedType = .slow
         case .standard:
@@ -272,7 +266,7 @@ extension TransactionConfirmationCoordinator {
             speedType = .custom
         }
 
-        let transactionType: Analytics.TransactionType = functional.analyticsTransactionType(fromConfiguration: configuration, data: configurator.currentConfiguration.data)
+        let transactionType: Analytics.TransactionType = functional.analyticsTransactionType(fromConfiguration: configuration, data: configurator.data)
         let overridingRpcUrl: URL? = configurator.session.config.sendPrivateTransactionsProvider?.rpcUrl(forServer: configurator.session.server)
         let privateNetworkProvider: SendPrivateTransactionsProvider?
         if overridingRpcUrl == nil {
@@ -320,7 +314,7 @@ extension TransactionConfirmationCoordinator {
     }
 
     private func logStartActionSheetForTransactionConfirmation(source: Analytics.TransactionConfirmationSource) {
-        let transactionType: Analytics.TransactionType = functional.analyticsTransactionType(fromConfiguration: configuration, data: configurator.currentConfiguration.data)
+        let transactionType: Analytics.TransactionType = functional.analyticsTransactionType(fromConfiguration: configuration, data: configurator.data)
         var analyticsProperties: [String: AnalyticsEventPropertyValue] = [
             Analytics.Properties.source.rawValue: source.rawValue,
             Analytics.Properties.chain.rawValue: server.chainID,

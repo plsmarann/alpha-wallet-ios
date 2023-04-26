@@ -3,14 +3,13 @@
 import Foundation
 import BigInt
 import Kanna
-import PromiseKit
 
 public enum FunctionError: LocalizedError {
     case formPayload
     case formValue
     case postTransaction
 
-    var localizedDescription: String {
+    public var errorDescription: String? {
         switch self {
         case .formPayload:
             return "Impossible To Build Configuration! Form Payload missing"
@@ -165,7 +164,7 @@ public struct FunctionOrigin {
                 output: functionType.output,
                 assetAttributeProvider: assetAttributeProvider) else { return nil }
         let resultSubscribable = Subscribable<AssetInternalValue>(nil)
-        subscribable.subscribe { value in
+        subscribable.sinkAsync { value in
             guard let value = value else { return }
             if let bitmask = self.bitmask {
                 resultSubscribable.send(self.castReturnValue(value: value, bitmask: bitmask))

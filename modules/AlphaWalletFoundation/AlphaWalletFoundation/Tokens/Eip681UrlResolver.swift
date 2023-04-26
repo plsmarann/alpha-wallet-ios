@@ -2,7 +2,6 @@
 
 import Foundation
 import BigInt
-import PromiseKit
 import Combine
 
 // TODO: prepare tests for Eip681UrlResolver
@@ -18,16 +17,13 @@ public final class Eip681UrlResolver {
         case fallbackToPreffered(RPCServer)
     }
 
-    private let config: Config
     private let sessionsProvider: SessionsProvider
     private let missingRPCServerStrategy: MissingRpcServerStrategy
 
-    public init(config: Config,
-                sessionsProvider: SessionsProvider,
+    public init(sessionsProvider: SessionsProvider,
                 missingRPCServerStrategy: MissingRpcServerStrategy) {
 
         self.sessionsProvider = sessionsProvider
-        self.config = config
         self.missingRPCServerStrategy = missingRPCServerStrategy
     }
 
@@ -79,10 +75,13 @@ public final class Eip681UrlResolver {
         } else {
             switch missingRPCServerStrategy {
             case .fallbackToAnyMatching:
-                return serverInLink ?? config.anyEnabledServer()
+                let enabledServers = sessionsProvider.activeSessions.map { $0.key }
+
+                return serverInLink ?? (enabledServers.contains(.main) ? RPCServer.main : enabledServers.first)
             case .fallbackToFirstMatching:
                 //Specs https://eips.ethereum.org/EIPS/eip-681 says we should fallback to the current chainId, but since we support multiple chains at the same time, we only fallback if there is exactly 1 enabled network
-                return config.enabledServers.count == 1 ? config.enabledServers[0] : nil
+                let enabledServers = sessionsProvider.activeSessions.map { $0.key }
+                return enabledServers.count == 1 ? enabledServers[0] : nil
             case .fallbackToPreffered(let server):
                 return server
             }
@@ -140,15 +139,31 @@ extension Decimal {
         self.init(bigUInt: bigUInt, decimals: units.decimals)
     }
 
+    public init(bigUInt: BigUInt, units: EthereumUnit, fallback: Double) {
+        if let significand = Decimal(string: bigUInt.description, locale: .en_US) {
+            self.init(sign: .plus, exponent: -units.decimals, significand: significand)
+        } else {
+            self.init(double: fallback)
+        }
+    }
+
     public init?(bigInt: BigInt, units: EthereumUnit) {
         self.init(bigInt: bigInt, decimals: units.decimals)
     }
 
-    public init?(bigUInt: BigUInt, decimals: Int) {
+    public init?(bigUInt: BigUInt, decimals: Int = 0) {
         guard let significand = Decimal(string: bigUInt.description, locale: .en_US) else {
             return nil
         }
         self.init(sign: .plus, exponent: -decimals, significand: significand)
+    }
+
+    public init(bigUInt: BigUInt, decimals: Int = 0, fallback: Double) {
+        if let significand = Decimal(string: bigUInt.description, locale: .en_US) {
+            self.init(sign: .plus, exponent: -decimals, significand: significand)
+        } else {
+            self.init(double: fallback)
+        }
     }
 
     public init(double: Double) {
@@ -178,11 +193,11 @@ extension Decimal {
         toBigUInt(decimals: units.decimals)
     }
 
-    public func toBigInt(decimals: Int) -> BigInt? {
+    public func toBigInt(decimals: Int = 0) -> BigInt? {
         return BigInt(roundedString(decimal: decimals))
     }
 
-    public func toBigUInt(decimals: Int) -> BigUInt? {
+    public func toBigUInt(decimals: Int = 0) -> BigUInt? {
         return toBigInt(decimals: decimals).flatMap { BigUInt($0) }
     }
 

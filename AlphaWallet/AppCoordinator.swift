@@ -2,7 +2,6 @@
 
 import Combine
 import UIKit
-import PromiseKit
 import AlphaWalletAddress
 import AlphaWalletCore
 import AlphaWalletFoundation
@@ -46,7 +45,12 @@ class AppCoordinator: NSObject, Coordinator {
 
     private let analytics: AnalyticsServiceType
 
-    private let restartQueue = RestartTaskQueue()
+    private lazy var restartHandler: RestartQueueHandler = {
+        return RestartQueueHandler(
+            serversProvider: serversProvider,
+            restartQueue: RestartTaskQueue())
+    }()
+
     let navigationController: UINavigationController
     var coordinators: [Coordinator] = []
     var activeWalletCoordinator: ActiveWalletCoordinator? {
@@ -54,7 +58,10 @@ class AppCoordinator: NSObject, Coordinator {
     }
 
     private lazy var currencyService = CurrencyService(storage: config)
-    private lazy var coinTickersFetcher: CoinTickersFetcher = CoinTickersFetcherImpl(networkService: networkService)
+    private lazy var coinTickersFetcher: CoinTickersFetcher = CoinTickersFetcherImpl(
+        transporter: BaseApiTransporter(),
+        analytics: analytics)
+    
     private let dependencies: AtomicDictionary<Wallet, WalletDependencies> = .init()
     private lazy var walletBalanceService = MultiWalletBalanceService(currencyService: currencyService)
     private var pendingActiveWalletCoordinator: ActiveWalletCoordinator?
@@ -80,9 +87,8 @@ class AppCoordinator: NSObject, Coordinator {
         TokenSwapper(
             reachabilityManager: ReachabilityManager(),
             serversProvider: serversProvider,
-            networkProvider: LiQuestTokenSwapperNetworkProvider(networkService: networkService),
-            analyticsLogger: analytics
-        )
+            networking: LiQuestTokenSwapperNetworking(networkService: networkService),
+            analyticsLogger: analytics)
     }()
     private lazy var tokenActionsService: TokenActionsService = {
         let service = TokenActionsService()
@@ -110,11 +116,11 @@ class AppCoordinator: NSObject, Coordinator {
 
         return service
     }()
-    private lazy var serversProvidable: ServersProvidable = {
+    private lazy var serversProvider: ServersProvidable = {
         BaseServersProvider(config: config)
     }()
     private lazy var caip10AccountProvidable: CAIP10AccountProvidable = {
-        AnyCAIP10AccountProvidable(keystore: keystore, serversProvidable: serversProvidable)
+        AnyCAIP10AccountProvidable(keystore: keystore, serversProvidable: serversProvider)
     }()
 
     private lazy var walletConnectProvider: WalletConnectProvider = {
@@ -134,7 +140,7 @@ class AppCoordinator: NSObject, Coordinator {
         let v2Provider = WalletConnectV2Provider(
             caip10AccountProvidable: caip10AccountProvidable,
             storage: WalletConnectV2Storage(),
-            config: config,
+            serversProvider: serversProvider,
             decoder: decoder,
             client: WalletConnectV2NativeClient())
 
@@ -154,7 +160,9 @@ class AppCoordinator: NSObject, Coordinator {
             assetDefinitionStore: assetDefinitionStore,
             networkService: networkService,
             walletConnectProvider: walletConnectProvider,
-            dependencies: dependencies)
+            dependencies: dependencies,
+            restartHandler: restartHandler,
+            serversProvider: serversProvider)
 
         return coordinator
     }()
@@ -179,7 +187,11 @@ class AppCoordinator: NSObject, Coordinator {
         let coordinator = WalletApiCoordinator(
             keystore: keystore,
             navigationController: navigationController,
-            analytics: analytics)
+            analytics: analytics,
+            config: config,
+            restartHandler: restartHandler,
+            networkService: networkService,
+            serversProvider: serversProvider)
 
         coordinator.delegate = self
 
@@ -200,8 +212,7 @@ class AppCoordinator: NSObject, Coordinator {
     private lazy var blockchainFactory: BlockchainFactory = {
         return BaseBlockchainFactory(
             config: config,
-            analytics: analytics,
-            networkService: networkService)
+            analytics: analytics)
     }()
 
     private lazy var blockchainsProvider: BlockchainsProvider = {
@@ -213,10 +224,13 @@ class AppCoordinator: NSObject, Coordinator {
     private let securedStorage: SecuredPasswordStorage & SecuredStorage
     private let addressStorage: FileAddressStorage
     private let tokenScriptOverridesFileManager = TokenScriptOverridesFileManager()
-    private lazy var serversProvider: ServersProvidable = {
-        BaseServersProvider(config: config)
-    }()
-    private let tokenImageFetcher: TokenImageFetcher = TokenImageFetcherImpl(networking: KingfisherImageFetcher())
+    private let apiTransporterFactory = ApiTransporterFactory()
+    private lazy var tokenImageFetcher: TokenImageFetcher = TokenImageFetcherImpl(
+        networking: KingfisherImageFetcher(),
+        tokenGroupIdentifier: tokenGroupIdentifier,
+        spamImage: R.image.spamSmall()!)
+
+    private let tokenGroupIdentifier: TokenGroupIdentifierProtocol = TokenGroupIdentifier.identifier(tokenJsonUrl: R.file.tokensJson()!)!
 
     //Unfortunate to have to have a factory method and not be able to use an initializer (because we can't override `init()` to throw)
     static func create() throws -> AppCoordinator {
@@ -233,7 +247,8 @@ class AppCoordinator: NSObject, Coordinator {
             keychain: securedStorage,
             walletAddressesStore: walletAddressesStore,
             analytics: analytics,
-            legacyFileBasedKeystore: legacyFileBasedKeystore)
+            legacyFileBasedKeystore: legacyFileBasedKeystore,
+            hardwareWalletFactory: BCHardwareWalletCreator())
 
         let navigationController: UINavigationController = .withOverridenBarAppearence()
         navigationController.view.backgroundColor = Configuration.Color.Semantic.defaultViewBackground
@@ -282,23 +297,24 @@ class AppCoordinator: NSObject, Coordinator {
 
     private func bindWalletAddressesStore() {
         keystore.didRemoveWallet
-            .sink { [config, legacyFileBasedKeystore, promptBackup] account in
+            .sink { [serversProvider, legacyFileBasedKeystore, promptBackup] account in
 
                 //TODO: pass ref
                 FileWalletStorage().addOrUpdate(name: nil, for: account.address)
                 promptBackup.deleteWallet(wallet: account)
-                TransactionsTracker.resetFetchingState(account: account, config: config)
+                //TODO: make same as WalletConfig
+                TransactionsTracker.resetFetchingState(account: account, serversProvider: serversProvider)
                 Erc1155TokenIdsFetcher.deleteForWallet(account.address)
                 DatabaseMigration.addToDeleteList(address: account.address)
                 legacyFileBasedKeystore.delete(wallet: account)
-
+                WalletConfig(address: account.address).clear()
                 self.destroy(for: account)
             }.store(in: &cancelable)
 
         keystore.didAddWallet
             .sink { [promptBackup] in
                 switch $0.event {
-                case .new, .watch:
+                case .new, .watch, .hardware:
                     break
                 case .keystore, .mnemonic, .privateKey:
                     promptBackup.markWalletAsImported(wallet: $0.wallet)
@@ -441,7 +457,7 @@ class AppCoordinator: NSObject, Coordinator {
             config: config,
             appTracker: appTracker,
             analytics: analytics,
-            restartQueue: restartQueue,
+            restartHandler: restartHandler,
             universalLinkCoordinator: universalLinkService,
             accountsCoordinator: accountsCoordinator,
             walletBalanceService: walletBalanceService,
@@ -456,13 +472,15 @@ class AppCoordinator: NSObject, Coordinator {
             tokenCollection: dep.pipeline,
             transactionsDataStore: dep.transactionsDataStore,
             tokensService: dep.tokensService,
+            tokenGroupIdentifier: tokenGroupIdentifier,
             lock: lock,
             currencyService: currencyService,
             tokenScriptOverridesFileManager: tokenScriptOverridesFileManager,
             networkService: networkService,
             promptBackup: promptBackup,
             caip10AccountProvidable: caip10AccountProvidable,
-            tokenImageFetcher: tokenImageFetcher)
+            tokenImageFetcher: tokenImageFetcher,
+            serversProvider: serversProvider)
 
         coordinator.delegate = self
 
@@ -490,7 +508,8 @@ class AppCoordinator: NSObject, Coordinator {
     private func runServices() {
         services = [
             ReportUsersWalletAddresses(keystore: keystore),
-            ReportUsersActiveChains(config: config),
+            ReportUsersActiveChains(serversProvider: serversProvider),
+            MigrateToSupportEip1559Transactions(serversProvider: serversProvider, keychain: keystore)
         ]
         services.forEach { $0.perform() }
     }
@@ -587,7 +606,7 @@ class AppCoordinator: NSObject, Coordinator {
     private func buildDependencies(for wallet: Wallet) -> WalletDependencies {
         if let dep = dependencies[wallet] { return dep  }
 
-        let tokensDataStore: TokensDataStore = MultipleChainsTokensDataStore(store: .storage(for: wallet), servers: config.enabledServers)
+        let tokensDataStore: TokensDataStore = MultipleChainsTokensDataStore(store: .storage(for: wallet))
         let eventsDataStore: NonActivityEventsDataStore = NonActivityMultiChainEventsDataStore(store: .storage(for: wallet))
         let transactionsDataStore: TransactionDataStore = TransactionDataStore(store: .storage(for: wallet))
         let eventsActivityDataStore: EventsActivityDataStoreProtocol = EventsActivityDataStore(store: .storage(for: wallet))
@@ -600,7 +619,8 @@ class AppCoordinator: NSObject, Coordinator {
             eventsDataStore: eventsDataStore,
             assetDefinitionStore: assetDefinitionStore,
             reachability: reachability,
-            wallet: wallet)
+            wallet: wallet,
+            apiTransporterFactory: apiTransporterFactory)
 
         sessionsProvider.start()
 
@@ -610,9 +630,9 @@ class AppCoordinator: NSObject, Coordinator {
             analytics: analytics,
             transactionsStorage: transactionsDataStore,
             assetDefinitionStore: assetDefinitionStore,
-            networkService: networkService)
+            transporter: BaseApiTransporter())
 
-        let pipeline: TokensProcessingPipeline = WalletDataProcessingPipeline(
+        let tokensPipeline: TokensProcessingPipeline = WalletDataProcessingPipeline(
             wallet: wallet,
             tokensService: tokensService,
             coinTickersFetcher: coinTickersFetcher,
@@ -621,9 +641,14 @@ class AppCoordinator: NSObject, Coordinator {
             currencyService: currencyService,
             sessionsProvider: sessionsProvider)
 
-        pipeline.start()
+        tokensPipeline.start()
 
-        let fetcher = WalletBalanceFetcher(wallet: wallet, tokensService: pipeline, currencyService: currencyService)
+        let fetcher = WalletBalanceFetcher(
+            wallet: wallet,
+            tokensPipeline: tokensPipeline,
+            currencyService: currencyService,
+            tokensService: tokensService)
+
         fetcher.start()
 
         let activitiesPipeLine = ActivitiesPipeLine(
@@ -641,11 +666,12 @@ class AppCoordinator: NSObject, Coordinator {
             transactionsDataStore: transactionsDataStore,
             tokensDataStore: tokensDataStore,
             tokensService: tokensService,
-            pipeline: pipeline,
+            pipeline: tokensPipeline,
             fetcher: fetcher,
             sessionsProvider: sessionsProvider,
             eventsDataStore: eventsDataStore,
-            currencyService: currencyService)
+            currencyService: currencyService,
+            coinTickersFetcher: coinTickersFetcher)
 
         dependencies[wallet] = dependency
 
@@ -744,7 +770,6 @@ extension AppCoordinator: UniversalLinkServiceDelegate {
             guard let wallet = keystore.currentWallet, let dependency = dependencies[wallet] else { return }
 
             let paymentFlowResolver = Eip681UrlResolver(
-                config: config,
                 sessionsProvider: dependency.sessionsProvider,
                 missingRPCServerStrategy: .fallbackToAnyMatching)
 
@@ -802,7 +827,11 @@ extension AppCoordinator: UniversalLinkServiceDelegate {
                     addCoordinator(coordinator)
                 }
             } else {
-                let coordinator = ServerUnavailableCoordinator(navigationController: navigationController, servers: [server])
+                let coordinator = ServerUnavailableCoordinator(
+                    navigationController: navigationController,
+                    disabledServers: [server],
+                    restartHandler: restartHandler)
+
                 coordinator.delegate = self
                 addCoordinator(coordinator)
                 coordinator.start()
@@ -818,8 +847,9 @@ extension AppCoordinator: UniversalLinkServiceDelegate {
 }
 
 extension AppCoordinator: ServerUnavailableCoordinatorDelegate {
-    func didDismiss(in coordinator: ServerUnavailableCoordinator) {
+    func didDismiss(in coordinator: ServerUnavailableCoordinator, result: Swift.Result<Void, Error>) {
         removeCoordinator(coordinator)
+        //TODO: update to retry operation again after enabling disabled servers
     }
 }
 
@@ -828,12 +858,13 @@ extension AppCoordinator {
         let activitiesPipeLine: ActivitiesPipeLine
         let transactionsDataStore: TransactionDataStore
         let tokensDataStore: TokensDataStore
-        let tokensService: DetectedContractsProvideble & TokenProvidable & TokenAddable & TokensServiceTests
+        let tokensService: TokensService
         let pipeline: TokensProcessingPipeline
         let fetcher: WalletBalanceFetcher
         let sessionsProvider: SessionsProvider
         let eventsDataStore: NonActivityEventsDataStore
         let currencyService: CurrencyService
+        let coinTickersFetcher: CoinTickersFetcher
     }
 }
 

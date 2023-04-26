@@ -31,7 +31,7 @@ class TokenScriptCoordinator: Coordinator {
     private var transactionConfirmationResult: ConfirmResult? = .none
     private let action: TokenInstanceAction
     private var cancelable = Set<AnyCancellable>()
-    private let tokensService: TokenViewModelState
+    private let tokensService: TokensProcessingPipeline
     private let networkService: NetworkService
 
     weak var delegate: TokenScriptCoordinatorDelegate?
@@ -47,7 +47,7 @@ class TokenScriptCoordinator: Coordinator {
          analytics: AnalyticsLogger,
          domainResolutionService: DomainResolutionServiceType,
          action: TokenInstanceAction,
-         tokensService: TokenViewModelState,
+         tokensService: TokensProcessingPipeline,
          networkService: NetworkService) {
 
         self.networkService = networkService
@@ -179,7 +179,7 @@ extension TokenScriptCoordinator: TransactionConfirmationCoordinatorDelegate {
     func coordinator(_ coordinator: TransactionConfirmationCoordinator, didFailTransaction error: Error) {
         UIApplication.shared
             .presentedViewController(or: navigationController)
-            .displayError(message: error.prettyError)
+            .displayError(message: error.localizedDescription)
     }
 
     func didClose(in coordinator: TransactionConfirmationCoordinator) {
@@ -240,7 +240,6 @@ extension TokenScriptCoordinator: ConfirmTokenScriptActionTransactionDelegate {
                 analytics: analytics,
                 domainResolutionService: domainResolutionService,
                 keystore: keystore,
-                assetDefinitionStore: assetDefinitionStore,
                 tokensService: tokensService,
                 networkService: networkService)
 
@@ -250,7 +249,7 @@ extension TokenScriptCoordinator: ConfirmTokenScriptActionTransactionDelegate {
         } catch {
             UIApplication.shared
                 .presentedViewController(or: navigationController)
-                .displayError(message: error.prettyError)
+                .displayError(message: error.localizedDescription)
         }
     }
 }

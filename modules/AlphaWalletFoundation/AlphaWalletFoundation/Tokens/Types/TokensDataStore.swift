@@ -15,15 +15,15 @@ public enum DataStoreError: Error {
 
 /// Multiple-chains tokens data store
 public protocol TokensDataStore: NSObjectProtocol {
-    func enabledTokensChangeset(for servers: [RPCServer]) -> AnyPublisher<ChangeSet<[Token]>, Never>
-    func enabledTokens(for servers: [RPCServer]) -> [Token]
+    func token(for contract: AlphaWallet.Address) -> Token?
+    func token(for contract: AlphaWallet.Address, server: RPCServer) -> Token?
+    func tokensChangesetPublisher(for servers: [RPCServer]) -> AnyPublisher<ChangeSet<[Token]>, Never>
+    func tokens(for servers: [RPCServer]) -> [Token]
     func tokenPublisher(for contract: AlphaWallet.Address, server: RPCServer) -> AnyPublisher<Token?, DataStoreError>
     func deletedContracts(forServer server: RPCServer) -> [AddressAndRPCServer]
     func delegateContracts(forServer server: RPCServer) -> [AddressAndRPCServer]
     func hiddenContracts(forServer server: RPCServer) -> [AddressAndRPCServer]
     func addEthToken(forServer server: RPCServer)
-    func token(forContract contract: AlphaWallet.Address) -> Token?
-    func token(forContract contract: AlphaWallet.Address, server: RPCServer) -> Token?
     func add(hiddenContracts: [AddressAndRPCServer])
     func deleteTestsOnly(tokens: [Token])
     func tokenBalancesTestsOnly() -> [TokenBalanceValue]
@@ -41,7 +41,7 @@ extension TokensDataStore {
     }
 
     func initialOrNewTokensPublisher(for servers: [RPCServer]) -> AnyPublisher<[Token], Never> {
-        return enabledTokensChangeset(for: servers)
+        return tokensChangesetPublisher(for: servers)
             .tryMap { changeset -> [Token] in
                 switch changeset {
                 case .initial(let tokens): return tokens
@@ -54,7 +54,7 @@ extension TokensDataStore {
     }
 
     func enabledTokensPublisher(for servers: [RPCServer]) -> AnyPublisher<[Token], Never> {
-        return enabledTokensChangeset(for: servers)
+        return tokensChangesetPublisher(for: servers)
             .map { changeset in
                   switch changeset {
                   case .initial(let tokens): return tokens
@@ -176,7 +176,7 @@ public enum NonFungibleBalance {
 }
 
 public enum TokenFieldUpdate {
-    case value(BigInt)
+    case value(BigUInt)
     case isDisabled(Bool)
     case nonFungibleBalance(NonFungibleBalance)
     case name(String)
@@ -190,18 +190,14 @@ public enum TokenFieldUpdate {
 open class MultipleChainsTokensDataStore: NSObject, TokensDataStore {
     private let store: RealmStore
 
-    public init(store: RealmStore, servers: [RPCServer]) {
+    public init(store: RealmStore) {
         self.store = store
         super.init()
-
-        for each in servers {
-            addEthToken(forServer: each)
-        }
 
         MultipleChainsTokensDataStore.functional.recreateMissingInfoTokenObjects(for: store)
     }
 
-    public func enabledTokensChangeset(for servers: [RPCServer]) -> AnyPublisher<ChangeSet<[Token]>, Never> {
+    public func tokensChangesetPublisher(for servers: [RPCServer]) -> AnyPublisher<ChangeSet<[Token]>, Never> {
         var publisher: AnyPublisher<ChangeSet<[Token]>, Never>!
         store.performSync { realm in
             publisher = self.enabledTokenObjectResults(forServers: servers, realm: realm)
@@ -260,7 +256,7 @@ open class MultipleChainsTokensDataStore: NSObject, TokensDataStore {
             }).eraseToAnyPublisher()
     }
 
-    public func enabledTokens(for servers: [RPCServer]) -> [Token] {
+    public func tokens(for servers: [RPCServer]) -> [Token] {
         var tokensToReturn: [Token] = []
         store.performSync { realm in
             let tokens = Array(self.enabledTokenObjectResults(forServers: servers, realm: realm).map { Token(tokenObject: $0) })
@@ -319,7 +315,7 @@ open class MultipleChainsTokensDataStore: NSObject, TokensDataStore {
         }
     }
 
-    public func token(forContract contract: AlphaWallet.Address) -> Token? {
+    public func token(for contract: AlphaWallet.Address) -> Token? {
         let predicate = MultipleChainsTokensDataStore
             .functional
             .tokenPredicate(contract: contract)
@@ -335,7 +331,7 @@ open class MultipleChainsTokensDataStore: NSObject, TokensDataStore {
         return token
     }
 
-    public func token(forContract contract: AlphaWallet.Address, server: RPCServer) -> Token? {
+    public func token(for contract: AlphaWallet.Address, server: RPCServer) -> Token? {
         let predicate = MultipleChainsTokensDataStore
             .functional
             .tokenPredicate(server: server, contract: contract)
@@ -520,7 +516,7 @@ open class MultipleChainsTokensDataStore: NSObject, TokensDataStore {
         return result
     }
 
-    private func updateFungibleBalance(balance value: BigInt, token: TokenObject) -> Bool {
+    private func updateFungibleBalance(balance value: BigUInt, token: TokenObject) -> Bool {
         if token.value != value.description {
             token.value = value.description
             return true
@@ -579,9 +575,9 @@ extension TokenObject {
     }
 }
 
-extension MultipleChainsTokensDataStore: DetectedContractsProvideble {
+extension MultipleChainsTokensDataStore {
     public func alreadyAddedContracts(for server: RPCServer) -> [AlphaWallet.Address] {
-        enabledTokens(for: [server]).map { $0.contractAddress }
+        tokens(for: [server]).map { $0.contractAddress }
     }
 
     public func deletedContracts(for server: RPCServer) -> [AlphaWallet.Address] {
@@ -604,7 +600,7 @@ extension TokenObject {
 }
 
 extension MultipleChainsTokensDataStore {
-    public class functional {}
+    public enum functional {}
 }
 
 extension MultipleChainsTokensDataStore.functional {

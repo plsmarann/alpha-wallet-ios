@@ -10,7 +10,7 @@ import Foundation
 import AlphaWalletFoundation
 
 final class FakeTokenGroupIdentifier: TokenGroupIdentifierProtocol {
-    static func identifier(fromFileName: String) -> TokenGroupIdentifierProtocol? {
+    static func identifier(tokenJsonUrl: URL) -> TokenGroupIdentifierProtocol? {
         return nil
     }
 
@@ -19,6 +19,10 @@ final class FakeTokenGroupIdentifier: TokenGroupIdentifierProtocol {
     }
 
     func hasContract(address: String, chainID: Int) -> Bool {
+        return false
+    }
+
+    func isSpam(address: String, chainID: Int) -> Bool {
         return false
     }
 }

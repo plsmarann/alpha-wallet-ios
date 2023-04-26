@@ -1,6 +1,7 @@
 // Copyright © 2018 Stormbird PTE. LTD.
 
 import UIKit
+import Combine
 
 protocol TextFieldDelegate: AnyObject {
     func shouldReturn(in textField: TextField) -> Bool
@@ -165,8 +166,11 @@ class TextField: UIControl {
     override var isFirstResponder: Bool {
         return textField.isFirstResponder
     }
-    
-    init(edgeInsets: UIEdgeInsets = DataEntry.Metric.TextField.Default.edgeInsets) {
+    private let text = PassthroughSubject<String?, Never>()
+    private let viewModel: TextFieldViewModel
+
+    init(edgeInsets: UIEdgeInsets = DataEntry.Metric.TextField.Default.edgeInsets, viewModel: TextFieldViewModel = .init()) {
+        self.viewModel = viewModel
         super.init(frame: .zero)
 
         translatesAutoresizingMaskIntoConstraints = false
@@ -182,14 +186,37 @@ class TextField: UIControl {
         backgroundColor = Configuration.Color.Semantic.textFieldBackground
         layer.borderColor = status.textFieldBorderColor(whileEditing: isFirstResponder).cgColor
         status = .none
+
+        bind(viewModel: viewModel)
     }
 
-    func configure(viewModel: TextFieldViewModel) {
-        isUserInteractionEnabled = viewModel.allowEditing
-        value = viewModel.value
-        label.attributedText = viewModel.attributedPlaceholder
-        label.isHidden = viewModel.shouldHidePlaceholder
-        keyboardType = viewModel.keyboardType
+    private var cancellable = Set<AnyCancellable>()
+    
+    private func bind(viewModel: TextFieldViewModel) {
+        let input = TextFieldViewModelInput(textChanged: text.eraseToAnyPublisher())
+        let output = viewModel.transform(input: input)
+
+        output.text
+            .assign(to: \.text, on: textField, ownership: .weak)
+            .store(in: &cancellable)
+
+        output.attributedPlaceholder
+            .sink { [weak label] placeholder in
+                label?.attributedText = placeholder
+                label?.isHidden = placeholder == nil
+            }.store(in: &cancellable)
+
+        output.keyboardType
+            .assign(to: \.keyboardType, on: textField, ownership: .weak)
+            .store(in: &cancellable)
+
+        output.status
+            .assign(to: \.status, on: self, ownership: .weak)
+            .store(in: &cancellable)
+
+        output.allowEditing
+            .assign(to: \.isUserInteractionEnabled, on: self, ownership: .weak)
+            .store(in: &cancellable)
     }
 
     func defaultLayout(edgeInsets: UIEdgeInsets = .zero) -> UIView {
@@ -262,6 +289,9 @@ extension TextField: UITextFieldDelegate {
     }
 
     public func textField(_ textField: UITextField, shouldChangeCharactersIn range: NSRange, replacementString string: String) -> Bool {
+        let value = (textField.text! as NSString).replacingCharacters(in: range, with: string)
+        self.text.send(value)
+
         return delegate?.shouldChangeCharacters(inRange: range, replacementString: string, for: self) ?? true
     }
 }
@@ -284,8 +314,8 @@ private class _TextField: UITextField {
 }
 
 extension TextField {
-    static var textField: TextField {
-        let textField = TextField(edgeInsets: DataEntry.Metric.TextField.Default.edgeInsets)
+    static func buildTextField(viewModel: TextFieldViewModel = .init()) -> TextField {
+        let textField = TextField(edgeInsets: DataEntry.Metric.TextField.Default.edgeInsets, viewModel: viewModel)
         textField.cornerRadius = DataEntry.Metric.TextField.Default.cornerRadius
         textField.textInset = DataEntry.Metric.TextField.Default.textInset
         textField.textField.autocorrectionType = .no
@@ -296,8 +326,8 @@ extension TextField {
         return textField
     }
 
-    static func textField(keyboardType: UIKeyboardType, placeHolder: String, label: String) -> TextField {
-        let textField = TextField.textField
+    static func buildTextField(keyboardType: UIKeyboardType, placeHolder: String, label: String) -> TextField {
+        let textField = TextField.buildTextField()
         textField.keyboardType = keyboardType
         textField.placeholder = placeHolder
         textField.label.text = label
@@ -305,7 +335,7 @@ extension TextField {
         return textField
     }
 
-    static var roundedTextField: TextField {
+    static func buildRoundedTextField() -> TextField {
         let textField = TextField(edgeInsets: DataEntry.Metric.TextField.Rounded.edgeInsets)
         textField.heightConstraint.constant = DataEntry.Metric.TextField.Rounded.height
         textField.cornerRadius = DataEntry.Metric.TextField.Rounded.cornerRadius
@@ -314,8 +344,8 @@ extension TextField {
         return textField
     }
 
-    static var password: TextField {
-        let textField: TextField = .textField
+    static func buildPasswordTextField() -> TextField {
+        let textField: TextField = .buildTextField()
         textField.textField.autocorrectionType = .no
         textField.textField.autocapitalizationType = .none
         textField.returnKeyType = .done

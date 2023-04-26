@@ -5,7 +5,7 @@ import Combine
 import AlphaWalletFoundation
 
 class FakeActivitiesService: ActivitiesServiceType {
-    var sessions: ServerDictionary<WalletSession> { .make() }
+    let sessionsProvider: SessionsProvider = FakeSessionsProvider(servers: [.main])
     
     var activitiesPublisher: AnyPublisher<[ActivityCollection.MappedToDateActivityOrTransaction], Never> {
         Just([])
@@ -17,6 +17,7 @@ class FakeActivitiesService: ActivitiesServiceType {
     }
 
     func start() {}
+    func stop() {}
     func reinject(activity: Activity) {}
     func copy(activitiesFilterStrategy: ActivitiesFilterStrategy, transactionsFilterStrategy: TransactionsFilterStrategy) -> ActivitiesServiceType { self }
 }

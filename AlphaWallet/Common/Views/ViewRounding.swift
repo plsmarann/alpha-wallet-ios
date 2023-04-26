@@ -14,9 +14,17 @@ protocol ContentBackgroundSupportable {
 
 protocol ViewRoundingSupportable {
     var rounding: ViewRounding { get set }
+    var placeholderRounding: ViewRounding { get set }
 }
 
-protocol ViewLoadingCancelable {
+enum ViewLoading {
+    case enabled
+    case disabled
+}
+
+protocol ViewLoadingSupportable {
+    var loading: ViewLoading { get set }
+
     func cancel()
 }
 

@@ -9,24 +9,24 @@ import Foundation
 import BigInt
 import Combine
 
-final class TransactionBuilder {
+public final class TransactionBuilder {
     private typealias LocalizedOperation = (name: String, symbol: String, decimals: Int, tokenType: TokenType)
 
-    private let tokenProvidable: TokenProvidable
-    private let ercProvider: TokenProviderType
+    private let tokensDataStore: TokensDataStore
+    private let ercTokenProvider: TokenProviderType
 
     let server: RPCServer
 
-    init(tokensService: TokenProvidable,
-         server: RPCServer,
-         tokenProvider: TokenProviderType) {
+    public init(tokensDataStore: TokensDataStore,
+                server: RPCServer,
+                ercTokenProvider: TokenProviderType) {
 
-        self.ercProvider = tokenProvider
-        self.tokenProvidable = tokensService
+        self.ercTokenProvider = ercTokenProvider
+        self.tokensDataStore = tokensDataStore
         self.server = server
     }
 
-    func buildTransaction(from transaction: RawTransaction) -> AnyPublisher<TransactionInstance?, Never> {
+    func buildTransaction(from transaction: NormalTransaction) -> AnyPublisher<TransactionInstance?, Never> {
         guard let from = AlphaWallet.Address(string: transaction.from) else {
             return .just(nil)
         }
@@ -51,7 +51,7 @@ final class TransactionBuilder {
                         to: to,
                         value: transaction.value,
                         gas: transaction.gas,
-                        gasPrice: transaction.gasPrice,
+                        gasPrice: BigUInt(transaction.gasPrice.drop0x).flatMap { GasPrice.legacy(gasPrice: $0) },
                         gasUsed: transaction.gasUsed,
                         nonce: transaction.nonce,
                         date: NSDate(timeIntervalSince1970: TimeInterval(transaction.timeStamp) ?? 0) as Date,
@@ -61,11 +61,26 @@ final class TransactionBuilder {
             }.eraseToAnyPublisher()
     }
 
-    private func fetchLocalizedOperation(value: BigUInt, from: String, contract: AlphaWallet.Address, to recipient: AlphaWallet.Address, functionCall: DecodedFunctionCall) -> AnyPublisher<[LocalizedOperationObjectInstance], Never> {
+    private func fetchLocalizedOperation(value: BigUInt,
+                                         from: String,
+                                         contract: AlphaWallet.Address,
+                                         to recipient: AlphaWallet.Address,
+                                         functionCall: DecodedFunctionCall) -> AnyPublisher<[LocalizedOperationObjectInstance], Never> {
+
         fetchLocalizedOperation(contract: contract)
             .map { token -> [LocalizedOperationObjectInstance] in
                 let operationType = self.mapTokenTypeToTransferOperationType(token.tokenType, functionCall: functionCall)
-                let result = LocalizedOperationObjectInstance(from: from, to: recipient.eip55String, contract: contract, type: operationType.rawValue, value: String(value), tokenId: "", symbol: token.symbol, name: token.name, decimals: token.decimals)
+                let result = LocalizedOperationObjectInstance(
+                    from: from,
+                    to: recipient.eip55String,
+                    contract: contract,
+                    type: operationType.rawValue,
+                    value: String(value),
+                    tokenId: "",
+                    symbol: token.symbol,
+                    name: token.name,
+                    decimals: token.decimals)
+
                 return [result]
             }.replaceError(with: [])
             .eraseToAnyPublisher()
@@ -74,14 +89,14 @@ final class TransactionBuilder {
     private func fetchLocalizedOperation(contract: AlphaWallet.Address) -> AnyPublisher<TransactionBuilder.LocalizedOperation, SessionTaskError> {
         return Just(contract)
             .setFailureType(to: SessionTaskError.self)
-            .flatMap { [tokenProvidable, ercProvider, server] contract -> AnyPublisher<TransactionBuilder.LocalizedOperation, SessionTaskError> in
-                if let token = tokenProvidable.token(for: contract, server: server) {
+            .flatMap { [tokensDataStore, ercTokenProvider, server] contract -> AnyPublisher<TransactionBuilder.LocalizedOperation, SessionTaskError> in
+                if let token = tokensDataStore.token(for: contract, server: server) {
                     return .just((name: token.name, symbol: token.symbol, decimals: token.decimals, tokenType: token.type))
                 } else {
-                    let getContractName = ercProvider.getContractName(for: contract)
-                    let getContractSymbol = ercProvider.getContractSymbol(for: contract)
-                    let getDecimals = ercProvider.getDecimals(for: contract)
-                    let getTokenType = ercProvider.getTokenType(for: contract)
+                    let getContractName = ercTokenProvider.getContractName(for: contract)
+                    let getContractSymbol = ercTokenProvider.getContractSymbol(for: contract)
+                    let getDecimals = ercTokenProvider.getDecimals(for: contract)
+                    let getTokenType = ercTokenProvider.getTokenType(for: contract)
 
                     return Publishers.CombineLatest4(getContractName, getContractSymbol, getDecimals, getTokenType)
                         .map { (name: $0, symbol: $1, decimals: $2, tokenType: $3) }
@@ -90,7 +105,7 @@ final class TransactionBuilder {
             }.eraseToAnyPublisher()
     }
 
-    private func buildOperationForTokenTransfer(for transaction: RawTransaction) -> AnyPublisher<[LocalizedOperationObjectInstance], Never> {
+    private func buildOperationForTokenTransfer(for transaction: NormalTransaction) -> AnyPublisher<[LocalizedOperationObjectInstance], Never> {
         guard let contract = transaction.toAddress else {
             return .just([])
         }

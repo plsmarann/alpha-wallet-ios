@@ -23,7 +23,7 @@ class AccountsViewController: UIViewController {
 
     private lazy var dataSource = makeDataSource()
     private lazy var tableView: UITableView = {
-        let tableView = UITableView.grouped
+        let tableView = UITableView.buildGroupedTableView()
         tableView.rowHeight = UITableView.automaticDimension
         tableView.register(AccountViewCell.self)
         tableView.register(WalletSummaryTableViewCell.self)
@@ -118,7 +118,7 @@ class AccountsViewController: UIViewController {
 
     @objc private func didLongPress(_ recognizer: UILongPressGestureRecognizer) {
         guard let cell = recognizer.view as? AccountViewCell, let indexPath = cell.indexPath, recognizer.state == .began else { return }
-        
+
         switch dataSource.item(at: indexPath) {
         case .wallet(let viewModel):
             delegate?.didSelectInfoForAccount(account: viewModel.wallet, sender: cell, in: self)

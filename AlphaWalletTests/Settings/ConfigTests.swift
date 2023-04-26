@@ -24,7 +24,9 @@ extension WalletConnectCoordinator {
             assetDefinitionStore: .make(),
             networkService: FakeNetworkService(),
             walletConnectProvider: provider,
-            dependencies: dependencies)
+            dependencies: dependencies,
+            restartHandler: RestartQueueHandler(),
+            serversProvider: BaseServersProvider())
     }
 }
 
@@ -59,11 +61,13 @@ class ConfigTests: XCTestCase {
             activitiesService: FakeActivitiesService(),
             walletBalanceService: FakeMultiWalletBalanceService(),
             tokenCollection: dep1.pipeline,
+            tokensService: dep1.tokensService,
             blockiesGenerator: .make(),
             domainResolutionService: FakeDomainResolutionService(),
             tokensFilter: .make(),
             currencyService: .make(),
-            tokenImageFetcher: FakeTokenImageFetcher())
+            tokenImageFetcher: FakeTokenImageFetcher(),
+            serversProvider: BaseServersProvider())
 
         coordinator.start()
         coordinator.tokensViewController.viewWillAppear(false)

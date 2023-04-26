@@ -8,6 +8,7 @@
 import Foundation
 import BigInt
 import AlphaWalletFoundation
+import Combine
 
 struct CurrencyRate {
     let currency: Currency
@@ -15,67 +16,113 @@ struct CurrencyRate {
 }
 
 extension TransactionConfirmationViewModel {
-    class CancelTransactionViewModel: ExpandableSection, RateUpdatable, BalanceUpdatable {
-        enum Section {
-            case gas
-            case network
-            case description
+    class CancelTransactionViewModel: TransactionConfirmationViewModelType {
+        @Published private var etherCurrencyRate: Loadable<CurrencyRate, Error> = .loading
 
-            var title: String {
-                switch self {
-                case .gas:
-                    return R.string.localizable.tokenTransactionConfirmationGasTitle()
-                case .description:
-                    return R.string.localizable.activityCancelDescription()
-                case .network:
-                    return R.string.localizable.tokenTransactionConfirmationNetwork()
-                }
-            }
-
-            var isExpandable: Bool { return false }
-        }
         private let configurator: TransactionConfigurator
-        private var configurationTitle: String {
-            return configurator.selectedConfigurationType.title
-        }
-        let session: WalletSession
-        var rate: CurrencyRate?
+        private let session: WalletSession
+        private var cancellable = Set<AnyCancellable>()
+        private let tokensService: TokensProcessingPipeline
+        private var sections: [Section] { [.gas, .network, .description] }
+
+        let confirmButtonViewModel: ConfirmButtonViewModel
         var openedSections = Set<Int>()
 
-        var sections: [Section] {
-            [.gas, .network, .description]
-        }
-
-        init(configurator: TransactionConfigurator) {
+        init(configurator: TransactionConfigurator, tokensService: TokensProcessingPipeline) {
             self.configurator = configurator
+            self.tokensService = tokensService
             self.session = configurator.session
+            self.confirmButtonViewModel = ConfirmButtonViewModel(
+                configurator: configurator,
+                title: R.string.localizable.tokenTransactionCancelConfirmationTitle())
         }
 
-        func headerViewModel(section: Int) -> TransactionConfirmationHeaderViewModel {
-            let configuration: TransactionConfirmationHeaderView.Configuration = .init(isOpened: openedSections.contains(section), section: section, shouldHideChevron: !sections[section].isExpandable)
+        func transform(input: TransactionConfirmationViewModelInput) -> TransactionConfirmationViewModelOutput {
+            let etherToken = MultipleChainsTokensDataStore.functional.etherToken(forServer: configurator.session.server)
+            tokensService.tokenViewModelPublisher(for: etherToken)
+                .map { $0?.balance.ticker.flatMap { CurrencyRate(currency: $0.currency, value: $0.price_usd) } }
+                .map { $0.flatMap { Loadable<CurrencyRate, Error>.done($0) } ?? .failure(SendFungiblesTransactionViewModel.NoCurrencyRateError()) }
+                .assign(to: \.etherCurrencyRate, on: self, ownership: .weak)
+                .store(in: &cancellable)
+
+            let viewState = Publishers.Merge($etherCurrencyRate.mapToVoid(), configurator.objectChanges)
+                .map { _ in
+                    TransactionConfirmationViewModel.ViewState(
+                        title: R.string.localizable.tokenTransactionSpeedupConfirmationTitle(),
+                        views: self.buildTypedViews(),
+                        isSeparatorHidden: true)
+                }
+
+            return TransactionConfirmationViewModelOutput(viewState: viewState.eraseToAnyPublisher())
+        }
+
+        func shouldShowChildren(for section: Int, index: Int) -> Bool {
+            return true
+        }
+
+        private func buildTypedViews() -> [ViewType] {
+            var views: [ViewType] = []
+            for (sectionIndex, section) in sections.enumerated() {
+                switch section {
+                case .gas:
+                    views += [.header(viewModel: buildHeaderViewModel(section: sectionIndex), isEditEnabled: session.server.canUserChangeGas)]
+                case .description:
+                    let vm = TransactionRowDescriptionTableViewCellViewModel(title: section.title)
+                    views += [.details(viewModel: vm)]
+                case .network:
+                    views += [.header(viewModel: buildHeaderViewModel(section: sectionIndex), isEditEnabled: false)]
+                }
+            }
+            return views
+        }
+
+        private func buildHeaderViewModel(section: Int) -> TransactionConfirmationHeaderViewModel {
+            let viewState = TransactionConfirmationHeaderViewModel.ViewState(
+                isOpened: openedSections.contains(section),
+                section: section,
+                shouldHideChevron: !sections[section].isExpandable)
+
             let headerName = sections[section].title
+
             switch sections[section] {
             case .gas:
-                let gasFee = gasFeeString(for: configurator, rate: rate)
+                let gasFee = gasFeeString(for: configurator, rate: etherCurrencyRate.value)
                 if let warning = configurator.gasPriceWarning {
-                    return .init(title: .warning(warning.shortTitle), headerName: headerName, details: gasFee, configuration: configuration)
+                    return .init(title: .warning(warning.shortTitle), headerName: headerName, details: gasFee, viewState: viewState)
                 } else {
-                    return .init(title: .normal(configurationTitle), headerName: headerName, details: gasFee, configuration: configuration)
+                    return .init(title: .normal(configurator.selectedGasSpeed.title), headerName: headerName, details: gasFee, viewState: viewState)
                 }
             case .description:
-                return .init(title: .normal(sections[section].title), headerName: nil, configuration: configuration)
+                return .init(title: .normal(sections[section].title), headerName: nil, viewState: viewState)
             case .network:
-                return .init(title: .normal(session.server.displayName), headerName: headerName, titleIcon: session.server.walletConnectIconImage, configuration: configuration)
+                return .init(title: .normal(session.server.displayName), headerName: headerName, titleIcon: session.server.walletConnectIconImage, viewState: viewState)
             }
-        }
-
-        func updateBalance(_ balanceViewModel: BalanceViewModel?) {
-            //no-op
         }
     }
 }
 
-extension TransactionConfigurationType {
+extension TransactionConfirmationViewModel.CancelTransactionViewModel {
+    enum Section {
+        case gas
+        case network
+        case description
+
+        var title: String {
+            switch self {
+            case .gas:
+                return R.string.localizable.tokenTransactionConfirmationGasTitle()
+            case .description:
+                return R.string.localizable.activityCancelDescription()
+            case .network:
+                return R.string.localizable.tokenTransactionConfirmationNetwork()
+            }
+        }
+
+        var isExpandable: Bool { return false }
+    }
+}
+
+extension GasSpeed {
     public var title: String {
         switch self {
         case .standard:
@@ -150,8 +197,8 @@ extension TransactionConfigurator.GasFeeWarning {
     }
 }
 
-extension ConfigureTransactionError {
-    var localizedDescription: String {
+extension ConfigureTransactionError: LocalizedError {
+    public var errorDescription: String? {
         switch self {
         case .gasLimitTooHigh:
             return R.string.localizable.configureTransactionErrorGasLimitTooHigh(ConfigureTransaction.gasLimitMax)
@@ -167,8 +214,8 @@ extension ConfigureTransactionError {
     }
 }
 
-extension AddCustomChainError {
-    var localizedDescription: String {
+extension AddCustomChainError: LocalizedError {
+    public var errorDescription: String? {
         switch self {
         case .cancelled:
             //This is the default behavior, just keep it

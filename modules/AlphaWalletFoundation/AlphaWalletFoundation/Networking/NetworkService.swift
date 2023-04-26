@@ -22,7 +22,22 @@ extension URLRequest {
     public typealias Response = (data: Data, response: HTTPURLResponse)
 }
 
+extension URLRequest {
+    public static func validate<S: Sequence>(statusCode acceptableStatusCodes: S,
+                                             response: HTTPURLResponse) -> Alamofire.Request.ValidationResult where S.Iterator.Element == Int {
+
+        if acceptableStatusCodes.contains(response.statusCode) {
+            return .success(())
+        } else {
+            let reason = AFError.ResponseValidationFailureReason.unacceptableStatusCode(code: response.statusCode)
+            return .failure(AFError.responseValidationFailed(reason: reason))
+        }
+
+    }
+}
+
 public protocol NetworkService {
+    func dataTask(_ request: URLRequestConvertible) async throws -> URLRequest.Response
     func dataTaskPublisher(_ request: URLRequestConvertible, callbackQueue: DispatchQueue) -> AnyPublisher<URLRequest.Response, SessionTaskError>
     func upload(multipartFormData: @escaping (MultipartFormData) -> Void, usingThreshold: UInt64, with request: URLRequestConvertible, callbackQueue: DispatchQueue) -> AnyPublisher<URLRequest.Response, SessionTaskError>
 }
@@ -65,7 +80,7 @@ public class BaseNetworkService: NetworkService {
                     if let data = $0.data, let response = $0.response {
                         return (data, response)
                     } else {
-                        throw NonHTTPURLResponseError(response: $0)
+                        throw NonHTTPURLResponseError(error: $0.error)
                     }
                 }.mapError { SessionTaskError.requestError($0) }
                 .eraseToAnyPublisher()
@@ -80,18 +95,27 @@ public class BaseNetworkService: NetworkService {
                 if let data = $0.data, let response = $0.response {
                     return (data, response)
                 } else {
-                    throw NonHTTPURLResponseError(response: $0)
+                    throw NonHTTPURLResponseError(error: $0.error)
                 }
             }.mapError { SessionTaskError.requestError($0) }
             .eraseToAnyPublisher()
     }
 
+    public func dataTask(_ request: URLRequestConvertible) async throws -> URLRequest.Response {
+        let response = await try session.request(request).serializingData().response
+        if let data = response.data, let response = response.response {
+            return (data, response)
+        } else {
+            throw NonHTTPURLResponseError(error: response.error)
+        }
+    }
+
 }
 
 extension BaseNetworkService {
-    class functional {}
+    enum functional {}
 }
 
 struct NonHTTPURLResponseError: Error {
-    let response: DataResponsePublisher<Data>.Output
+    let error: AFError?
 }

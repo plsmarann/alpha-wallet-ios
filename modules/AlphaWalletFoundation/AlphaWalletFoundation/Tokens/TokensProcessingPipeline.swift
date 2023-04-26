@@ -9,40 +9,29 @@ import Foundation
 import Combine
 import CombineExt
 
-public protocol TokenViewModelRefreshable {
-    func refresh()
-}
-
-public protocol TokenViewModelState {
+public protocol TokensProcessingPipeline {
     var tokenViewModels: AnyPublisher<[TokenViewModel], Never> { get }
 
+    func tokenHolders(for token: TokenIdentifiable) -> [TokenHolder]
+    func tokenHoldersPublisher(for token: TokenIdentifiable) -> AnyPublisher<[TokenHolder], Never>
+    func tokenHolderPublisher(for token: TokenIdentifiable, tokenId: TokenId) -> AnyPublisher<TokenHolder?, Never>
     func tokenViewModelPublisher(for contract: AlphaWallet.Address, server: RPCServer) -> AnyPublisher<TokenViewModel?, Never>
     func tokenViewModel(for contract: AlphaWallet.Address, server: RPCServer) -> TokenViewModel?
-}
-
-public protocol TokenBalanceRefreshable {
-    func refreshBalance(updatePolicy: TokenBalanceFetcher.RefreshBalancePolicy)
-}
-
-public protocol TokensProcessingPipeline: TokenViewModelState & TokenViewModelRefreshable, TokenProvidable, TokenAddable, TokenHidable, TokenBalanceRefreshable, PipelineTests & TokenHolderState {
     func start()
 }
-//FIXME: Remove TokenCollection later
-public typealias TokenCollection = TokensProcessingPipeline
 
 public final class WalletDataProcessingPipeline: TokensProcessingPipeline {
     private let coinTickersFetcher: CoinTickersFetcher
     private let tokensService: TokensService
     private let assetDefinitionStore: AssetDefinitionStore
     private var cancelable = Set<AnyCancellable>()
-    private let tokenViewModelsSubject = CurrentValueSubject<[TokenViewModel], Never>([])
     private let eventsDataStore: NonActivityEventsDataStore
     private let wallet: Wallet
-    private let queue = DispatchQueue(label: "org.alphawallet.swift.walletData.processingPipeline", qos: .utility)
+    private let queue = DispatchQueue(label: "org.alphawallet.swift.walletData.processingPipeline", qos: .userInitiated)
     private let currencyService: CurrencyService
     private let sessionsProvider: SessionsProvider
 
-    public var tokenViewModels: AnyPublisher<[TokenViewModel], Never> {
+    public lazy var tokenViewModels: AnyPublisher<[TokenViewModel], Never> = {
         let whenTickersChanged = coinTickersFetcher.tickersDidUpdate.dropFirst()
             .receive(on: queue)
             .map { [tokensService] _ in tokensService.tokens }
@@ -63,7 +52,6 @@ public final class WalletDataProcessingPipeline: TokensProcessingPipeline {
             .map { $0.map { TokenViewModel(token: $0) } }
             .flatMapLatest { [weak self] in self?.applyTickers(tokens: $0) ?? .empty() }
             .flatMapLatest { [weak self] in self?.applyTokenScriptOverrides(tokens: $0) ?? .empty() }
-            .removeAllDuplicates(by: { return $0.hashValue == $1.hashValue })
             .receive(on: RunLoop.main)
 
         let initialSnapshot = Just(tokensService.tokens)
@@ -72,8 +60,9 @@ public final class WalletDataProcessingPipeline: TokensProcessingPipeline {
             .flatMapLatest { [weak self] in self?.applyTokenScriptOverrides(tokens: $0) ?? .empty() }
 
         return Publishers.Merge(whenCollectionHasChanged, initialSnapshot)
+            .share(replay: 1)
             .eraseToAnyPublisher()
-    }
+    }()
 
     public init(wallet: Wallet,
                 tokensService: TokensService,
@@ -92,18 +81,6 @@ public final class WalletDataProcessingPipeline: TokensProcessingPipeline {
         self.assetDefinitionStore = assetDefinitionStore
     }
 
-    public func tokens(for servers: [RPCServer]) -> [Token] {
-        tokensService.tokens(for: servers)
-    }
-
-    public func mark(token: TokenIdentifiable, isHidden: Bool) {
-        tokensService.mark(token: token, isHidden: isHidden)
-    }
-
-    public func refresh() {
-        tokensService.refresh()
-    }
-
     public func start() {
         tokensService.start()
         startTickersHandling()
@@ -113,8 +90,18 @@ public final class WalletDataProcessingPipeline: TokensProcessingPipeline {
         tokensService.stop()
     }
 
-    public func refreshBalance(updatePolicy: TokenBalanceFetcher.RefreshBalancePolicy) {
-        tokensService.refreshBalance(updatePolicy: updatePolicy)
+    public func tokenHolderPublisher(for token: TokenIdentifiable, tokenId: TokenId) -> AnyPublisher<TokenHolder?, Never> {
+        tokenHoldersPublisher(for: token)
+            .map { tokenHolders in
+                switch token.type {
+                case .erc721, .erc875, .erc721ForTickets:
+                    return tokenHolders.first { $0.tokens[0].id == tokenId }
+                case .erc1155:
+                    return tokenHolders.first(where: { $0.tokens.contains(where: { $0.id == tokenId }) })
+                case .nativeCryptocurrency, .erc20:
+                    return nil
+                }
+            }.eraseToAnyPublisher()
     }
 
     public func tokenViewModel(for contract: AlphaWallet.Address, server: RPCServer) -> TokenViewModel? {
@@ -174,37 +161,9 @@ public final class WalletDataProcessingPipeline: TokensProcessingPipeline {
             .eraseToAnyPublisher()
     }
 
-    public func token(for contract: AlphaWallet.Address) -> Token? {
-        tokensService.token(for: contract)
-    }
-
-    public func token(for contract: AlphaWallet.Address, server: RPCServer) -> Token? {
-        tokensService.token(for: contract, server: server)
-    }
-
-    public func addOrUpdate(tokensOrContracts: [TokenOrContract]) -> [Token] {
-        tokensService.addOrUpdate(tokensOrContracts: tokensOrContracts)
-    }
-
-    public func addOrUpdate(with actions: [AddOrUpdateTokenAction]) -> [Token] {
-        tokensService.addOrUpdate(with: actions)
-    }
-
-    public func tokenPublisher(for contract: AlphaWallet.Address, server: RPCServer) -> AnyPublisher<Token?, Never> {
-        tokensService.tokenPublisher(for: contract, server: server)
-    }
-
-    public func tokensPublisher(servers: [RPCServer]) -> AnyPublisher<[Token], Never> {
-        tokensService.tokensPublisher(servers: servers)
-    }
-
-    public func addOrUpdateTestsOnly(ticker: CoinTicker?, for token: TokenMappedToTicker) {
-        coinTickersFetcher.addOrUpdateTestsOnly(ticker: ticker, for: token)
-    }
-
     private func startTickersHandling() {
         //NOTE: To don't block start method, and apply delay to fetch tickers, inital only
-        let tokens = Publishers.Merge(Just(tokensService.tokens).delay(for: .seconds(2), scheduler: queue), tokensService.newTokens)
+        let tokens = Publishers.Merge(Just(tokensService.tokens).delay(for: .seconds(2), scheduler: queue), tokensService.addedTokensPublisher)
             .removeDuplicates()
 
         Publishers.CombineLatest(tokens, currencyService.$currency)
@@ -212,7 +171,14 @@ public final class WalletDataProcessingPipeline: TokensProcessingPipeline {
                 let nativeCryptoForAllChains = RPCServer.allCases.map { MultipleChainsTokensDataStore.functional.etherToken(forServer: $0) }
                 //NOTE: remove type type filtering when add support for nonfungibles
                 let tokens = (tokens + nativeCryptoForAllChains).filter { !$0.server.isTestnet && ($0.type == .nativeCryptocurrency || $0.type == .erc20 ) }
-                let uniqueTokens = Set(tokens).map { TokenMappedToTicker(symbol: $0.symbol, name: $0.name, contractAddress: $0.contractAddress, server: $0.server, coinGeckoId: nil) }
+                let uniqueTokens = Set(tokens).map {
+                    TokenMappedToTicker(
+                        symbol: $0.symbol,
+                        name: $0.name,
+                        contractAddress: $0.contractAddress,
+                        server: $0.server,
+                        coinGeckoId: $0.info.coinGeckoId)
+                }
 
                 coinTickersFetcher.fetchTickers(for: uniqueTokens, force: false, currency: currency)
                 tokensService.refreshBalance(updatePolicy: .tokens(tokens: tokens))
@@ -265,7 +231,7 @@ public final class WalletDataProcessingPipeline: TokensProcessingPipeline {
     }
 }
 
-public extension TokenViewModelState {
+public extension TokensProcessingPipeline {
 
     func tokenViewModelPublisher(for token: Token) -> AnyPublisher<TokenViewModel?, Never> {
         return tokenViewModelPublisher(for: token.contractAddress, server: token.server)

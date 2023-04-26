@@ -27,7 +27,7 @@ class TransferCollectiblesCoordinator: Coordinator {
     private let domainResolutionService: DomainResolutionServiceType
     private let filteredTokenHolders: [TokenHolder]
     private var transactionConfirmationResult: ConfirmResult? = .none
-    private let tokensService: TokenViewModelState
+    private let tokensService: TokensProcessingPipeline
     private let networkService: NetworkService
     private let tokenImageFetcher: TokenImageFetcher
 
@@ -43,7 +43,7 @@ class TransferCollectiblesCoordinator: Coordinator {
          assetDefinitionStore: AssetDefinitionStore,
          analytics: AnalyticsLogger,
          domainResolutionService: DomainResolutionServiceType,
-         tokensService: TokenViewModelState,
+         tokensService: TokensProcessingPipeline,
          networkService: NetworkService,
          tokenImageFetcher: TokenImageFetcher) {
 
@@ -115,7 +115,6 @@ extension TransferCollectiblesCoordinator: SendSemiFungibleTokenViewControllerDe
                 analytics: analytics,
                 domainResolutionService: domainResolutionService,
                 keystore: keystore,
-                assetDefinitionStore: assetDefinitionStore,
                 tokensService: tokensService,
                 networkService: networkService)
 
@@ -125,7 +124,7 @@ extension TransferCollectiblesCoordinator: SendSemiFungibleTokenViewControllerDe
         } catch {
             UIApplication.shared
                 .presentedViewController(or: navigationController)
-                .displayError(message: error.prettyError)
+                .displayError(message: error.localizedDescription)
         }
     }
 
@@ -164,7 +163,7 @@ extension TransferCollectiblesCoordinator: TransactionConfirmationCoordinatorDel
     func coordinator(_ coordinator: TransactionConfirmationCoordinator, didFailTransaction error: Error) {
         UIApplication.shared
             .presentedViewController(or: navigationController)
-            .displayError(message: error.prettyError)
+            .displayError(message: error.localizedDescription)
     }
 
     func didClose(in coordinator: TransactionConfirmationCoordinator) {

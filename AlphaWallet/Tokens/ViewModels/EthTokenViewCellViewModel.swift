@@ -6,17 +6,18 @@ import BigInt
 import AlphaWalletFoundation
 import Combine
 
-struct EthTokenViewCellViewModel {
+struct EthTokenViewCellViewModel: TokenIdentifiable {
     private let safeShortTitleInPluralForm: String
     private let amountShort: String
     private let symbolInPluralForm: String
     private let ticker: CoinTicker?
     private let valueDecimal: Decimal
-    private let contract: AlphaWallet.Address
-    private let server: RPCServer
     private let isVisible: Bool
     private let amountInFiat: Double?
 
+    let type: TokenType
+    let contractAddress: AlphaWallet.Address
+    let server: RPCServer
     let iconImage: TokenImagePublisher
     let accessoryType: UITableViewCell.AccessoryType
 
@@ -25,11 +26,12 @@ struct EthTokenViewCellViewModel {
          accessoryType: UITableViewCell.AccessoryType = .none,
          tokenImageFetcher: TokenImageFetcher) {
 
+        self.type = token.type
         self.safeShortTitleInPluralForm = token.tokenScriptOverrides?.safeShortTitleInPluralForm ?? ""
         self.amountShort = token.balance.amountShort
         self.symbolInPluralForm = token.tokenScriptOverrides?.symbolInPluralForm ?? ""
         self.ticker = token.balance.ticker
-        self.contract = token.contractAddress
+        self.contractAddress = token.contractAddress
         self.server = token.server
         self.valueDecimal = token.balance.valueDecimal
         self.amountInFiat = token.balance.amountInFiat
@@ -76,7 +78,7 @@ struct EthTokenViewCellViewModel {
             guard let ticker = ticker else { return UiTweaks.noPriceMarker }
 
             let helper = TickerHelper(ticker: ticker)
-            let formatter = NumberFormatter.priceChange(currency: ticker.currency)
+            let formatter = NumberFormatter.percent
 
             switch helper.change24h {
             case .appreciate(let percentageChange24h):
@@ -176,13 +178,13 @@ struct EthTokenViewCellViewModel {
 
 extension EthTokenViewCellViewModel: Hashable { }
 
-extension TokenImagePublisher: Equatable {
-    public static func == (lhs: TokenImagePublisher, rhs: TokenImagePublisher) -> Bool {
+extension AnyPublisher: Equatable {
+    public static func == (lhs: AnyPublisher, rhs: AnyPublisher) -> Bool {
         return true
     }
 }
 
-extension TokenImagePublisher: Hashable {
+extension AnyPublisher: Hashable {
     public func hash(into hasher: inout Hasher) {
         //no-op
     }

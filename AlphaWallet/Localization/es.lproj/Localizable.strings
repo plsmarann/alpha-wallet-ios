@@ -140,6 +140,7 @@
 "wallet.types.hdWallets" = "Tus monederos";
 "wallet.types.keystoreWallets" = "Monederos del almacén de claves";
 "wallet.types.watchedWallets" = "Monederos de solo observación";
+"wallet.types.hardwareWallets" = "Hardware Wallets";
 "wallet.create.button.title" = "Crear monedero";
 "wallet.watch.button.title" = "Observar monedero";
 "wallet.create.inProgress" = "Creando monedero...";
@@ -462,11 +463,9 @@
 "signMessage.validation.emptyMessage" = "Message to sign MUST be non empty";
 "signMessage.validation.dappBrowser.requestedChainUnavailable" = "You were requested to sign a message for the %@ chain. You are currently on the %@ chain";
 "signMessage.validation.walletConnect.v1.requestedChainUnavailable" = "You were requested to sign a message for the %@ chain. You are currently on the %@ chai";
-"signMessage.validation.walletConnect.v2.requestedChainUnavailable" = "You were requested to sign a message for the %@ chain. You need to enable this chain for your WalletConnect session";
+"signMessage.validation.walletConnect.v2.requestedChainUnavailable" = "You were requested to sign a message for the %@ chain. Make sure the %@ chain is enabled";
 "recent.transactions" = "Transacciones recientes";
 "blockchain.XDAI" = "Cadena xDAI";
-"blockchain.ARTIS.sigma1" = "Red ARTIS sigma1";
-"blockchain.ARTIS.tau1" = "Red ARTIS tau1";
 "blockchain.Binance" = "Binance (BSC) Network";
 "blockchain.Binance.test" = "Binance (BSC) Testnet Network";
 "blockchain.Heco" = "Heco Network";
@@ -611,6 +610,9 @@
 "configureTransaction.barButton.useDefault" = "Use Default";
 "configureTransaction.header.gasPrice" = "Gas Price";
 "configureTransaction.header.gasLimit" = "Gas Limit";
+"configureTransaction.header.nextUpdateIn" = "Next update in:";
+"configureTransaction.header.maxFee" = "Max Fee";
+"configureTransaction.header.maxPriorityFee" = "Max Priority Fee";
 "sendTransaction.error.possibleBinanceTestnetTimeout" = "Request has timed out. Please try again";
 "sendTransaction.error.rateLimited" = "There might have been too many requests. Please try again later";
 "sendTransaction.error.networkConnectionWasLost" = "The network connection was lost. Please try again";
@@ -641,6 +643,7 @@
 "transactionConfirmation.Send.Section.Amount.title" = "Amount";
 "transactionConfirmation.Send.Section.Recipient.title" = "Recipient";
 "transactionConfirmation.Send.Section.TokenId.title" = "Token";
+"transactionConfirmation.Send.Section.Requester.title" = "Dapp";
 "transactionConfirmation.authorisation.reason" = "Authorize to confirm transaction";
 "transactionConfirmation.keystore.accessKey.sign" = "Accessing to perform transfer";
 "transactionConfirmation.fee.footerText" = "The higher the fee, the better chances and faster your transaction will go through. Fees are based on current Ethereum blockchain network load.";
@@ -880,3 +883,18 @@
 "accept.walletConnect.field.methods.title" = "Methods";
 "tokenscript.overrides.empty" = "There are no TokenScript overrides";
 "currency.navigationTitle" = "Change Fiat Currency";
+"hardwareWallet.failedToSign" = "Failed to sign message: %@";
+"hardwareWallet.failedToImportSeed" = "Failed to import seed: %@";
+"hardwareWallet.failedToWipe" = "Failed to wipe: %@";
+"hardwareWallet.failedToGetPublicKey" = "Failed to get public key: %@";
+"hardwareWallet.signatureObtained" = "Signature obtained";
+"hardwareWallet.publicKeyObtained" = "Public key obtained";
+"hardwareWallet.importedSeed" = "Imported seed";
+"eip1559.warning.priorityFeeTooHight" = "Priority Fee too hight";
+"eip1559.warning.priorityFeeTooLow" = "Priority Fee too low";
+"eip1559.warning.maxFeeTooHight" = "Max Fee too hight";
+"eip1559.warning.maxFeeTooLow" = "Max Fee too low";
+"eip1559.error.zeroMaxFee" = "Max Fee should be greater than zero";
+"eip1559.error.zeroPriorityFee" = "Priority Fee should be greater than zero";
+"eip1559.error.invalidPriorityFee" = "Priority Fee invalid";
+"eip1559.error.invalidMaxFee" = "Max Fee invalid";

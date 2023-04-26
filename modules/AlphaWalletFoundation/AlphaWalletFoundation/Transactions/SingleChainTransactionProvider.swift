@@ -4,14 +4,14 @@ import Foundation
 
 enum TransactionsSource {
     case etherscan
-    case covalent
+    case covalent(apiKey: String?)
+    case oklink(apiKey: String?)
 }
 
 public protocol SingleChainTransactionProvider: AnyObject {
     func start()
     func stopTimers()
     func runScheduledTimers()
-    func fetch()
     func stop()
     func isServer(_ server: RPCServer) -> Bool
 }

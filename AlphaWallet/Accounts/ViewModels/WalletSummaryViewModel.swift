@@ -27,12 +27,12 @@ struct WalletSummaryViewModel: Hashable {
     }
 
     private func createbalanceAttributedString(summary: WalletSummary) -> NSAttributedString {
-        return .init(string: summary.totalAmountString, attributes: Self.functional.walletBalanceAttributes(alignment: alignment))
+        return .init(string: summary.totalAmountString, attributes: functional.walletBalanceAttributes(alignment: alignment))
     }
 
     private func createApprecationAttributedString(summary: WalletSummary) -> NSAttributedString {
-        let apprecation = Self.functional.todaysApprecationColorAndStringValuePair(summary: summary)
-        return .init(string: apprecation.0, attributes: Self.functional.apprecation24HoursAttributes(alignment: alignment, foregroundColor: apprecation.1))
+        let apprecation = functional.todaysApprecationColorAndStringValuePair(summary: summary)
+        return .init(string: apprecation.0, attributes: functional.apprecation24HoursAttributes(alignment: alignment, foregroundColor: apprecation.1))
     }
 
     var accessoryType: UITableViewCell.AccessoryType {
@@ -45,7 +45,7 @@ struct WalletSummaryViewModel: Hashable {
 }
 
 extension WalletSummaryViewModel {
-    class functional {
+    enum functional {
         static func walletBalanceAttributes(alignment: NSTextAlignment = .left) -> [NSAttributedString.Key: Any] {
             let style = NSMutableParagraphStyle()
             style.alignment = alignment
@@ -77,7 +77,7 @@ extension WalletSummaryViewModel {
 
             let changePercentage: String = {
                 guard let changePercentage = summary?.changePercentage else { return "-" }
-                let formatter = NumberFormatter.priceChange(currency: changePercentage.currency)
+                let formatter = NumberFormatter.percent
 
                 switch helper.change24h(from: changePercentage.amount) {
                 case .appreciate(let percentageChange24h):

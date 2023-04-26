@@ -140,6 +140,7 @@
 "wallet.types.hdWallets" = "Kytketyt lompakot";
 "wallet.types.keystoreWallets" = "Avainlompakot";
 "wallet.types.watchedWallets" = "Seuratut lompakot";
+"wallet.types.hardwareWallets" = "Hardware Wallets";
 "wallet.create.button.title" = "Luo lompakko";
 "wallet.watch.button.title" = "Seuraa lompakkoa";
 "wallet.create.inProgress" = "Lompakkoa luodaan...";
@@ -462,11 +463,9 @@
 "signMessage.validation.emptyMessage" = "Message to sign MUST be non empty";
 "signMessage.validation.dappBrowser.requestedChainUnavailable" = "You were requested to sign a message for the %@ chain. You are currently on the %@ chain";
 "signMessage.validation.walletConnect.v1.requestedChainUnavailable" = "You were requested to sign a message for the %@ chain. You are currently on the %@ chai";
-"signMessage.validation.walletConnect.v2.requestedChainUnavailable" = "You were requested to sign a message for the %@ chain. You need to enable this chain for your WalletConnect session";
+"signMessage.validation.walletConnect.v2.requestedChainUnavailable" = "You were requested to sign a message for the %@ chain. Make sure the %@ chain is enabled";
 "recent.transactions" = "Viimeaikaiset tilitapahtumat";
 "blockchain.XDAI" = "xDAI Chain";
-"blockchain.ARTIS.sigma1" = "ARTIS sigma1 Network";
-"blockchain.ARTIS.tau1" = "ARTIS tau1 Network";
 "blockchain.Binance" = "Binance (BSC) Network";
 "blockchain.Binance.test" = "Binance (BSC) Testnet Network";
 "blockchain.Heco" = "Heco Network";
@@ -611,6 +610,9 @@
 "configureTransaction.barButton.useDefault" = "Use Default";
 "configureTransaction.header.gasPrice" = "Tapahtumamaksu";
 "configureTransaction.header.gasLimit" = "Tapahtumamaksun yläraja";
+"configureTransaction.header.nextUpdateIn" = "Next update in:";
+"configureTransaction.header.maxFee" = "Max Fee";
+"configureTransaction.header.maxPriorityFee" = "Max Priority Fee";
 "sendTransaction.error.possibleBinanceTestnetTimeout" = "Aikaraja ylittyi. Yritä uudelleen.";
 "sendTransaction.error.rateLimited" = "Verkon kuormitus on liian suuri. Yritä myöhemmin uudelleen.";
 "sendTransaction.error.networkConnectionWasLost" = "Verkkoyhteys ei toimi. Yritä uudelleen.";
@@ -641,6 +643,7 @@
 "transactionConfirmation.Send.Section.Amount.title" = "Summa";
 "transactionConfirmation.Send.Section.Recipient.title" = "Vastaanottaja";
 "transactionConfirmation.Send.Section.TokenId.title" = "Rahake";
+"transactionConfirmation.Send.Section.Requester.title" = "Dapp";
 "transactionConfirmation.authorisation.reason" = "Aktorisoi vahvistaaksesi tilitapahtuman";
 "transactionConfirmation.keystore.accessKey.sign" = "Salaista avainta käsitellään siirron suorittamiseksi";
 "transactionConfirmation.fee.footerText" = "Mitä korkeampi kulujen yksikköhinta (Gas Fee) on, sitä suuremmalla todennäköisyydellä tilitapahtumasi vahvistetaan nopeasti. Sovelluksen arvioimat yksikköhinnat perustuvat lohkoketjun ajantasaiseen kuormitustietoon.";
@@ -880,3 +883,18 @@
 "accept.walletConnect.field.methods.title" = "Methods";
 "tokenscript.overrides.empty" = "There are no TokenScript overrides";
 "currency.navigationTitle" = "Change Fiat Currency";
+"hardwareWallet.failedToSign" = "Failed to sign message: %@";
+"hardwareWallet.failedToImportSeed" = "Failed to import seed: %@";
+"hardwareWallet.failedToWipe" = "Failed to wipe: %@";
+"hardwareWallet.failedToGetPublicKey" = "Failed to get public key: %@";
+"hardwareWallet.signatureObtained" = "Signature obtained";
+"hardwareWallet.publicKeyObtained" = "Public key obtained";
+"hardwareWallet.importedSeed" = "Imported seed";
+"eip1559.warning.priorityFeeTooHight" = "Priority Fee too hight";
+"eip1559.warning.priorityFeeTooLow" = "Priority Fee too low";
+"eip1559.warning.maxFeeTooHight" = "Max Fee too hight";
+"eip1559.warning.maxFeeTooLow" = "Max Fee too low";
+"eip1559.error.zeroMaxFee" = "Max Fee should be greater than zero";
+"eip1559.error.zeroPriorityFee" = "Priority Fee should be greater than zero";
+"eip1559.error.invalidPriorityFee" = "Priority Fee invalid";
+"eip1559.error.invalidMaxFee" = "Max Fee invalid";

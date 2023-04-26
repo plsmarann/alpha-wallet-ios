@@ -20,23 +20,22 @@ struct SelectTokenViewModelOutput {
 
 final class SelectTokenViewModel {
     private let filter: WalletFilter
-    private let tokenCollection: TokenCollection
+    private let tokensPipeline: TokensProcessingPipeline
     private var cancelable = Set<AnyCancellable>()
-    private var filteredTokens: [TokenViewModel] = []
     private let tokensFilter: TokensFilter
     private let whenFilterHasChanged: AnyPublisher<Void, Never>
     private let tokenImageFetcher: TokenImageFetcher
+    private let tokensService: TokensService
 
-    var headerBackgroundColor: UIColor = Configuration.Color.Semantic.tableViewHeaderBackground
-    var title: String = R.string.localizable.assetsSelectAssetTitle()
-
-    init(tokenCollection: TokenCollection,
+    init(tokensPipeline: TokensProcessingPipeline,
          tokensFilter: TokensFilter,
          filter: WalletFilter,
-         tokenImageFetcher: TokenImageFetcher) {
+         tokenImageFetcher: TokenImageFetcher,
+         tokensService: TokensService) {
 
+        self.tokensService = tokensService
         self.tokenImageFetcher = tokenImageFetcher
-        self.tokenCollection = tokenCollection
+        self.tokensPipeline = tokensPipeline
         self.tokensFilter = tokensFilter
         self.filter = filter
 
@@ -48,43 +47,39 @@ final class SelectTokenViewModel {
         }
     }
 
-    func selectTokenViewModel(at indexPath: IndexPath) -> Token? {
-        let token = filteredTokens[indexPath.row]
-
-        return tokenCollection.token(for: token.contractAddress, server: token.server)
+    func selectTokenViewModel(viewModel: SelectTokenViewModel.ViewModelType) -> Token? {
+        let value = viewModel.asTokenIdentifiable
+        return tokensService.token(for: value.contractAddress, server: value.server)
     }
 
     func transform(input: SelectTokenViewModelInput) -> SelectTokenViewModelOutput {
-        let _loadingState: CurrentValueSubject<LoadingState, Never> = .init(.idle)
+        let loadingState: CurrentValueSubject<LoadingState, Never> = .init(.idle)
 
-        let whenAppearOrFetchOrFilterHasChanged = input.willAppear.merge(with: input.fetch, whenFilterHasChanged)
-            .handleEvents(receiveOutput: { [_loadingState] in
-                _loadingState.send(.beginLoading)
-            }).flatMap { [tokenCollection] _ in tokenCollection.tokenViewModels.first() }
+        let whenAppearOrFetchOrFilterHasChanged = input.willAppear
+            .merge(with: input.fetch, whenFilterHasChanged)
+            .handleEvents(receiveOutput: { [loadingState] in
+                loadingState.send(.beginLoading)
+            }).flatMap { [tokensPipeline] _ in tokensPipeline.tokenViewModels.first() }
 
-        let snapshot = tokenCollection.tokenViewModels.merge(with: whenAppearOrFetchOrFilterHasChanged)
+        let snapshot = tokensPipeline.tokenViewModels
+            .merge(with: whenAppearOrFetchOrFilterHasChanged)
             .map { [tokensFilter, filter] tokens -> [TokenViewModel] in
                 let displayedTokens = tokensFilter.filterTokens(tokens: tokens, filter: filter)
                 return tokensFilter.sortDisplayedTokens(tokens: displayedTokens)
-            }.handleEvents(receiveOutput: { self.filteredTokens = $0 })
-            .map { self.buildViewModels(for: $0) }
-            .handleEvents(receiveOutput: { [_loadingState] _ in
-                switch _loadingState.value {
+            }.map { self.buildViewModels(for: $0) }
+            .handleEvents(receiveOutput: { [loadingState] _ in
+                switch loadingState.value {
                 case .beginLoading:
-                    _loadingState.send(.endLoading)
+                    loadingState.send(.endLoading)
                 case .endLoading, .idle:
                     break
                 }
             }).removeDuplicates()
             .map { self.buildSnapshot(for: $0) }
             .eraseToAnyPublisher()
-
-        let loadingState = _loadingState
-            .removeDuplicates()
-            .eraseToAnyPublisher()
         
-        let viewState = Publishers.CombineLatest(snapshot, loadingState)
-            .map { SelectTokenViewModel.ViewState(snapshot: $0.0, loadingState: $0.1, title: self.title) }
+        let viewState = Publishers.CombineLatest(snapshot, loadingState.removeDuplicates())
+            .map { SelectTokenViewModel.ViewState(snapshot: $0.0, loadingState: $0.1) }
             .eraseToAnyPublisher()
 
         return .init(viewState: viewState)
@@ -124,6 +119,14 @@ extension SelectTokenViewModel {
         case nativeCryptocurrency(EthTokenViewCellViewModel)
         case fungible(FungibleTokenViewCellViewModel)
         case nonFungible(NonFungibleTokenViewCellViewModel)
+
+        var asTokenIdentifiable: TokenIdentifiable {
+            switch self {
+            case .nativeCryptocurrency(let vm): return vm
+            case .fungible(let vm): return vm
+            case .nonFungible(let vm): return vm
+            }
+        }
     }
 
     enum LoadingState {
@@ -136,7 +139,7 @@ extension SelectTokenViewModel {
     struct ViewState {
         let snapshot: Snapshot
         let loadingState: LoadingState
-        let title: String
+        let title: String = R.string.localizable.assetsSelectAssetTitle()
     }
 }
 

@@ -7,7 +7,7 @@ import Combine
 class ChooseSendPrivateTransactionsProviderViewController: UIViewController {
     private let viewModel: ChooseSendPrivateTransactionsProviderViewModel
     private lazy var tableView: UITableView = {
-        let tableView = UITableView.grouped
+        let tableView = UITableView.buildGroupedTableView()
         tableView.register(SettingTableViewCell.self)
         tableView.register(SelectionTableViewCell.self)
         tableView.delegate = self
@@ -103,13 +103,28 @@ extension ChooseSendPrivateTransactionsProviderViewController: UITableViewDelega
 }
 
 extension UITableView {
-    static var grouped: UITableView {
+    static func buildGroupedTableView() -> UITableView {
         let tableView = UITableView(frame: .zero, style: .grouped)
         tableView.tableFooterView = UIView.tableFooterToRemoveEmptyCellSeparators()
         tableView.separatorStyle = .singleLine
         tableView.separatorColor = Configuration.Color.Semantic.tableViewSeparator
         tableView.backgroundColor = Configuration.Color.Semantic.tableViewBackground
         tableView.translatesAutoresizingMaskIntoConstraints = false
+
+        return tableView
+    }
+
+    static func buildPlainTableView() -> UITableView {
+        let tableView = UITableView(frame: .zero, style: .plain)
+        tableView.tableFooterView = UIView.tableFooterToRemoveEmptyCellSeparators()
+        tableView.separatorStyle = .singleLine
+        tableView.separatorColor = Configuration.Color.Semantic.tableViewSeparator
+        tableView.backgroundColor = Configuration.Color.Semantic.tableViewBackground
+        tableView.translatesAutoresizingMaskIntoConstraints = false
+        tableView.automaticallyAdjustsScrollIndicatorInsets = false
+        if #available(iOS 15.0, *) {
+            tableView.sectionHeaderTopPadding = 0.0
+        } 
 
         return tableView
     }

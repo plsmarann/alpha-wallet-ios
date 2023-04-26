@@ -10,7 +10,7 @@ protocol SignMessageCoordinatorDelegate: AnyObject {
 }
 
 extension SignMessageValidatorError: LocalizedError {
-    var localizedDescription: String {
+    public var errorDescription: String? {
         switch self {
         case .emptyMessage:
             return R.string.localizable.signMessageValidationEmptyMessage()
@@ -21,10 +21,10 @@ extension SignMessageValidatorError: LocalizedError {
             case .walletConnect:
                 return R.string.localizable.signMessageValidationWalletConnectV1RequestedChainUnavailable(active.name, requested.name)
             }
-        case .notMatchesToAnyOfChainIds(let active, _, _):
-            let active = String(active.map { $0.name }.joined(by: ","))
-            return R.string.localizable.signMessageValidationWalletConnectV2RequestedChainUnavailable(active)
+        case .notMatchesToAnyOfChainIds(_, let requested, _):
+            return R.string.localizable.signMessageValidationWalletConnectV2RequestedChainUnavailable(requested.name, requested.name)
         }
+
     }
 }
 
@@ -95,24 +95,24 @@ class SignMessageCoordinator: Coordinator {
         navigationController.dismiss(animated: true, completion: completion)
     }
 
-    private func sign(message: SignMessageType) throws -> Data {
+    private func sign(message: SignMessageType) async throws -> Data {
         switch message {
         case .message(let data):
             //This was previously `signMessage(_:for:). Changed it to `signPersonalMessage` because web3.js v1 (unlike v0.20.x) and probably other libraries expect so
-            return try keystore.signPersonalMessage(data, for: account, prompt: R.string.localizable.keystoreAccessKeySign()).get()
+            return try await keystore.signPersonalMessage(data, for: account, prompt: R.string.localizable.keystoreAccessKeySign()).get()
         case .personalMessage(let data):
-            return try keystore.signPersonalMessage(data, for: account, prompt: R.string.localizable.keystoreAccessKeySign()).get()
+            return try await keystore.signPersonalMessage(data, for: account, prompt: R.string.localizable.keystoreAccessKeySign()).get()
         case .typedMessage(let typedData):
-            return try keystore.signTypedMessage(typedData, for: account, prompt: R.string.localizable.keystoreAccessKeySign()).get()
+            return try await keystore.signTypedMessage(typedData, for: account, prompt: R.string.localizable.keystoreAccessKeySign()).get()
         case .eip712v3And4(let data):
-            return try keystore.signEip712TypedData(data, for: account, prompt: R.string.localizable.keystoreAccessKeySign()).get()
+            return try await keystore.signEip712TypedData(data, for: account, prompt: R.string.localizable.keystoreAccessKeySign()).get()
         }
     }
 
     private func showError(error: Error) {
         UIApplication.shared
             .presentedViewController(or: navigationController)
-            .displayError(message: error.prettyError)
+            .displayError(message: error.localizedDescription)
     }
 }
 
@@ -127,16 +127,18 @@ extension SignMessageCoordinator: SignatureConfirmationViewControllerDelegate {
     func controller(_ controller: SignatureConfirmationViewController, continueButtonTapped sender: UIButton) {
         analytics.log(action: Analytics.Action.signMessageRequest)
 
-        do {
-            let data = try sign(message: message)
+        Task { @MainActor in
+            do {
+                let data = try await sign(message: message)
 
-            close(completion: {
-                UINotificationFeedbackGenerator.show(feedbackType: .success)
+                close(completion: {
+                    UINotificationFeedbackGenerator.show(feedbackType: .success)
 
-                self.delegate?.coordinator(self, didSign: data)
-            })
-        } catch {
-            showError(error: error)
+                    self.delegate?.coordinator(self, didSign: data)
+                })
+            } catch {
+                showError(error: error)
+            }
         }
     }
 

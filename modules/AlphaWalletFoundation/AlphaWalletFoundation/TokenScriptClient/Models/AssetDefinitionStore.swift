@@ -295,13 +295,15 @@ public class AssetDefinitionStore: NSObject {
     }
 
     private func urlToFetch(contract: AlphaWallet.Address, server: RPCServer?) -> AnyPublisher<(url: URL, isScriptUri: Bool)?, Never> {
-        let urlToFetchFromTokenScriptRepo = Self.functional.urlToFetchFromTokenScriptRepo(contract: contract).flatMap { ($0, false) }
+        let urlToFetchFromTokenScriptRepo = functional.urlToFetchFromTokenScriptRepo(contract: contract).flatMap { ($0, false) }
 
         if let server = server {
             return Just(server)
                 .setFailureType(to: SessionTaskError.self)
                 .flatMap { [blockchainsProvider] server -> AnyPublisher<(url: URL, isScriptUri: Bool)?, SessionTaskError> in
-                    guard let blockchain = blockchainsProvider.blockchain(with: server) else { return .fail(SessionTaskError.responseError(PMKError.cancelled)) }
+                    guard let blockchain = blockchainsProvider.blockchain(with: server) else {
+                        return .fail(SessionTaskError(error: WalletSession.SessionError.sessionNotFound))
+                    }
 
                     return ScriptUri(blockchainProvider: blockchain).get(forContract: contract)
                         .map { ($0, true) }

@@ -15,15 +15,12 @@ public protocol BlockchainFactory {
 public final class BaseBlockchainFactory: BlockchainFactory {
     private let config: Config
     private let analytics: AnalyticsLogger
-    private let networkService: NetworkService
 
     public init(config: Config,
-                analytics: AnalyticsLogger,
-                networkService: NetworkService) {
+                analytics: AnalyticsLogger) {
 
         self.config = config
         self.analytics = analytics
-        self.networkService = networkService
     }
 
     public func buildBlockchain(server: RPCServer) -> BlockchainProvider {
@@ -56,7 +53,7 @@ public class BlockchainsProvider {
     }
 
     public func start() {
-        serversProvider.servers
+        serversProvider.enabledServersPublisher
             .map { [blockchainsSubject, blockchainFactory] servers -> ServerDictionary<BlockchainProvider> in
                 var blockchains: ServerDictionary<BlockchainProvider> = .init()
 

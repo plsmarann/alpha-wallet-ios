@@ -8,13 +8,12 @@
 import UIKit
 import AlphaWalletGoBack
 import WalletConnectSwift
-import PromiseKit
 import Combine
 import AlphaWalletFoundation
 import AlphaWalletLogger
 import AlphaWalletCore
 
-protocol WalletConnectCoordinatorDelegate: CanOpenURL, SendTransactionAndFiatOnRampDelegate, DappRequesterDelegate {
+protocol WalletConnectCoordinatorDelegate: DappRequesterDelegate {
     func universalScannerSelected(in coordinator: WalletConnectCoordinator)
 }
 
@@ -31,6 +30,8 @@ class WalletConnectCoordinator: NSObject, Coordinator {
     private let assetDefinitionStore: AssetDefinitionStore
     private let networkService: NetworkService
     private let dependencies: AtomicDictionary<Wallet, AppCoordinator.WalletDependencies>
+    private let restartHandler: RestartQueueHandler
+    private let serversProvider: ServersProvidable
 
     let walletConnectProvider: WalletConnectProvider
 
@@ -45,8 +46,12 @@ class WalletConnectCoordinator: NSObject, Coordinator {
          assetDefinitionStore: AssetDefinitionStore,
          networkService: NetworkService,
          walletConnectProvider: WalletConnectProvider,
-         dependencies: AtomicDictionary<Wallet, AppCoordinator.WalletDependencies>) {
+         dependencies: AtomicDictionary<Wallet, AppCoordinator.WalletDependencies>,
+         restartHandler: RestartQueueHandler,
+         serversProvider: ServersProvidable) {
 
+        self.serversProvider = serversProvider
+        self.restartHandler = restartHandler
         self.dependencies = dependencies
         self.walletConnectProvider = walletConnectProvider
         self.networkService = networkService
@@ -119,7 +124,8 @@ class WalletConnectCoordinator: NSObject, Coordinator {
             analytics: analytics,
             navigationController: navigationController,
             walletConnectProvider: walletConnectProvider,
-            session: session)
+            session: session,
+            serversProvider: serversProvider)
 
         coordinator.delegate = self
         coordinator.start()
@@ -195,7 +201,7 @@ extension WalletConnectCoordinator: WalletConnectProviderDelegate {
                                     source: Analytics.SignMessageRequestSource) -> AnyPublisher<Data, PromiseError> {
 
         guard let delegate = delegate else { return .empty() }
-        
+
         return delegate.requestGetTransactionCount(
             session: session,
             source: source)
@@ -208,7 +214,7 @@ extension WalletConnectCoordinator: WalletConnectProviderDelegate {
                             requester: RequesterViewModel?) -> AnyPublisher<Data, PromiseError> {
 
         guard let delegate = delegate else { return .empty() }
-        
+
         return delegate.requestSignMessage(
             message: message,
             server: server,
@@ -238,7 +244,7 @@ extension WalletConnectCoordinator: WalletConnectProviderDelegate {
                                 configuration: TransactionType.Configuration) -> AnyPublisher<SentTransaction, PromiseError> {
 
         guard let delegate = delegate else { return .empty() }
-        
+
         return delegate.requestSendTransaction(
             session: session,
             source: source,
@@ -247,7 +253,7 @@ extension WalletConnectCoordinator: WalletConnectProviderDelegate {
             configuration: configuration)
     }
 
-    func requestSingTransaction(session: WalletSession,
+    func requestSignTransaction(session: WalletSession,
                                 source: Analytics.TransactionConfirmationSource,
                                 requester: RequesterViewModel?,
                                 transaction: UnconfirmedTransaction,
@@ -255,7 +261,7 @@ extension WalletConnectCoordinator: WalletConnectProviderDelegate {
 
         guard let delegate = delegate else { return .empty() }
 
-        return delegate.requestSingTransaction(
+        return delegate.requestSignTransaction(
             session: session,
             source: source,
             requester: requester,
@@ -304,7 +310,7 @@ extension WalletConnectCoordinator: WalletConnectProviderDelegate {
     func provider(_ provider: WalletConnectProvider, didFail error: WalletConnectError) {
         infoLog("[WalletConnect] didFail error: \(error)")
 
-        guard let description = error.localizedDescription else { return }
+        guard let description = error.errorDescription else { return }
         displayErrorMessage(description)
     }
 
@@ -321,24 +327,35 @@ extension WalletConnectCoordinator: WalletConnectProviderDelegate {
         }
     }
 
-    func provider(_ provider: WalletConnectProvider, shouldConnectFor proposal: AlphaWallet.WalletConnect.Proposal, completion: @escaping (AlphaWallet.WalletConnect.ProposalResponse) -> Void) {
+    func provider(_ provider: WalletConnectProvider,
+                  shouldConnectFor proposal: AlphaWallet.WalletConnect.Proposal) -> AnyPublisher<AlphaWallet.WalletConnect.ProposalResponse, Never> {
+
         infoLog("[WalletConnect] shouldConnectFor connection: \(proposal)")
-        let proposalType: ProposalType = .walletConnect(.init(proposal: proposal, config: config))
-        firstly {
-            AcceptProposalCoordinator.promise(navigationController, coordinator: self, proposalType: proposalType, analytics: analytics)
-        }.done { choise in
-            guard case .walletConnect(let server) = choise else {
-                completion(.cancel)
-                JumpBackToPreviousApp.goBackForWalletConnectSessionCancelled()
-                return
-            }
-            completion(.connect(server))
-            JumpBackToPreviousApp.goBackForWalletConnectSessionApproved()
-        }.catch { _ in
-            completion(.cancel)
-        }.finally {
-            self.resetSessionsToRemoveLoadingIfNeeded()
-        }
+        let proposalType: ProposalType = .walletConnect(.init(proposal: proposal, serversProvider: serversProvider))
+
+        return AcceptProposalCoordinator.promise(
+            navigationController,
+            coordinator: self,
+            proposalType: proposalType,
+            analytics: analytics,
+            config: config,
+            restartHandler: restartHandler,
+            networkService: networkService,
+            serversProvider: serversProvider)
+        .publisher()
+        .map { choise -> AlphaWallet.WalletConnect.ProposalResponse in
+            guard case .walletConnect(let server) = choise else { return .cancel }
+            return .connect(server)
+        }.replaceError(with: .cancel)
+            .handleEvents(receiveOutput: { response in
+                switch response {
+                case .cancel:
+                    JumpBackToPreviousApp.goBackForWalletConnectSessionCancelled()
+                case .connect:
+                    JumpBackToPreviousApp.goBackForWalletConnectSessionApproved()
+                }
+            }).handleEvents(receiveCompletion: { _ in self.resetSessionsToRemoveLoadingIfNeeded() })
+            .eraseToAnyPublisher()
     }
 }
 
@@ -373,19 +390,5 @@ extension WalletConnectCoordinator: WalletConnectSessionsViewControllerDelegate 
         guard let navigationController = viewController.navigationController else { return }
 
         display(session: session, in: navigationController)
-    }
-}
-
-extension WalletConnectCoordinator: CanOpenURL {
-    func didPressViewContractWebPage(forContract contract: AlphaWallet.Address, server: RPCServer, in viewController: UIViewController) {
-        delegate?.didPressViewContractWebPage(forContract: contract, server: server, in: viewController)
-    }
-
-    func didPressViewContractWebPage(_ url: URL, in viewController: UIViewController) {
-        delegate?.didPressViewContractWebPage(url, in: viewController)
-    }
-
-    func didPressOpenWebPage(_ url: URL, in viewController: UIViewController) {
-        delegate?.didPressOpenWebPage(url, in: viewController)
     }
 }

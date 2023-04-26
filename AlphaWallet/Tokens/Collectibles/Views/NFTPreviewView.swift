@@ -9,7 +9,7 @@ import UIKit
 import AlphaWalletFoundation
 import Combine
 
-typealias NFTPreviewViewRepresentable = UIView & NFTPreviewConfigurable & ViewRoundingSupportable & ContentBackgroundSupportable & ViewLoadingCancelable
+typealias NFTPreviewViewRepresentable = UIView & NFTPreviewConfigurable & ViewRoundingSupportable & ContentBackgroundSupportable & ViewLoadingSupportable
 
 enum NFTPreviewViewType {
     case tokenCardView
@@ -31,6 +31,9 @@ final class NFTPreviewView: NFTPreviewViewRepresentable {
     var rounding: ViewRounding = .none {
         didSet { previewView.rounding = rounding }
     }
+    var placeholderRounding: ViewRounding = .none {
+        didSet { previewView.placeholderRounding = placeholderRounding }
+    }
     
     override var contentMode: UIView.ContentMode {
         didSet { previewView.contentMode = contentMode }
@@ -39,6 +42,11 @@ final class NFTPreviewView: NFTPreviewViewRepresentable {
     var contentBackgroundColor: UIColor? {
         get { return previewView.contentBackgroundColor }
         set { previewView.contentBackgroundColor = newValue }
+    }
+
+    var loading: ViewLoading {
+        get { return previewView.loading }
+        set { previewView.loading = newValue }
     }
 
     init(type: NFTPreviewViewType,
@@ -76,8 +84,14 @@ final class NFTPreviewView: NFTPreviewViewRepresentable {
         previewView.cancel()
     }
 
-    private static func generateTokenCardView(session: WalletSession, assetDefinitionStore: AssetDefinitionStore) -> TokenCardWebView {
-        let tokeCardWebView = TokenCardWebView(server: session.server, tokenView: .viewIconified, assetDefinitionStore: assetDefinitionStore, wallet: session.account)
+    private static func generateTokenCardView(session: WalletSession,
+                                              assetDefinitionStore: AssetDefinitionStore) -> TokenCardWebView {
+        let tokeCardWebView = TokenCardWebView(
+            server: session.server,
+            tokenView: .viewIconified,
+            assetDefinitionStore: assetDefinitionStore,
+            wallet: session.account)
+
         return tokeCardWebView
     }
 

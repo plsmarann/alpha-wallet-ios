@@ -13,15 +13,18 @@ public class BaseCoinTickersFetcher {
     private let pricesCacheLifetime: TimeInterval = 60 * 60
     private let dayChartHistoryCacheLifetime: TimeInterval = 60 * 60
     private let storage: CoinTickersStorage & ChartHistoryStorage & TickerIdsStorage
-    private let networkProvider: CoinTickerNetworkProviderType
+    private let networking: CoinTickerNetworking
     private let tickerIdsFetcher: TickerIdsFetcher
     /// Cached fetch ticker prices operations
     private var inlightPromises: AtomicDictionary<FetchTickerKey, AnyCancellable> = .init()
     /// Resolving ticker ids operations
     private var tickerResolvers: AtomicDictionary<TokenMappedToTicker, AnyCancellable> = .init()
 
-    public init(networkProvider: CoinTickerNetworkProviderType, storage: CoinTickersStorage & ChartHistoryStorage & TickerIdsStorage, tickerIdsFetcher: TickerIdsFetcher) {
-        self.networkProvider = networkProvider
+    public init(networking: CoinTickerNetworking,
+                storage: CoinTickersStorage & ChartHistoryStorage & TickerIdsStorage,
+                tickerIdsFetcher: TickerIdsFetcher) {
+
+        self.networking = networking
         self.tickerIdsFetcher = tickerIdsFetcher
         self.storage = storage
 
@@ -116,7 +119,7 @@ public class BaseCoinTickersFetcher {
 
     private func fetchChartHistory(force: Bool, period: ChartHistoryPeriod, for token: TokenMappedToTicker, currency: Currency) -> AnyPublisher<HistoryToPeriod, Never> {
         return tickerIdsFetcher.tickerId(for: token)
-            .flatMap { [storage, networkProvider, weak self] tickerId -> AnyPublisher<HistoryToPeriod, Never> in
+            .flatMap { [storage, networking, weak self] tickerId -> AnyPublisher<HistoryToPeriod, Never> in
                 guard let strongSelf = self else { return .empty() }
                 guard let tickerId = tickerId.flatMap({ AssignedCoinTickerId(tickerId: $0, token: token) }) else {
                     return .just(.init(period: period, history: .empty(currency: currency)))
@@ -125,7 +128,7 @@ public class BaseCoinTickersFetcher {
                 if let data = storage.chartHistory(period: period, for: tickerId, currency: currency), !strongSelf.hasExpired(history: data, for: period), !force {
                     return .just(.init(period: period, history: data.history))
                 } else {
-                    return networkProvider.fetchChartHistory(for: period, tickerId: tickerId.tickerId, currency: currency)
+                    return networking.fetchChartHistory(for: period, tickerId: tickerId.tickerId, currency: currency)
                         .handleEvents(receiveOutput: { history in
                             storage.addOrUpdateChartHistory(history: history, period: period, for: tickerId)
                         }).replaceError(with: .empty(currency: currency))
@@ -171,10 +174,15 @@ public class BaseCoinTickersFetcher {
 
         return Publishers.MergeMany(publishers).collect()
             .setFailureType(to: PromiseError.self)
-            .flatMap { [networkProvider] tickerIds -> AnyPublisher<[AssignedCoinTickerId: CoinTicker], PromiseError> in
+            .flatMap { [networking] tickerIds -> AnyPublisher<[AssignedCoinTickerId: CoinTicker], PromiseError> in
                 let tickerIds = tickerIds.compactMap { $0 }
                 let ids = tickerIds.compactMap { $0.tickerId }
-                return networkProvider.fetchTickers(for: ids, currency: currency).map { tickers in
+
+                guard !ids.isEmpty else {
+                    return .just([:])
+                }
+
+                return networking.fetchTickers(for: ids, currency: currency).map { tickers in
                     var result: [AssignedCoinTickerId: CoinTicker] = [:]
 
                     for ticker in tickers {

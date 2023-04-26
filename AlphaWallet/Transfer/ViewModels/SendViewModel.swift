@@ -34,13 +34,13 @@ extension Token: EnterAmountSupportable {}
 final class SendViewModel: TransactionTypeSupportable {
     private let transactionTypeFromQrCode: TransactionTypeFromQrCode
     private let session: WalletSession
-    private let tokensService: TokenProvidable & TokenAddable & TokenBalanceRefreshable & TokenViewModelState
+    private let tokensPipeline: TokensProcessingPipeline
     private let transactionTypeSubject: CurrentValueSubject<TransactionType, Never>
     private var cancelable = Set<AnyCancellable>()
     private (set) lazy var amountTextFieldViewModel = AmountTextFieldViewModel(token: nil, debugName: "")
     private (set) var amountToSend: FungibleAmount = .notSet
     private var recipient: AlphaWallet.Address?
-
+    private let tokensService: TokensService
     /// TokenViewModel updates once we receive a new token, might be when scan qr code or initially. Ask to refresh token balance when received. Only for supported transaction types tokens
     private lazy var tokenViewModel: AnyPublisher<TokenViewModel?, Never> = {
         return transactionTypeSubject
@@ -55,12 +55,12 @@ final class SendViewModel: TransactionTypeSupportable {
                     return nil
                 }
             }.removeDuplicates()
-            .flatMapLatest { [tokensService] token -> AnyPublisher<TokenViewModel?, Never> in
+            .flatMapLatest { [tokensPipeline, tokensService] token -> AnyPublisher<TokenViewModel?, Never> in
                 guard let token = token else { return .just(nil) }
 
                 tokensService.refreshBalance(updatePolicy: .token(token: token))
 
-                return tokensService.tokenViewModelPublisher(for: token)
+                return tokensPipeline.tokenViewModelPublisher(for: token)
             }.share(replay: 1)
             .eraseToAnyPublisher()
     }()
@@ -78,11 +78,13 @@ final class SendViewModel: TransactionTypeSupportable {
 
     init(transactionType: TransactionType,
          session: WalletSession,
-         tokensService: TokenProvidable & TokenAddable & TokenBalanceRefreshable & TokenViewModelState,
-         sessionsProvider: SessionsProvider) {
+         tokensPipeline: TokensProcessingPipeline,
+         sessionsProvider: SessionsProvider,
+         tokensService: TokensService) {
 
-        self.transactionTypeSubject = .init(transactionType)
         self.tokensService = tokensService
+        self.transactionTypeSubject = .init(transactionType)
+        self.tokensPipeline = tokensPipeline
         self.session = session
         self.transactionTypeFromQrCode = TransactionTypeFromQrCode(sessionsProvider: sessionsProvider, session: session)
         self.transactionTypeFromQrCode.transactionTypeProvider = self
@@ -143,7 +145,7 @@ final class SendViewModel: TransactionTypeSupportable {
             .eraseToAnyPublisher()
 
         let recipientErrorState = isRecipientValid(inputsValidationError: inputsValidationError)
-            .map { $0 ? TextField.TextFieldErrorState.none : TextField.TextFieldErrorState.error(InputError.invalidAddress.prettyError) }
+            .map { $0 ? TextField.TextFieldErrorState.none : TextField.TextFieldErrorState.error(InputError.invalidAddress.localizedDescription) }
             .eraseToAnyPublisher()
 
         let cryptoErrorState = isCryptoValueValid(cryptoValue: input.amountToSend, send: input.send)
@@ -178,7 +180,7 @@ final class SendViewModel: TransactionTypeSupportable {
                 case .notSet:
                     return nil
                 case .allFunds:
-                    guard let amount = tokensService.tokenViewModel(for: token)?.balance.valueDecimal else { return nil }
+                    guard let amount = tokensPipeline.tokenViewModel(for: token)?.balance.valueDecimal else { return nil }
 
                     return AmountTextFieldState(amount: .allFunds(amount.doubleValue))
                 case .amount(let amount):
@@ -197,10 +199,10 @@ final class SendViewModel: TransactionTypeSupportable {
             .compactMap { $0.value.flatMap { buildAmountTextFieldState(for: $0) } }
             .eraseToAnyPublisher()
 
-        let allFundsAmount = allFunds.compactMap { [tokensService, transactionTypeSubject] _ -> AmountTextFieldState? in
+        let allFundsAmount = allFunds.compactMap { [tokensPipeline, transactionTypeSubject] _ -> AmountTextFieldState? in
             switch transactionTypeSubject.value {
             case .nativeCryptocurrency(let token, _, _), .erc20Token(let token, _, _):
-                guard let amount = tokensService.tokenViewModel(for: token)?.balance.valueDecimal else { return nil }
+                guard let amount = tokensPipeline.tokenViewModel(for: token)?.balance.valueDecimal else { return nil }
 
                 return AmountTextFieldState(amount: .allFunds(amount.doubleValue))
             case .erc721ForTicketToken, .erc721Token, .erc875Token, .erc1155Token, .prebuilt:
@@ -287,10 +289,10 @@ final class SendViewModel: TransactionTypeSupportable {
         switch transactionType {
         case .nativeCryptocurrency:
             let etherToken: Token = MultipleChainsTokensDataStore.functional.etherToken(forServer: transactionType.server)
-            return tokensService.tokenViewModel(for: etherToken)
+            return tokensPipeline.tokenViewModel(for: etherToken)
                 .flatMap { return R.string.localizable.sendAvailable($0.balance.amountShort) }
         case .erc20Token(let token, _, _):
-            return tokensService.tokenViewModel(for: token)
+            return tokensPipeline.tokenViewModel(for: token)
                 .flatMap { R.string.localizable.sendAvailable("\($0.balance.amountShort) \(transactionType.symbol)") }
         case .erc721ForTicketToken, .erc721Token, .erc875Token, .erc1155Token, .prebuilt:
             return nil
@@ -302,7 +304,7 @@ final class SendViewModel: TransactionTypeSupportable {
         case .nativeCryptocurrency:
             return false
         case .erc20Token(let token, _, _):
-            return tokensService.tokenViewModel(for: token)?.balance == nil
+            return tokensPipeline.tokenViewModel(for: token)?.balance == nil
         case .erc721ForTicketToken, .erc721Token, .erc875Token, .erc1155Token, .prebuilt:
             return true
         }
@@ -339,7 +341,7 @@ final class SendViewModel: TransactionTypeSupportable {
             .eraseToAnyPublisher()
     }
 
-    private func validatedAmountToSend(_ amount: FungibleAmount, tokenViewModel: TokenViewModel?, checkIfGreaterThanZero: Bool = true) -> BigInt? {
+    private func validatedAmountToSend(_ amount: FungibleAmount, tokenViewModel: TokenViewModel?, checkIfGreaterThanZero: Bool = true) -> BigUInt? {
         switch amount {
         case .notSet:
             return nil
@@ -355,7 +357,7 @@ final class SendViewModel: TransactionTypeSupportable {
                 break
             }
 
-            return Decimal(value).toBigInt(decimals: transactionType.tokenObject.decimals)
+            return Decimal(value).toBigUInt(decimals: transactionType.tokenObject.decimals)
         case .allFunds:
             return tokenViewModel?.balance.value
         }
@@ -413,7 +415,6 @@ extension TransactionTypeSupportable {
 
 final class TransactionTypeFromQrCode {
     private lazy var eip681UrlResolver = Eip681UrlResolver(
-        config: session.config,
         sessionsProvider: sessionsProvider,
         missingRPCServerStrategy: .fallbackToPreffered(session.server))
     private let session: WalletSession
@@ -464,7 +465,7 @@ extension TransactionTypeFromQrCode {
         case serverNotMatches
         case tokenNotFound
 
-        var localizedDescription: String {
+        var errorDescription: String? {
             switch self {
             case .serverNotMatches:
                 return "Server Not Matches"

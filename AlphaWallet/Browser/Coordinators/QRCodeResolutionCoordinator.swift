@@ -7,7 +7,6 @@
 
 import Foundation
 import BigInt
-import PromiseKit
 import AlphaWalletFoundation
 import AlphaWalletLogger
 import Combine
@@ -30,28 +29,24 @@ protocol QRCodeResolutionCoordinatorDelegate: AnyObject {
 
 final class QRCodeResolutionCoordinator: Coordinator {
     enum Usage {
-        case all(tokensService: TokenProvidable, sessionsProvider: SessionsProvider)
+        case all(tokensService: TokensService, sessionsProvider: SessionsProvider)
         case importWalletOnly
     }
 
-    private let config: Config
     private let usage: Usage
     private var skipResolvedCodes: Bool = false
     private var navigationController: UINavigationController {
         scanQRCodeCoordinator.parentNavigationController
     }
     private let scanQRCodeCoordinator: ScanQRCodeCoordinator
-    private let account: Wallet
     private var cancellable = Set<AnyCancellable>()
 
     var coordinators: [Coordinator] = []
     weak var delegate: QRCodeResolutionCoordinatorDelegate?
 
-    init(config: Config, coordinator: ScanQRCodeCoordinator, usage: Usage, account: Wallet) {
-        self.config = config
+    init(coordinator: ScanQRCodeCoordinator, usage: Usage) {
         self.usage = usage
         self.scanQRCodeCoordinator = coordinator
-        self.account = account
     }
 
     func start(fromSource source: Analytics.ScanQRCodeSource, clipboardString: String? = nil) {
@@ -77,8 +72,8 @@ extension QRCodeResolutionCoordinator: ScanQRCodeCoordinatorDelegate {
 
     private func availableActions(forContract contract: AlphaWallet.Address) -> [ScanQRCodeAction] {
         switch usage {
-        case .all(let tokensService, _):
-            let isTokenFound = tokensService.token(for: contract, server: .main) != nil
+        case .all(let tokensDataStore, _):
+            let isTokenFound = tokensDataStore.token(for: contract, server: .main) != nil
             if isTokenFound {
                 return [.sendToAddress, .watchWallet, .openInEtherscan]
             } else {
@@ -112,7 +107,6 @@ extension QRCodeResolutionCoordinator: ScanQRCodeCoordinatorDelegate {
                 switch usage {
                 case .all(_, let sessionsProvider):
                     let resolver = Eip681UrlResolver(
-                        config: config,
                         sessionsProvider: sessionsProvider,
                         missingRPCServerStrategy: .fallbackToFirstMatching)
 

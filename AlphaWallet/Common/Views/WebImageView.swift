@@ -38,7 +38,7 @@ final class FixedContentModeImageView: UIImageView {
 
 //TODO: rename maybe, as its actually not image view
 final class WebImageView: UIView, ContentBackgroundSupportable {
-    
+
     private lazy var placeholderImageView: FixedContentModeImageView = {
         let imageView = FixedContentModeImageView(fixedContentMode: contentMode)
         imageView.translatesAutoresizingMaskIntoConstraints = false
@@ -46,19 +46,19 @@ final class WebImageView: UIView, ContentBackgroundSupportable {
         imageView.backgroundColor = backgroundColor
         imageView.isHidden = true
         imageView.rounding = .none
-        
+
         return imageView
     }()
-    
+
     private lazy var imageView: FixedContentModeImageView = {
         let imageView = FixedContentModeImageView(fixedContentMode: contentMode)
         imageView.translatesAutoresizingMaskIntoConstraints = false
         imageView.contentMode = .scaleAspectFill
         imageView.backgroundColor = backgroundColor
-        
+
         return imageView
     }()
-    
+
     private lazy var svgImageView: SvgImageView = {
         let imageView = SvgImageView()
         imageView.translatesAutoresizingMaskIntoConstraints = false
@@ -76,20 +76,30 @@ final class WebImageView: UIView, ContentBackgroundSupportable {
     }()
 
     private lazy var videoPlayerView: AVPlayerView = {
-        let view = AVPlayerView(edgeInsets: .zero, playButtonPositioning: playButtonPositioning, viewModel: viewModel.avPlayerViewModel)
+        let view = AVPlayerView(
+            edgeInsets: .zero,
+            playButtonPositioning: playButtonPositioning,
+            viewModel: viewModel.avPlayerViewModel)
+
         view.translatesAutoresizingMaskIntoConstraints = false
 
         return view
     }()
-    
+
     override var contentMode: UIView.ContentMode {
         didSet { imageView.fixedContentMode = contentMode }
     }
-    
+
     var rounding: ViewRounding = .none {
         didSet { imageView.rounding = rounding; svgImageView.rounding = rounding; videoPlayerView.rounding = rounding; }
     }
-    
+
+    var placeholderRounding: ViewRounding = .none {
+        didSet { placeholderImageView.rounding = placeholderRounding }
+    }
+
+    @Published var loading: ViewLoading = .enabled
+
     var contentBackgroundColor: UIColor? {
         didSet { imageView.backgroundColor = contentBackgroundColor; }
     }
@@ -111,13 +121,13 @@ final class WebImageView: UIView, ContentBackgroundSupportable {
         backgroundColor = .clear
         clipsToBounds = true
         isUserInteractionEnabled = true
-        
+
         addSubview(imageView)
         addSubview(svgImageView)
         addSubview(placeholderImageView)
         addSubview(videoPlayerView)
         addSubview(loadingIndicator)
-        
+
         NSLayoutConstraint.activate([
             videoPlayerView.anchorsConstraint(to: self, edgeInsets: edgeInsets),
             svgImageView.anchorsConstraint(to: self, edgeInsets: edgeInsets),
@@ -130,7 +140,7 @@ final class WebImageView: UIView, ContentBackgroundSupportable {
 
         bind(viewModel: viewModel)
     }
-    
+
     required init?(coder aDecoder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
     }
@@ -147,7 +157,9 @@ final class WebImageView: UIView, ContentBackgroundSupportable {
     }
 
     private func bind(viewModel: WebImageViewModel) {
-        let input = WebImageViewModelInput(loadUrl: setContentSubject.eraseToAnyPublisher())
+        let input = WebImageViewModelInput(
+            loadUrl: setContentSubject.eraseToAnyPublisher(),
+            viewLoading: $loading.eraseToAnyPublisher())
 
         let output = viewModel.transform(input: input)
         output.viewState
@@ -157,6 +169,12 @@ final class WebImageView: UIView, ContentBackgroundSupportable {
         output.isPlaceholderHiddenWhenVideoLoaded
             .assign(to: \.isHidden, on: placeholderImageView)
             .store(in: &cancellable)
+
+        output.loadingViewAlpha
+            .sink { [weak loadingIndicator, weak videoPlayerView] in
+                loadingIndicator?.alpha = $0
+                videoPlayerView?.loadingIndicator.alpha = $0
+            }.store(in: &cancellable)
     }
 
     private func reload(viewState: WebImageViewModel.ViewState) {

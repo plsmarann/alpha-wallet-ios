@@ -15,7 +15,7 @@ public protocol TokenScriptSupportable {
     var type: TokenType { get }
     var decimals: Int { get }
     var server: RPCServer { get }
-    var valueBI: BigInt { get }
+    var valueBI: BigUInt { get }
     var balanceNft: [TokenBalanceValue] { get }
 }
 
@@ -27,12 +27,8 @@ public extension TokenAdaptor {
     }
 
     func titleInPluralFormOptional(token: TokenScriptSupportable) -> String? {
-        if let tokenHolders = getTokenHolders(token: token).first {
-            guard let name = tokenHolders.tokens.first?.values.collectionValue?.name, name.nonEmpty else { return nil }
-            return name
-        } else {
-            return nil
-        }
+        guard let collection = token.balanceNft.first?.nonFungibleBalance?.collection else { return nil }
+        return collection.name.nonEmpty ? collection.name : nil
     }
 
     func titleInPluralForm(token: TokenScriptSupportable) -> String {
@@ -205,7 +201,8 @@ public func isZeroBalance(_ balance: String, tokenType: TokenType) -> Bool {
         return balance.isEmpty
     case .erc1155:
         //TODO this makes an assumption about the serialization format for `BigInt`, but avoids the performance hit for deserializing the JSON string to a type. Improve this architecture-wise
-        return balance.isEmpty || balance.contains("value\":[\"+\",0],\"")
+        //make sure to mask token balance as zero if balance has value "0", might be wrongly setted when importing
+        return balance.isEmpty || balance.contains("value\":[\"+\",0],\"") || balance == "0"
     }
 }
 

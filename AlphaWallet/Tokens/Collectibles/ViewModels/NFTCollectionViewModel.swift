@@ -12,7 +12,7 @@ import Combine
 import AlphaWalletFoundation
 
 struct NFTCollectionViewModelInput {
-    let appear: AnyPublisher<Void, Never>
+    let willAppear: AnyPublisher<Void, Never>
     let pullToRefresh: AnyPublisher<Void, Never>
 }
 
@@ -25,12 +25,12 @@ struct NFTCollectionViewModelOutput {
 final class NFTCollectionViewModel {
     private var cancelable = Set<AnyCancellable>()
     private let assetDefinitionStore: AssetDefinitionStore
-    private let tokensService: TokenViewModelState & TokenHolderState
+    private let tokensService: TokensProcessingPipeline
     private let nftProvider: NFTProvider
     private let config: Config
     private (set) lazy var tokenScriptFileStatusHandler: XMLHandler = XMLHandler(token: token, assetDefinitionStore: assetDefinitionStore)
     private let tokenImageFetcher: TokenImageFetcher
-    
+
     let activitiesService: ActivitiesServiceType
     let tokenHolders: CurrentValueSubject<[TokenHolder], Never> = .init([])
     let token: Token
@@ -65,7 +65,7 @@ final class NFTCollectionViewModel {
     init(token: Token,
          wallet: Wallet,
          assetDefinitionStore: AssetDefinitionStore,
-         tokensService: TokenViewModelState & TokenHolderState,
+         tokensService: TokensProcessingPipeline,
          activitiesService: ActivitiesServiceType,
          nftProvider: NFTProvider,
          config: Config,
@@ -79,8 +79,8 @@ final class NFTCollectionViewModel {
         self.wallet = wallet
         self.assetDefinitionStore = assetDefinitionStore
         self.tokenImageFetcher = tokenImageFetcher
-    } 
-    
+    }
+
     func transform(input: NFTCollectionViewModelInput) -> NFTCollectionViewModelOutput {
         activitiesService.start()
 
@@ -135,7 +135,7 @@ final class NFTCollectionViewModel {
         switch token.type {
         case .erc1155:
             switch wallet.type {
-            case .real:
+            case .real, .hardware:
                 return .assetSelection(isEnabled: true)
             case .watch:
                 return .assetSelection(isEnabled: config.development.shouldPretendIsRealWallet)

@@ -9,29 +9,36 @@ import Foundation
 import AlphaWalletFoundation
 import Combine
 
+struct MissingRpcServerError: Error {
+    let servers: [RPCServer]
+}
+
 final class AcceptWalletConnectSessionViewModel: ExpandableSection {
-    private let config: Config
+    private let serversProvider: ServersProvidable
     private let proposal: AlphaWallet.WalletConnect.Proposal
     private (set) var serversToConnect: [RPCServer]
     private var serverChoices: [RPCServer] {
-        ServersCoordinator.serversOrdered.filter { config.enabledServers.contains($0) }
+        ServersCoordinator.serversOrdered.filter { serversProvider.enabledServers.contains($0) }
     }
     var openedSections: Set<Int> = .init()
     let methods: [String]
     var connectionIconUrl: URL? { proposal.iconUrl }
 
     var serversViewModel: ServersViewModel {
-        let servers = serverChoices.filter { config.enabledServers.contains($0) } .compactMap { RPCServerOrAuto.server($0) }
+        let servers = serverChoices.filter { serversProvider.enabledServers.contains($0) } .compactMap { RPCServerOrAuto.server($0) }
         let serversToConnect: [RPCServerOrAuto] = serversToConnect.map { .server($0) }
         //NOTE: multiple server selection is disable for this case
         return ServersViewModel(servers: servers, selectedServers: serversToConnect, displayWarningFooter: false)
     }
 
-    init(proposal: AlphaWallet.WalletConnect.Proposal, config: Config) {
+    init(proposal: AlphaWallet.WalletConnect.Proposal,
+         serversProvider: ServersProvidable) {
+
         self.proposal = proposal
-        self.serversToConnect = proposal.servers
-        self.methods = proposal.methods
-        self.config = config
+        //TODO: refactor later with using servers from each level of received namepaces
+        self.serversToConnect = proposal.requiredNamespaces.flatMap { Array($0.chains) } + proposal.optionalNamespaces.flatMap { Array($0.chains) }
+        self.methods = []//proposal.methods
+        self.serversProvider = serversProvider
     }
 
     func set(serversToConnect: [RPCServer]) {
@@ -40,7 +47,7 @@ final class AcceptWalletConnectSessionViewModel: ExpandableSection {
 
     var title: String {
         return R.string.localizable.walletConnectConnectionTitle()
-    } 
+    }
 
     var connectButtonTitle: String {
         return R.string.localizable.confirmPaymentConnectButtonTitle()
@@ -53,8 +60,8 @@ final class AcceptWalletConnectSessionViewModel: ExpandableSection {
     private var sections: [Section] {
         var sections: [Section] = [.name, .url]
         sections += [.networks]
-        sections += methods.isEmpty ? [] : [.methods]
-
+        //sections += methods.isEmpty ? [] : [.methods]
+        //TODO: display events
         return sections
     }
 
@@ -63,12 +70,11 @@ final class AcceptWalletConnectSessionViewModel: ExpandableSection {
     }
 
     func validateEnabledServers(serversToConnect: [RPCServer]) throws {
-        struct MissingRPCServer: Error {}
-        let missedServers = serversToConnect.filter { !config.enabledServers.contains($0) }
-        if missedServers.isEmpty {
+        let missingServers = serversToConnect.filter { !serversProvider.enabledServers.contains($0) }
+        if missingServers.isEmpty {
             //no-op
         } else {
-            throw MissingRPCServer()
+            throw MissingRpcServerError(servers: missingServers)
         }
     }
 
@@ -103,24 +109,29 @@ final class AcceptWalletConnectSessionViewModel: ExpandableSection {
 
         switch sections[section] {
         case .name:
-            return .init(title: .normal(proposal.name), headerName: sections[section].title, configuration: .init(section: section))
+            let name = proposal.name.trimmed.isEmpty ? "--" : proposal.name.trimmed
+            return .init(title: .normal(name), headerName: sections[section].title, viewState: .init(section: section))
         case .networks:
             let servers = serversToConnect.map { $0.displayName }.joined(separator: ", ")
             let shouldHideChevron = proposal.serverEditing == .notSupporting || serversToConnect.count == 1
-            let configuration: TransactionConfirmationHeaderView.Configuration = .init(
+            let viewState = TransactionConfirmationHeaderViewModel.ViewState(
                 isOpened: isOpened,
                 section: section,
                 shouldHideChevron: shouldHideChevron)
             let serverIcon = serversToConnect.first?.walletConnectIconImage ?? .just(nil)
 
-            return .init(title: .normal(servers), headerName: serversSectionTitle, titleIcon: serverIcon, configuration: configuration)
+            return .init(title: .normal(servers), headerName: serversSectionTitle, titleIcon: serverIcon, viewState: viewState)
         case .url:
             let dappUrl = proposal.dappUrl.absoluteString
-            return .init(title: .normal(dappUrl), headerName: sections[section].title, configuration: .init(section: section))
+            return .init(title: .normal(dappUrl), headerName: sections[section].title, viewState: .init(section: section))
         case .methods:
             let methods = methods.joined(separator: ", ")
-            let configuration: TransactionConfirmationHeaderView.Configuration = .init(isOpened: isOpened, section: section, shouldHideChevron: !sections[section].isExpandable)
-            return .init(title: .normal(methods), headerName: sections[section].title, configuration: configuration)
+            let viewState = TransactionConfirmationHeaderViewModel.ViewState(
+                isOpened: isOpened,
+                section: section,
+                shouldHideChevron: !sections[section].isExpandable)
+
+            return .init(title: .normal(methods), headerName: sections[section].title, viewState: viewState)
         }
     }
 

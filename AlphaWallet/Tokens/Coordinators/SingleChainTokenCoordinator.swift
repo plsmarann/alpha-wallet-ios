@@ -31,12 +31,12 @@ class SingleChainTokenCoordinator: Coordinator {
     private let tokenActionsProvider: SupportedTokenActionsProvider
     private let coinTickersFetcher: CoinTickersFetcher
     private let activitiesService: ActivitiesServiceType
-    private let sessions: ServerDictionary<WalletSession>
+    private let sessionsProvider: SessionsProvider
     private let alertService: PriceAlertServiceType
-    private let tokensService: TokenBalanceRefreshable & TokenViewModelState & TokenHolderState
+    private let tokensPipeline: TokensProcessingPipeline
     private let currencyService: CurrencyService
     private let tokenImageFetcher: TokenImageFetcher
-
+    private let tokensService: TokensService
     let session: WalletSession
     weak var delegate: SingleChainTokenCoordinatorDelegate?
     var coordinators: [Coordinator] = []
@@ -54,15 +54,17 @@ class SingleChainTokenCoordinator: Coordinator {
          coinTickersFetcher: CoinTickersFetcher,
          activitiesService: ActivitiesServiceType,
          alertService: PriceAlertServiceType,
-         tokensService: TokenBalanceRefreshable & TokenViewModelState & TokenHolderState,
-         sessions: ServerDictionary<WalletSession>,
+         tokensPipeline: TokensProcessingPipeline,
+         sessionsProvider: SessionsProvider,
          currencyService: CurrencyService,
-         tokenImageFetcher: TokenImageFetcher) {
+         tokenImageFetcher: TokenImageFetcher,
+         tokensService: TokensService) {
 
+        self.tokensService = tokensService
         self.tokenImageFetcher = tokenImageFetcher
         self.currencyService = currencyService
-        self.sessions = sessions
-        self.tokensService = tokensService
+        self.sessionsProvider = sessionsProvider
+        self.tokensPipeline = tokensPipeline
         self.session = session
         self.keystore = keystore
         self.assetDefinitionStore = assetDefinitionStore
@@ -96,10 +98,11 @@ class SingleChainTokenCoordinator: Coordinator {
             analytics: analytics,
             nftProvider: nftProvider,
             activitiesService: activitiesService,
-            tokensService: tokensService,
-            sessions: sessions,
+            tokensService: tokensPipeline,
+            sessionsProvider: sessionsProvider,
             currencyService: currencyService,
-            tokenImageFetcher: tokenImageFetcher)
+            tokenImageFetcher: tokenImageFetcher,
+            tokenActionsProvider: tokenActionsProvider)
 
         addCoordinator(coordinator)
         coordinator.delegate = self
@@ -111,7 +114,23 @@ class SingleChainTokenCoordinator: Coordinator {
         let activitiesFilterStrategy = token.activitiesFilterStrategy
         let activitiesService = self.activitiesService.copy(activitiesFilterStrategy: activitiesFilterStrategy, transactionsFilterStrategy: TransactionDataStore.functional.transactionsFilter(for: activitiesFilterStrategy, token: token))
 
-        let coordinator = FungibleTokenCoordinator(token: token, navigationController: navigationController, session: session, keystore: keystore, assetDefinitionStore: assetDefinitionStore, analytics: analytics, tokenActionsProvider: tokenActionsProvider, coinTickersFetcher: coinTickersFetcher, activitiesService: activitiesService, alertService: alertService, tokensService: tokensService, sessions: sessions, currencyService: currencyService, tokenImageFetcher: tokenImageFetcher)
+        let coordinator = FungibleTokenCoordinator(
+            token: token,
+            navigationController: navigationController,
+            session: session,
+            keystore: keystore,
+            assetDefinitionStore: assetDefinitionStore,
+            analytics: analytics,
+            tokenActionsProvider: tokenActionsProvider,
+            coinTickersFetcher: coinTickersFetcher,
+            activitiesService: activitiesService,
+            alertService: alertService,
+            tokensPipeline: tokensPipeline,
+            sessionsProvider: sessionsProvider,
+            currencyService: currencyService,
+            tokenImageFetcher: tokenImageFetcher,
+            tokensService: tokensService)
+
         addCoordinator(coordinator)
         coordinator.delegate = self
         coordinator.start()

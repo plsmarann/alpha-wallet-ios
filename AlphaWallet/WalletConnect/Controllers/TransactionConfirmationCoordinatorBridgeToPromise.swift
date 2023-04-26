@@ -30,8 +30,7 @@ private class TransactionConfirmationCoordinatorBridgeToPromise {
     private weak var confirmationCoordinator: TransactionConfirmationCoordinator?
     private weak var delegate: SendTransactionAndFiatOnRampDelegate?
     private let keystore: Keystore
-    private let assetDefinitionStore: AssetDefinitionStore
-    private let tokensService: TokenViewModelState
+    private let tokensService: TokensProcessingPipeline
     private let networkService: NetworkService
 
     init(_ navigationController: UINavigationController,
@@ -41,8 +40,7 @@ private class TransactionConfirmationCoordinatorBridgeToPromise {
          domainResolutionService: DomainResolutionServiceType,
          delegate: SendTransactionAndFiatOnRampDelegate?,
          keystore: Keystore,
-         assetDefinitionStore: AssetDefinitionStore,
-         tokensService: TokenViewModelState,
+         tokensService: TokensProcessingPipeline,
          networkService: NetworkService) {
 
         self.networkService = networkService
@@ -53,7 +51,6 @@ private class TransactionConfirmationCoordinatorBridgeToPromise {
         self.analytics = analytics
         self.domainResolutionService = domainResolutionService
         self.keystore = keystore
-        self.assetDefinitionStore = assetDefinitionStore
 
         retainCycle = self
         self.delegate = delegate
@@ -77,7 +74,6 @@ private class TransactionConfirmationCoordinatorBridgeToPromise {
             analytics: analytics,
             domainResolutionService: domainResolutionService,
             keystore: keystore,
-            assetDefinitionStore: assetDefinitionStore,
             tokensService: tokensService,
             networkService: networkService)
 
@@ -108,7 +104,7 @@ extension TransactionConfirmationCoordinatorBridgeToPromise: TransactionConfirma
     }
 
     func didClose(in coordinator: TransactionConfirmationCoordinator) {
-        seal.reject(DAppError.cancelled)
+        seal.reject(JsonRpcError.requestRejected)
     }
 
     func buyCrypto(wallet: Wallet, server: RPCServer, viewController: UIViewController, source: Analytics.BuyCryptoSource) {
@@ -131,7 +127,7 @@ extension TransactionConfirmationCoordinatorBridgeToPromise: CanOpenURL {
 }
 
 extension TransactionConfirmationCoordinator {
-    static func promise(_ navigationController: UINavigationController, session: WalletSession, coordinator: Coordinator & CanOpenURL, transaction: UnconfirmedTransaction, configuration: TransactionType.Configuration, analytics: AnalyticsLogger, domainResolutionService: DomainResolutionServiceType, source: Analytics.TransactionConfirmationSource, delegate: SendTransactionAndFiatOnRampDelegate?, keystore: Keystore, assetDefinitionStore: AssetDefinitionStore, tokensService: TokenViewModelState, networkService: NetworkService) -> Promise<ConfirmResult> {
+    static func promise(_ navigationController: UINavigationController, session: WalletSession, coordinator: Coordinator & CanOpenURL, transaction: UnconfirmedTransaction, configuration: TransactionType.Configuration, analytics: AnalyticsLogger, domainResolutionService: DomainResolutionServiceType, source: Analytics.TransactionConfirmationSource, delegate: SendTransactionAndFiatOnRampDelegate?, keystore: Keystore, tokensService: TokensProcessingPipeline, networkService: NetworkService) -> Promise<ConfirmResult> {
         let bridge = TransactionConfirmationCoordinatorBridgeToPromise(
             navigationController,
             session: session,
@@ -140,7 +136,6 @@ extension TransactionConfirmationCoordinator {
             domainResolutionService: domainResolutionService,
             delegate: delegate,
             keystore: keystore,
-            assetDefinitionStore: assetDefinitionStore,
             tokensService: tokensService,
             networkService: networkService)
         

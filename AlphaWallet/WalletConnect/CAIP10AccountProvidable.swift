@@ -8,6 +8,7 @@
 import Foundation
 import Combine
 import AlphaWalletFoundation
+import WalletConnectSign
 
 protocol CAIP10AccountProvidable {
     var accounts: AnyPublisher<Set<CAIP10Account>, Never> { get }
@@ -20,17 +21,21 @@ extension CAIP10AccountProvidable {
     func namespaces(for server: RPCServer) throws -> (accounts: [String], server: RPCServer, namespaces: [String: SessionNamespace]) {
         let namespaces = try namespaces(proposalOrServer: .server(server))
 
-        guard let namespace = namespaces["eip155"] else { throw AnyCAIP10AccountProvidable.CAIP10AccountProvidableError.eip155NotFound }
+        guard let namespace = namespaces[SupportedSessionNamespace.eip155.rawValue] else { throw AnyCAIP10AccountProvidable.CAIP10AccountProvidableError.eip155NotFound }
         let accounts = namespace.accounts.map { $0.address }
 
         return (accounts: accounts, server: server, namespaces: namespaces)
     }
 }
 
+enum SupportedSessionNamespace: String {
+    case eip155
+}
+
 class AnyCAIP10AccountProvidable: CAIP10AccountProvidable {
-    enum CAIP10AccountProvidableError: LocalizedError {
+    enum CAIP10AccountProvidableError: Error {
         case unavailableToBuildBlockchain
-        case accountsNotFound
+        case chainNotSupportedOrNotEnabled
         case emptyNamespaces
         case eip155NotFound
     }
@@ -51,7 +56,7 @@ class AnyCAIP10AccountProvidable: CAIP10AccountProvidable {
 
         let wallets = keystore.walletsPublisher.filter { !$0.isEmpty }
 
-        let servers = serversProvidable.servers
+        let servers = serversProvidable.enabledServersPublisher
             .filter { !$0.isEmpty }
             .map { $0.sorted(by: { $0.displayOrderPriority < $1.displayOrderPriority }) }
 
@@ -86,25 +91,14 @@ class AnyCAIP10AccountProvidable: CAIP10AccountProvidable {
         switch proposalOrServer {
         case .server(let server):
             guard let blockchain = Blockchain(server.eip155) else { throw CAIP10AccountProvidableError.unavailableToBuildBlockchain }
-            let accounts = try accountsForSupportedBlockchains(for: [blockchain])
+            let accounts = accountsForSupportedBlockchains(for: [blockchain])
+            guard !accounts.isEmpty else { throw CAIP10AccountProvidableError.chainNotSupportedOrNotEnabled }
 
-            return ["eip155": SessionNamespace(accounts: accounts, methods: [], events: [])]
+            return [SupportedSessionNamespace.eip155.rawValue: SessionNamespace(accounts: accounts, methods: [], events: [])]
         case .proposal(let proposal):
             var sessionNamespaces: [String: SessionNamespace] = [:]
-            for each in proposal.requiredNamespaces {
-                let caip2Namespace = each.key
-                let proposalNamespace = each.value
-
-                let accounts = try accountsForSupportedBlockchains(for: proposalNamespace.chains)
-                if accounts.isEmpty { continue }
-
-                let sessionNamespace = SessionNamespace(
-                    accounts: accounts,
-                    methods: proposalNamespace.methods,
-                    events: proposalNamespace.events)
-
-                sessionNamespaces[caip2Namespace] = sessionNamespace
-            }
+            buildResponseNamespaces(&sessionNamespaces, namespaces: proposal.requiredNamespaces)
+            buildResponseNamespaces(&sessionNamespaces, namespaces: proposal.optionalNamespaces ?? [:])
 
             if sessionNamespaces.isEmpty {
                 throw CAIP10AccountProvidableError.emptyNamespaces
@@ -114,14 +108,46 @@ class AnyCAIP10AccountProvidable: CAIP10AccountProvidable {
         }
     }
 
-    private func accountsForSupportedBlockchains(for blockchains: Set<Blockchain>) throws -> Set<CAIP10Account> {
+    private func buildResponseNamespaces(_ responseNamespaces: inout [String: SessionNamespace], namespaces: [String: ProposalNamespace]) {
+        for each in namespaces {
+            let proposalNamespace = each.value
+
+            let accounts: Set<CAIP10Account>
+            let key: String
+            if let namespace = SupportedSessionNamespace(rawValue: each.key) {
+                key = namespace.rawValue
+                accounts = accountsForSupportedBlockchains(for: proposalNamespace.chains ?? [])
+            } else if let blockchain = Blockchain(each.key) {
+                key = blockchain.absoluteString
+                accounts = accountsForSupportedBlockchains(for: [blockchain])
+            } else {
+                continue
+            }
+
+            if accounts.isEmpty { continue }
+            if let existedNamespace = responseNamespaces[key] {
+                responseNamespaces[key] = SessionNamespace(
+                    accounts: existedNamespace.accounts.union(accounts),
+                    methods: existedNamespace.methods.union(proposalNamespace.methods),
+                    events: existedNamespace.events.union(proposalNamespace.events))
+            } else {
+                let sessionNamespace = SessionNamespace(
+                    accounts: accounts,
+                    methods: proposalNamespace.methods,
+                    events: proposalNamespace.events)
+
+                responseNamespaces[key] = sessionNamespace
+            }
+        }
+    }
+
+    private func accountsForSupportedBlockchains(for blockchains: Set<Blockchain>) -> Set<CAIP10Account> {
         var accounts = Set<CAIP10Account>()
 
         for blockchain in blockchains {
-            let toAdd = (accountsSubject.value ?? .init()).filter { $0.blockchain == blockchain }
-            accounts = accounts.union(toAdd)
+            let filtered = (accountsSubject.value ?? .init()).filter { $0.blockchain == blockchain }
+            accounts = accounts.union(filtered)
         }
-        guard !accounts.isEmpty else { throw CAIP10AccountProvidableError.accountsNotFound }
 
         return accounts
     }

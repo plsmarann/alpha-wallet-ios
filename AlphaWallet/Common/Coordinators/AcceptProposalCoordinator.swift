@@ -6,7 +6,6 @@
 //
 
 import UIKit
-import PromiseKit
 import AlphaWalletFoundation
 
 protocol AcceptProposalCoordinatorDelegate: AnyObject {
@@ -26,7 +25,6 @@ class AcceptProposalCoordinator: Coordinator {
 
         return viewController
     }()
-    private weak var serversViewController: UIViewController?
     private lazy var hostViewController: FloatingPanelController = {
         let panel = FloatingPanelController(isPanEnabled: false)
         panel.layout = SelfSizingPanelLayout(referenceGuide: .superview)
@@ -36,10 +34,25 @@ class AcceptProposalCoordinator: Coordinator {
 
         return panel
     }()
+    private let config: Config
+    private let restartHandler: RestartQueueHandler
+    private let networkService: NetworkService
+    private let serversProvider: ServersProvidable
 
     weak var delegate: AcceptProposalCoordinatorDelegate?
 
-    init(analytics: AnalyticsLogger, proposalType: ProposalType, navigationController: UINavigationController) {
+    init(analytics: AnalyticsLogger,
+         proposalType: ProposalType,
+         navigationController: UINavigationController,
+         config: Config,
+         restartHandler: RestartQueueHandler,
+         networkService: NetworkService,
+         serversProvider: ServersProvidable) {
+
+        self.serversProvider = serversProvider
+        self.config = config
+        self.restartHandler = restartHandler
+        self.networkService = networkService
         self.analytics = analytics
         self.proposalType = proposalType
         self.navigationController = navigationController
@@ -68,8 +81,8 @@ extension AcceptProposalCoordinator: FloatingPanelControllerDelegate {
 extension AcceptProposalCoordinator: ServersCoordinatorDelegate {
 
     func didSelectServer(selection: ServerSelection, in coordinator: ServersCoordinator) {
+        coordinator.navigationController.dismiss(animated: true)
         removeCoordinator(coordinator)
-        serversViewController?.navigationController?.dismiss(animated: true)
 
         viewModel.logServerSelected()
 
@@ -83,8 +96,9 @@ extension AcceptProposalCoordinator: ServersCoordinatorDelegate {
     }
 
     func didClose(in coordinator: ServersCoordinator) {
+        coordinator.navigationController.dismiss(animated: true)
         removeCoordinator(coordinator)
-        serversViewController?.navigationController?.dismiss(animated: true)
+
         viewModel.logCancelServerSelection()
     }
 }
@@ -100,15 +114,18 @@ extension AcceptProposalCoordinator: AcceptProposalViewControllerDelegate {
 
         switch viewModel.proposalType {
         case .walletConnect(let viewModel):
-            let coordinator = ServersCoordinator(viewModel: viewModel.serversViewModel, navigationController: navigationController)
-            addCoordinator(coordinator)
+            let navigationController = NavigationController()
+            navigationController.makePresentationFullScreenForiOS13Migration()
+
+            let coordinator = ServersCoordinator(
+                viewModel: viewModel.serversViewModel,
+                navigationController: navigationController)
+            
+            coordinator.serversViewController.navigationItem.rightBarButtonItem = .closeBarButton(self, selector: #selector(changeServersDidDismiss))
+            coordinator.start(animated: false)
             coordinator.delegate = self
 
-            let navigationController = NavigationController(rootViewController: coordinator.serversViewController)
-            navigationController.makePresentationFullScreenForiOS13Migration()
-            coordinator.serversViewController.navigationItem.rightBarButtonItem = .closeBarButton(self, selector: #selector(changeServersDidDismiss))
-
-            self.serversViewController = coordinator.serversViewController
+            addCoordinator(coordinator)
 
             hostViewController.present(navigationController, animated: true)
         case .deepLink:
@@ -116,36 +133,14 @@ extension AcceptProposalCoordinator: AcceptProposalViewControllerDelegate {
         }
     }
 
-    @objc func changeServersDidDismiss() {
-        serversViewController?.navigationController?.dismiss(animated: true)
+    @objc private func changeServersDidDismiss() {
+        guard let coordinator = coordinatorOfType(type: ServersCoordinator.self) else { return }
+        coordinator.navigationController.dismiss(animated: true)
+        coordinator.serversViewController.didPopViewController(animated: true)
     }
 
     func controller(_ controller: AcceptProposalViewController, continueButtonTapped sender: UIButton) {
-        switch viewModel.proposalType {
-        case .walletConnect(let viewModel):
-            do {
-                try viewModel.validateEnabledServers(serversToConnect: viewModel.serversToConnect)
-                self.viewModel.logConnectToServers()
-
-                UINotificationFeedbackGenerator.show(feedbackType: .success)
-
-                self.close(completion: {
-                    //NOTE: all the time we should have at least 1 server to connect
-                    guard let server = viewModel.serversToConnect.first else { return }
-                    self.delegate?.coordinator(self, didComplete: .walletConnect(server))
-                })
-            } catch {
-                self.viewModel.logConnectToServersDisabled()
-
-                showServerUnavaible(for: viewModel.serversToConnect)
-            }
-        case .deepLink:
-            UINotificationFeedbackGenerator.show(feedbackType: .success)
-
-            self.close(completion: {
-                self.delegate?.coordinator(self, didComplete: .deepLink)
-            })
-        }
+        processProposal()
     }
 
     func didClose(in controller: AcceptProposalViewController) {
@@ -155,8 +150,41 @@ extension AcceptProposalCoordinator: AcceptProposalViewControllerDelegate {
         })
     }
 
-    private func showServerUnavaible(for servers: [RPCServer]) {
-        let coordinator = ServerUnavailableCoordinator(navigationController: navigationController, servers: servers)
+    private func processProposal() {
+        switch viewModel.proposalType {
+        case .walletConnect(let viewModel):
+            do {
+                try viewModel.validateEnabledServers(serversToConnect: viewModel.serversToConnect)
+                self.viewModel.logConnectToServers()
+
+                UINotificationFeedbackGenerator.show(feedbackType: .success)
+
+                close(completion: {
+                    //NOTE: all the time we should have at least 1 server to connect
+                    guard let server = viewModel.serversToConnect.first else { return }
+                    self.delegate?.coordinator(self, didComplete: .walletConnect(server))
+                })
+            } catch let error as MissingRpcServerError {
+                self.viewModel.logConnectToServersDisabled(servers: error.servers)
+
+                showServerUnavaible(disabledServers: error.servers)
+            } catch { /*no-op*/ }
+
+        case .deepLink:
+            UINotificationFeedbackGenerator.show(feedbackType: .success)
+
+            close(completion: {
+                self.delegate?.coordinator(self, didComplete: .deepLink)
+            })
+        }
+    }
+
+    private func showServerUnavaible(disabledServers: [RPCServer]) {
+        let coordinator = ServerUnavailableCoordinator(
+            navigationController: navigationController,
+            disabledServers: disabledServers,
+            restartHandler: restartHandler)
+
         coordinator.delegate = self
         addCoordinator(coordinator)
         coordinator.start()
@@ -164,7 +192,11 @@ extension AcceptProposalCoordinator: AcceptProposalViewControllerDelegate {
 }
 
 extension AcceptProposalCoordinator: ServerUnavailableCoordinatorDelegate {
-    func didDismiss(in coordinator: ServerUnavailableCoordinator) {
+
+    func didDismiss(in coordinator: ServerUnavailableCoordinator, result: Swift.Result<Void, Error>) {
         removeCoordinator(coordinator)
+
+        guard case .success = result else { return }
+        processProposal()
     }
 }

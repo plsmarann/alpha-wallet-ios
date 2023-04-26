@@ -31,7 +31,7 @@ class AVPlayerView: UIView, ViewRoundingSupportable {
         return button
     }()
 
-    private lazy var loadingIndicator: UIActivityIndicatorView = {
+    lazy var loadingIndicator: UIActivityIndicatorView = {
         let indicator = UIActivityIndicatorView(style: .large)
         indicator.hidesWhenStopped = true
         indicator.translatesAutoresizingMaskIntoConstraints = false
@@ -42,6 +42,8 @@ class AVPlayerView: UIView, ViewRoundingSupportable {
     var rounding: ViewRounding = .none {
         didSet { layoutSubviews() }
     }
+
+    var placeholderRounding: ViewRounding = .none
 
     init(edgeInsets: UIEdgeInsets = .zero,
          playButtonPositioning: PlayButtonPositioning,

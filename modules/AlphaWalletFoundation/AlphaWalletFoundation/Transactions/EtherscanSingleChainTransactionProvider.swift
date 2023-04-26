@@ -20,16 +20,8 @@ class EtherscanSingleChainTransactionProvider: SingleChainTransactionProvider {
     private var autoDetectErc721TransactionsOperation: AnyCancellable?
 
     private var isFetchingLatestTransactions = false
-    private let tokensService: TokenProvidable
-    private lazy var transactionsNetworkProvider = TransactionsNetworkProvider(
-        session: session,
-        networkService: networkService,
-        transactionBuilder: transactionBuilder)
-
-    private lazy var transactionBuilder = TransactionBuilder(
-        tokensService: tokensService,
-        server: session.server,
-        tokenProvider: session.tokenProvider)
+    private let tokensService: TokensService
+    private let apiNetworking: ApiNetworking
 
     private lazy var pendingTransactionProvider: PendingTransactionProvider = {
         return PendingTransactionProvider(
@@ -37,17 +29,16 @@ class EtherscanSingleChainTransactionProvider: SingleChainTransactionProvider {
             transactionDataStore: transactionDataStore,
             ercTokenDetector: ercTokenDetector)
     }()
-    private let networkService: NetworkService
 
     init(session: WalletSession,
          analytics: AnalyticsLogger,
          transactionDataStore: TransactionDataStore,
-         tokensService: TokenProvidable,
+         tokensService: TokensService,
          fetchLatestTransactionsQueue: OperationQueue,
          ercTokenDetector: ErcTokenDetector,
-         networkService: NetworkService) {
+         apiNetworking: ApiNetworking) {
 
-        self.networkService = networkService
+        self.apiNetworking = apiNetworking
         self.tokensService = tokensService
         self.session = session
         self.analytics = analytics
@@ -59,6 +50,7 @@ class EtherscanSingleChainTransactionProvider: SingleChainTransactionProvider {
     func start() {
         pendingTransactionProvider.start()
 
+        fetchLatestTransactions()
         runScheduledTimers()
         if transactionsTracker.fetchingState != .done {
             fetchOlderTransactions()
@@ -106,8 +98,8 @@ class EtherscanSingleChainTransactionProvider: SingleChainTransactionProvider {
         let wallet = session.account.address
         let startBlock = Config.getLastFetchedErc20InteractionBlockNumber(session.server, wallet: wallet).flatMap { $0 + 1 }
 
-        autoDetectErc20TransactionsOperation = transactionsNetworkProvider
-            .getErc20Transactions(startBlock: startBlock)
+        autoDetectErc20TransactionsOperation = apiNetworking
+            .erc20TokenTransferTransactions(startBlock: startBlock)
             .sink(receiveCompletion: { [weak self] result in
                 if case .failure(let e) = result {
                     logError(e, function: #function, rpcServer: server, address: wallet)
@@ -130,8 +122,8 @@ class EtherscanSingleChainTransactionProvider: SingleChainTransactionProvider {
         let wallet = session.account.address
         let startBlock = Config.getLastFetchedErc721InteractionBlockNumber(session.server, wallet: wallet).flatMap { $0 + 1 }
 
-        autoDetectErc721TransactionsOperation = transactionsNetworkProvider
-            .getErc721Transactions(startBlock: startBlock)
+        autoDetectErc721TransactionsOperation = apiNetworking
+            .erc721TokenTransferTransactions(startBlock: startBlock)
             .sink(receiveCompletion: { [weak self] result in
                 if case .failure(let e) = result {
                     logError(e, function: #function, rpcServer: server, address: wallet)
@@ -145,10 +137,6 @@ class EtherscanSingleChainTransactionProvider: SingleChainTransactionProvider {
                 }
                 strongSelf.addOrUpdate(transactions: transactions)
             })
-    }
-
-    func fetch() {
-        fetchLatestTransactions()
     }
 
     private func addOrUpdate(transactions: [TransactionInstance]) {
@@ -181,8 +169,8 @@ class EtherscanSingleChainTransactionProvider: SingleChainTransactionProvider {
     private func fetchOlderTransactions() {
         guard let oldestCachedTransaction = transactionDataStore.lastTransaction(forServer: session.server, withTransactionState: .completed) else { return }
 
-        transactionsNetworkProvider
-            .getTransactions(startBlock: 1, endBlock: oldestCachedTransaction.blockNumber - 1, sortOrder: .desc)
+        apiNetworking
+            .normalTransactions(startBlock: 1, endBlock: oldestCachedTransaction.blockNumber - 1, sortOrder: .desc)
             .sinkAsync(receiveCompletion: { [transactionsTracker] result in
                 guard case .failure = result else { return }
 
@@ -235,14 +223,14 @@ class EtherscanSingleChainTransactionProvider: SingleChainTransactionProvider {
             self.startBlock = startBlock
             self.sortOrder = sortOrder
             super.init()
-            self.queuePriority = provider.transactionBuilder.server.networkRequestsQueuePriority
+            self.queuePriority = provider.session.server.networkRequestsQueuePriority
         }
 
         override func main() {
             guard let provider = self.provider else { return }
 
-            cancellable = provider.transactionsNetworkProvider
-                .getTransactions(startBlock: startBlock, sortOrder: sortOrder)
+            cancellable = provider.apiNetworking
+                .normalTransactions(startBlock: startBlock, endBlock: 999_999_999, sortOrder: sortOrder)
                 .sink(receiveCompletion: { [weak self] _ in
                     guard let strongSelf = self else { return }
 

@@ -24,12 +24,12 @@ class NFTCollectionCoordinator: NSObject, Coordinator {
     private let keystore: Keystore
     private let token: Token
     private let session: WalletSession
-    private let sessions: ServerDictionary<WalletSession>
+    private let sessionsProvider: SessionsProvider
     private let assetDefinitionStore: AssetDefinitionStore
     private let analytics: AnalyticsLogger
     private let nftProvider: NFTProvider
     private let activitiesService: ActivitiesServiceType
-    private let tokensService: TokenViewModelState & TokenHolderState
+    private let tokensService: TokensProcessingPipeline
     private lazy var tokenCardViewFactory: TokenCardViewFactory = {
         TokenCardViewFactory(
             token: token,
@@ -39,6 +39,7 @@ class NFTCollectionCoordinator: NSObject, Coordinator {
     }()
     private let currencyService: CurrencyService
     private let tokenImageFetcher: TokenImageFetcher
+    private let tokenActionsProvider: SupportedTokenActionsProvider
 
     weak var delegate: NFTCollectionCoordinatorDelegate?
     let navigationController: UINavigationController
@@ -60,10 +61,10 @@ class NFTCollectionCoordinator: NSObject, Coordinator {
             assetDefinition: assetDefinitionStore,
             analytics: analytics,
             viewModel: viewModel,
-            sessions: sessions,
+            sessionsProvider: sessionsProvider,
             tokenCardViewFactory: tokenCardViewFactory,
             tokenImageFetcher: tokenImageFetcher)
-        
+
         controller.hidesBottomBarWhenPushed = true
         controller.delegate = self
 
@@ -78,14 +79,16 @@ class NFTCollectionCoordinator: NSObject, Coordinator {
          analytics: AnalyticsLogger,
          nftProvider: NFTProvider,
          activitiesService: ActivitiesServiceType,
-         tokensService: TokenViewModelState & TokenHolderState,
-         sessions: ServerDictionary<WalletSession>,
+         tokensService: TokensProcessingPipeline,
+         sessionsProvider: SessionsProvider,
          currencyService: CurrencyService,
-         tokenImageFetcher: TokenImageFetcher) {
+         tokenImageFetcher: TokenImageFetcher,
+         tokenActionsProvider: SupportedTokenActionsProvider) {
 
+        self.tokenActionsProvider = tokenActionsProvider
         self.tokenImageFetcher = tokenImageFetcher
         self.currencyService = currencyService
-        self.sessions = sessions
+        self.sessionsProvider = sessionsProvider
         self.tokensService = tokensService
         self.activitiesService = activitiesService
         self.session = session
@@ -155,11 +158,14 @@ extension NFTCollectionCoordinator: NFTCollectionViewControllerDelegate {
         showNftAsset(tokenHolder: tokenHolder, navigationController: viewController.navigationController)
     }
 
-    func showNftAsset(tokenHolder: TokenHolder, mode: TokenInstanceViewMode = .interactive) {
+    func showNftAsset(tokenHolder: TokenHolder, mode: NFTAssetViewModel.InterationMode = .interactive) {
         showNftAsset(tokenHolder: tokenHolder, mode: mode, navigationController: navigationController)
     }
 
-    private func showNftAsset(tokenHolder: TokenHolder, mode: TokenInstanceViewMode = .interactive, navigationController: UINavigationController?) {
+    private func showNftAsset(tokenHolder: TokenHolder,
+                              mode: NFTAssetViewModel.InterationMode = .interactive,
+                              navigationController: UINavigationController?) {
+
         let vc: UIViewController
         switch tokenHolder.type {
         case .collectible:
@@ -173,7 +179,10 @@ extension NFTCollectionCoordinator: NFTCollectionViewControllerDelegate {
 
     private func createNFTAssetListViewController(tokenHolder: TokenHolder) -> NFTAssetListViewController {
         let viewModel = NFTAssetListViewModel(tokenHolder: tokenHolder)
-        let viewController = NFTAssetListViewController(viewModel: viewModel, tokenCardViewFactory: tokenCardViewFactory)
+        let viewController = NFTAssetListViewController(
+            viewModel: viewModel,
+            tokenCardViewFactory: tokenCardViewFactory)
+
         viewController.delegate = self
         viewController.hidesBottomBarWhenPushed = true
         viewController.navigationItem.largeTitleDisplayMode = .never
@@ -181,9 +190,24 @@ extension NFTCollectionCoordinator: NFTCollectionViewControllerDelegate {
         return viewController
     }
 
-    private func createNFTAssetViewController(tokenHolder: TokenHolder, tokenId: TokenId, mode: TokenInstanceViewMode = .interactive) -> UIViewController {
-        let viewModel = NFTAssetViewModel(tokenId: tokenId, token: token, tokenHolder: tokenHolder, assetDefinitionStore: assetDefinitionStore, mode: mode, nftProvider: nftProvider, session: session, service: tokensService)
-        let viewController = NFTAssetViewController(viewModel: viewModel, tokenCardViewFactory: tokenCardViewFactory)
+    private func createNFTAssetViewController(tokenHolder: TokenHolder,
+                                              tokenId: TokenId,
+                                              mode: NFTAssetViewModel.InterationMode = .interactive) -> UIViewController {
+
+        let viewModel = NFTAssetViewModel(
+            tokenId: tokenId,
+            token: token,
+            tokenHolder: tokenHolder,
+            assetDefinitionStore: assetDefinitionStore,
+            mode: mode,
+            nftProvider: nftProvider,
+            session: session,
+            service: tokensService,
+            tokenActionsProvider: tokenActionsProvider)
+
+        let viewController = NFTAssetViewController(
+            viewModel: viewModel,
+            tokenCardViewFactory: tokenCardViewFactory)
         viewController.delegate = self
         viewController.navigationItem.largeTitleDisplayMode = .never
 
@@ -258,12 +282,12 @@ extension NFTCollectionCoordinator: NonFungibleTokenViewControllerDelegate {
             let viewModel = TransferTokensCardQuantitySelectionViewModel(
                 token: token,
                 tokenHolder: tokenHolder,
-                assetDefinitionStore: assetDefinitionStore)
+                assetDefinitionStore: assetDefinitionStore,
+                session: session)
 
             let controller = TransferTokensCardQuantitySelectionViewController(
                 viewModel: viewModel,
-                assetDefinitionStore: assetDefinitionStore,
-                wallet: session.account)
+                assetDefinitionStore: assetDefinitionStore)
 
             controller.configure()
             controller.delegate = self
@@ -296,12 +320,12 @@ extension NFTCollectionCoordinator: NonFungibleTokenViewControllerDelegate {
         let viewModel = RedeemTokenCardQuantitySelectionViewModel(
             token: token,
             tokenHolder: tokenHolder,
-            assetDefinitionStore: assetDefinitionStore)
+            assetDefinitionStore: assetDefinitionStore,
+            session: session)
 
         let controller = RedeemTokenCardQuantitySelectionViewController(
             viewModel: viewModel,
-            assetDefinitionStore: assetDefinitionStore,
-            session: session)
+            assetDefinitionStore: assetDefinitionStore)
 
         controller.configure()
         controller.delegate = self
@@ -321,7 +345,6 @@ extension NFTCollectionCoordinator: NonFungibleTokenViewControllerDelegate {
         let controller = EnterSellTokensCardPriceQuantityViewController(
             viewModel: viewModel,
             assetDefinitionStore: assetDefinitionStore,
-            walletSession: session,
             service: tokensService,
             currencyService: currencyService,
             tokenImageFetcher: tokenImageFetcher)
@@ -346,13 +369,13 @@ extension NFTCollectionCoordinator: RedeemTokenCardQuantitySelectionViewControll
 
         let viewModel = TokenCardRedemptionViewModel(
             token: token,
-            tokenHolder: tokenHolder)
+            tokenHolder: tokenHolder,
+            session: session,
+            keystore: keystore)
 
         let controller = TokenCardRedemptionViewController(
-            session: session,
             viewModel: viewModel,
-            assetDefinitionStore: assetDefinitionStore,
-            keystore: keystore)
+            assetDefinitionStore: assetDefinitionStore)
 
         controller.configure()
         controller.delegate = self
@@ -375,12 +398,11 @@ extension NFTCollectionCoordinator: TransferTokenCardQuantitySelectionViewContro
         let viewModel = ChooseTokenCardTransferModeViewModel(
             token: token,
             tokenHolder: tokenHolder,
-            assetDefinitionStore: assetDefinitionStore)
+            session: session)
 
         let controller = ChooseTokenCardTransferModeViewController(
             viewModel: viewModel,
-            assetDefinitionStore: assetDefinitionStore,
-            session: session)
+            assetDefinitionStore: assetDefinitionStore)
 
         controller.configure()
         controller.delegate = self
@@ -405,8 +427,7 @@ extension NFTCollectionCoordinator: EnterSellTokensCardPriceQuantityViewControll
             token: token,
             tokenHolder: tokenHolder,
             ethCost: ethCost,
-            session: session,
-            assetDefinitionStore: assetDefinitionStore)
+            session: session)
 
         let controller = SetSellTokensCardExpiryDateViewController(
             viewModel: viewModel,
@@ -441,7 +462,6 @@ extension NFTCollectionCoordinator: SetSellTokensCardExpiryDateViewControllerDel
                 count: tokenHolder.count),
             ethCost: ethCost,
             linkExpiryDate: linkExpiryDate,
-            assetDefinitionStore: assetDefinitionStore,
             keystore: keystore,
             session: session)
 
@@ -462,11 +482,13 @@ extension NFTCollectionCoordinator: SetSellTokensCardExpiryDateViewControllerDel
 extension NFTCollectionCoordinator: GenerateSellMagicLinkViewControllerDelegate {
 
     func didPressShare(in viewController: GenerateSellMagicLinkViewController, sender: UIView) {
-        do {
-            let url = try viewController.viewModel.generateSellLink()
-            displayShareUrlView(url: url, from: viewController, sender: sender)
-        } catch {
-            viewController.displayError(error: error)
+        Task { @MainActor in
+            do {
+                let url = try await viewController.viewModel.generateSellLink()
+                displayShareUrlView(url: url, from: viewController, sender: sender)
+            } catch {
+                viewController.displayError(error: error)
+            }
         }
     }
 
@@ -535,12 +557,13 @@ extension NFTCollectionCoordinator: SetTransferTokensCardExpiryDateViewControlle
 
 extension NFTCollectionCoordinator: GenerateTransferMagicLinkViewControllerDelegate {
     func didPressShare(in viewController: GenerateTransferMagicLinkViewController, sender: UIView) {
-        do {
-            let url = try viewController.viewModel.generateTransferLink()
-
-            displayShareUrlView(url: url, from: viewController, sender: sender)
-        } catch {
-            viewController.displayError(error: error)
+        Task { @MainActor in
+            do {
+                let url = try await viewController.viewModel.generateTransferLink()
+                displayShareUrlView(url: url, from: viewController, sender: sender)
+            } catch {
+                viewController.displayError(error: error)
+            }
         }
     }
 

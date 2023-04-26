@@ -66,14 +66,20 @@ extension AlphaWallet.WalletConnect {
         case notSupporting
     }
 
+    struct Namespace {
+        let chains: Set<RPCServer>
+        let methods: Set<String>
+        let events: Set<String>
+    }
+
     struct Proposal {
         let name: String
         let iconUrl: URL?
-        let servers: [RPCServer]
         let dappUrl: URL
         let description: String?
-        let methods: [String]
         let serverEditing: ServerEditingAvailability
+        let requiredNamespaces: [Namespace]
+        let optionalNamespaces: [Namespace]
 
         init(dAppInfo info: WalletConnectSwift.Session.DAppInfo) {
             description = info.peerMeta.description
@@ -83,13 +89,13 @@ extension AlphaWallet.WalletConnect {
             //NOTE: Keep in mind, changing servers is available in `info.chainId == nil`, only sing server connection
             if let server: RPCServer = info.chainId.flatMap({ .init(chainID: $0) }) {
                 serverEditing = .disabled
-                servers = [server]
+                self.requiredNamespaces = [.init(chains: [server], methods: [], events: [])]
             } else {
                 //Better than always `.main` even when it's not enabled
-                servers = [Config().anyEnabledServer()]
+                self.requiredNamespaces = [.init(chains: [Config().anyEnabledServer()], methods: [], events: [])]
                 serverEditing = .enabled
             }
-            methods = []
+            self.optionalNamespaces = []
         }
 
     }
@@ -165,7 +171,7 @@ extension AlphaWallet.WalletConnect {
 
         var servers: [RPCServer] {
             let chains = Array(namespaces.values.flatMap { $0.accounts.map { $0.blockchain.absoluteString } })
-            return chains.compactMap { eip155URLCoder.decodeRPC(from: $0) }
+            return chains.compactMap { Eip155UrlCoder.decodeRpc(from: $0) }
         }
 
         var accounts: [AlphaWallet.Address] {

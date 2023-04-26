@@ -11,7 +11,7 @@ import AlphaWalletFoundation
 import PromiseKit
 import AlphaWalletCore
 
-enum WalletConnectError: Error {
+enum WalletConnectError: LocalizedError {
     case onlyForWatchWallet(address: AlphaWallet.Address)
     case walletsNotFound(addresses: [AlphaWallet.Address])
     case callbackIdMissing
@@ -21,7 +21,7 @@ enum WalletConnectError: Error {
     case `internal`(JsonRpcError)
 
     init(error: PromiseError) {
-        if case DAppError.cancelled = error.embedded {
+        if let e = error.embedded as? JsonRpcError, e == .requestRejected {
             self = .cancelled
         } else if case PMKError.cancelled = error.embedded {
             self = .cancelled
@@ -30,7 +30,7 @@ enum WalletConnectError: Error {
         } else if let error = error.embedded as? WalletConnectError {
             self = error
         } else {
-            self = .internal(.init(code: -32051, message: error.embedded.prettyError))
+            self = .internal(.init(code: -32051, message: error.embedded.localizedDescription))
         }
     }
 
@@ -43,7 +43,7 @@ enum WalletConnectError: Error {
         }
     }
 
-    var localizedDescription: String? {
+    var errorDescription: String? {
         switch self {
         case .internal(let error):
             return error.message
@@ -76,9 +76,21 @@ protocol WalletConnectServer: WalletConnectResponder {
 }
 
 protocol WalletConnectServerDelegate: AnyObject {
-    func server(_ server: WalletConnectServer, didConnect session: AlphaWallet.WalletConnect.Session)
-    func server(_ server: WalletConnectServer, shouldConnectFor proposal: AlphaWallet.WalletConnect.Proposal, completion: @escaping (AlphaWallet.WalletConnect.ProposalResponse) -> Void)
-    func server(_ server: WalletConnectServer, action: AlphaWallet.WalletConnect.Action, request: AlphaWallet.WalletConnect.Session.Request, session: AlphaWallet.WalletConnect.Session)
-    func server(_ server: WalletConnectServer, didFail error: Error)
-    func server(_ server: WalletConnectServer, tookTooLongToConnectToUrl url: AlphaWallet.WalletConnect.ConnectionUrl)
+    
+    func server(_ server: WalletConnectServer,
+                didConnect session: AlphaWallet.WalletConnect.Session)
+
+    func server(_ server: WalletConnectServer,
+                shouldConnectFor proposal: AlphaWallet.WalletConnect.Proposal) -> AnyPublisher<AlphaWallet.WalletConnect.ProposalResponse, Never>
+
+    func server(_ server: WalletConnectServer,
+                action: AlphaWallet.WalletConnect.Action,
+                request: AlphaWallet.WalletConnect.Session.Request,
+                session: AlphaWallet.WalletConnect.Session)
+
+    func server(_ server: WalletConnectServer,
+                didFail error: Error)
+
+    func server(_ server: WalletConnectServer,
+                tookTooLongToConnectToUrl url: AlphaWallet.WalletConnect.ConnectionUrl)
 }

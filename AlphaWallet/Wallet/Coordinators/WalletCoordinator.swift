@@ -74,6 +74,13 @@ class WalletCoordinator: Coordinator {
             controller.delegate = self
             controller.configure()
             navigationController.viewControllers = [controller]
+        case .addHardwareWallet:
+            if BCHardwareWallet.isEnabled {
+                addHardwareWallet()
+            } else {
+                //no-op
+            }
+            return false
         }
         return true
     }
@@ -122,14 +129,51 @@ class WalletCoordinator: Coordinator {
             SuccessOverlayView.show()
         }
     }
+
+    private func addHardwareWallet() {
+        let hwWallet = BCHardwareWalletCreator().createWallet()
+        Task { @MainActor in
+            do {
+                let address = try await hwWallet.getAddress()
+                keystore
+                    .addHardwareWallet(address: address)
+                    .sink(receiveCompletion: { result in
+                        switch result {
+                        case .finished:
+                            break
+                        case .failure:
+                            //TODO: show an error, especially if the address/card has already been added
+                            break
+                        }
+                    }, receiveValue: { wallet in
+                        self.didImportAccount(account: wallet)
+                    }).store(in: &cancellable)
+            } catch {
+                if error.isCancelledBChainRequest {
+                    //no-op
+                } else {
+                    //no-op because already shown in the NFC UI
+                    //TODO but error displayed can be more user friendly. E.g. try not using biometrics when required
+                }
+            }
+        }
+    }
 }
 
 extension WalletCoordinator: ImportWalletViewControllerDelegate {
 
     func openQRCode(in controller: ImportWalletViewController) {
-        guard let wallet = keystore.currentWallet, navigationController.ensureHasDeviceAuthorization() else { return }
-        let scanQRCodeCoordinator = ScanQRCodeCoordinator(analytics: analytics, navigationController: navigationController, account: wallet, domainResolutionService: domainResolutionService)
-        let coordinator = QRCodeResolutionCoordinator(config: config, coordinator: scanQRCodeCoordinator, usage: .importWalletOnly, account: wallet)
+        guard navigationController.ensureHasDeviceAuthorization() else { return }
+        let scanQRCodeCoordinator = ScanQRCodeCoordinator(
+            analytics: analytics,
+            navigationController: navigationController,
+            account: keystore.currentWallet,
+            domainResolutionService: domainResolutionService)
+
+        let coordinator = QRCodeResolutionCoordinator(
+            coordinator: scanQRCodeCoordinator,
+            usage: .importWalletOnly)
+        
         coordinator.delegate = self
         addCoordinator(coordinator)
         coordinator.start(fromSource: .importWalletScreen)

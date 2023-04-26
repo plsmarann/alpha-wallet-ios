@@ -12,7 +12,7 @@ protocol TransactionsViewControllerDelegate: AnyObject {
 class TransactionsViewController: UIViewController {
     private let viewModel: TransactionsViewModel
     private lazy var tableView: UITableView = {
-        let tableView = UITableView.grouped
+        let tableView = UITableView.buildGroupedTableView()
         tableView.register(TransactionTableViewCell.self)
         tableView.registerHeaderFooterView(TransactionSectionHeaderView.self)
         tableView.delegate = self
@@ -114,7 +114,8 @@ extension TransactionsViewController {
     private func makeDataSource() -> TransactionsViewModel.DataSource {
         TransactionsViewModel.DataSource(tableView: tableView) { [viewModel] tableView, indexPath, transactionRow -> TransactionTableViewCell in
             let cell: TransactionTableViewCell = tableView.dequeueReusableCell(for: indexPath)
-            cell.configure(viewModel: viewModel.buildCellViewModel(for: transactionRow))
+            guard let viewModel = viewModel.buildCellViewModel(for: transactionRow) else { return cell }
+            cell.configure(viewModel: viewModel)
 
             return cell
         }

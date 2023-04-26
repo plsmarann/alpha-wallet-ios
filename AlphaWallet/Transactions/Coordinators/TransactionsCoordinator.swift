@@ -1,7 +1,6 @@
 // Copyright SIX DAY LLC. All rights reserved.
 
 import UIKit
-import PromiseKit
 import Combine
 import AlphaWalletFoundation
 
@@ -10,13 +9,13 @@ protocol TransactionsCoordinatorDelegate: AnyObject, CanOpenURL {
 
 class TransactionsCoordinator: Coordinator {
     private let analytics: AnalyticsLogger
-    private let sessions: ServerDictionary<WalletSession>
+    private let sessionsProvider: SessionsProvider
     private let transactionsService: TransactionsService
-    private let tokensService: TokenViewModelState
+    private let tokensService: TokensProcessingPipeline
     private let tokenImageFetcher: TokenImageFetcher
 
     lazy var rootViewController: TransactionsViewController = {
-        let viewModel = TransactionsViewModel(transactionsService: transactionsService, sessions: sessions)
+        let viewModel = TransactionsViewModel(transactionsService: transactionsService, sessionsProvider: sessionsProvider)
         let controller = TransactionsViewController(viewModel: viewModel)
         controller.delegate = self
 
@@ -28,16 +27,16 @@ class TransactionsCoordinator: Coordinator {
     var coordinators: [Coordinator] = []
 
     init(analytics: AnalyticsLogger,
-         sessions: ServerDictionary<WalletSession>,
+         sessionsProvider: SessionsProvider,
          navigationController: UINavigationController = .withOverridenBarAppearence(),
          transactionsService: TransactionsService,
-         tokensService: TokenViewModelState,
+         tokensService: TokensProcessingPipeline,
          tokenImageFetcher: TokenImageFetcher) {
 
         self.tokenImageFetcher = tokenImageFetcher
         self.tokensService = tokensService
         self.analytics = analytics
-        self.sessions = sessions
+        self.sessionsProvider = sessionsProvider
         self.navigationController = navigationController
         self.transactionsService = transactionsService
     }
@@ -51,7 +50,7 @@ class TransactionsCoordinator: Coordinator {
     }
 
     private func showTransaction(_ transactionRow: TransactionRow, on navigationController: UINavigationController) {
-        let session = sessions[transactionRow.server]
+        guard let session = sessionsProvider.session(for: transactionRow.server) else { return }
 
         let viewModel = TransactionDetailsViewModel(
             transactionsService: transactionsService,
@@ -84,14 +83,6 @@ class TransactionsCoordinator: Coordinator {
             showTransaction(.group(transaction), inViewController: viewController)
         } else {
             showTransaction(.standalone(transaction), inViewController: viewController)
-        }
-    }
-
-    func stop() {
-        transactionsService.stop()
-        //TODO seems not good to stop here because others call stop too
-        for each in sessions.values {
-            each.stop()
         }
     }
 }

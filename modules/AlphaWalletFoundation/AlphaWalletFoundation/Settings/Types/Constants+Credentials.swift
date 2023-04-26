@@ -42,21 +42,24 @@ extension Constants {
         public static let mailChimpListSpecificKey = ""
         public static let walletConnectProjectId = env("WALLETCONNECTPROJECTID") ?? "8ba9ee138960775e5231b70cc5ef1c3a"
         static let infuraKey = env("INFURAKEY") ?? "ad6d834b7a1e4d03a7fde92020616149"
+        static let oklinkKey = env("OKLINKKEY") ?? "5698875f-1b76-45a1-8790-e1671f14cdeb"
         static let etherscanKey = env("ETHERSCANKEY") ?? "1PX7RG8H4HTDY8X55YRMCAKPZK476M23ZR"
         static let binanceSmartChainExplorerApiKey: String? = env("BINANCESMARTCHAINEXPLORERAPIKEY")
         static let polygonScanExplorerApiKey: String? = env("POLYGONSCANEXPLORERAPIKEY")
         static let avalancheExplorerApiKey = env("AVALANCHEEXPLORERAPIKEY")
+        static let arbiscanExplorerApiKey = env("ARBISCANEXPLORERAPIKEY")
+        static let xDaiExplorerKey = env("XDAIEXPLORERKEY")
         static let paperTrail = (host: env("PAPERTRAILHOST") ?? "", port: (env("PAPERTRAILPORT") ?? "").toInt() ?? 0)
         static let openseaKey = env("OPENSEAKEY") ?? nil
         static let rampApiKey = env("RAMPAPIKEY") ?? "j5wr7oqktym7z69yyf84bb8a6cqb7qfu5ynmeyvn"
         static let coinbaseAppId = env("COINBASEAPPID") ?? ""
-        static let enjinUserName = env("ENJINUSERNAME") ?? "vlad_shepitko@outlook.com"
-        static let enjinUserPassword = env("ENJINUSERPASSWORD") ?? "wf@qJPz75CL9Tw$"
+        static let enjinUserName = env("ENJINUSERNAME")
+        static let enjinUserPassword = env("ENJINUSERPASSWORD")
         static let unstoppableDomainsV2ApiKey = env("UNSTOPPABLEDOMAINSV2KEY") ?? "Bearer rLuujk_dLBN-JDE6Xl8QSCg-FeIouRKM"
         static let blockscanChatProxyKey = env("BLOCKSCHATPROXYKEY") ?? ""
         static let covalentApiKey = env("COVALENTAPIKEY") ?? "ckey_7ee61be7f8364ba784f697510bd"
-        //Without the "Basic " prefix
-        static let klaytnRpcNodeKeyBasicAuth = env("KLAYTNRPCNODEKEYBASICAUTH") ?? ""
+        static let klaytnRpcNodeCypressKey = env("KLAYTNRPCNODECYPRESSKEY") ?? ""
+        static let klaytnRpcNodeBaobabKey = env("KLAYTNRPCNODEBAOBABKEY") ?? ""
     }
 }
 

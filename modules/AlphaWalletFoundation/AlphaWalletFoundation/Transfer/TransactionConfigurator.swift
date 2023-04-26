@@ -2,43 +2,20 @@
 
 import Foundation
 import BigInt
-import PromiseKit
 import Combine
 import AlphaWalletCore
 import AlphaWalletLogger
 
-public protocol TransactionConfiguratorDelegate: AnyObject {
-    func configurationChanged(in configurator: TransactionConfigurator)
-    func gasLimitEstimateUpdated(to estimate: BigUInt, in configurator: TransactionConfigurator)
-    func gasPriceEstimateUpdated(to estimate: BigUInt, in configurator: TransactionConfigurator)
-    func updateNonce(to nonce: Int, in configurator: TransactionConfigurator)
-}
-
-public enum TransactionConfiguratorError: Error {
-    case impossibleToBuildConfiguration
-
-    var localizedDescription: String {
-        return "Impossible To Build Configuration"
-    }
-}
-
 public class TransactionConfigurator {
+    private let tokensService: TokensProcessingPipeline
+    private let configuration: TransactionType.Configuration
+    private let networkService: NetworkService
+    private var cancellable = Set<AnyCancellable>()
+
     public let session: WalletSession
-    public weak var delegate: TransactionConfiguratorDelegate?
 
-    public var currentConfiguration: TransactionConfiguration {
-        switch selectedConfigurationType {
-        case .standard:
-            return configurations.standard
-        case .slow, .fast, .rapid:
-            return configurations[selectedConfigurationType]!
-        case .custom:
-            return configurations.custom
-        }
-    }
-
-    public var gasValue: BigUInt {
-        return currentConfiguration.gasPrice * currentConfiguration.gasLimit
+    public var gasFee: BigUInt {
+        return gasPriceEstimator.gasPrice.value.max * gasLimit.value
     }
 
     public var toAddress: AlphaWallet.Address? {
@@ -50,7 +27,7 @@ public class TransactionConfigurator {
         }
     }
 
-    public var value: BigUInt {
+    private var value: BigUInt {
         //TODO why not all `transaction.value`? Shouldn't the other types of transactions make sure their `transaction.value` is 0?
         switch transaction.transactionType {
         case .nativeCryptocurrency: return transaction.value
@@ -64,199 +41,183 @@ public class TransactionConfigurator {
     }
 
     public var gasPriceWarning: GasPriceWarning? {
-        gasPriceWarning(forConfiguration: currentConfiguration)
+        return gasPriceEstimator.gasPrice.warnings.compactMap { $0 as? GasPriceWarning }.first
     }
 
     public private(set) var transaction: UnconfirmedTransaction
-    public var selectedConfigurationType: TransactionConfigurationType = .standard
-    public var configurations: TransactionConfigurations
+    public var selectedGasSpeed: GasSpeed { return gasPriceEstimator.selectedGasSpeed }
+    public let gasPriceEstimator: GasPriceEstimator
 
-    private var isGasLimitSpecifiedByTransaction: Bool {
-        transaction.gasLimit != nil
+    @Published public private (set) var nonce: Int?
+    @Published public private (set) var gasLimit: EstimatedValue<BigUInt>
+    @Published public private (set) var data: Data = Data()
+
+    public var objectChanges: AnyPublisher<Void, Never> {
+        Publishers.Merge3(gasPriceEstimator.gasPricePublisher.mapToVoid(), $gasLimit.mapToVoid(), $nonce.mapToVoid())
+            .eraseToAnyPublisher()
     }
-    private let analytics: AnalyticsLogger
-    private let networkService: NetworkService
-    private let gasPriceEstimator: LegacyGasPriceEstimator
-    private var cancelable = Set<AnyCancellable>()
 
     public init(session: WalletSession,
-                analytics: AnalyticsLogger,
                 transaction: UnconfirmedTransaction,
-                networkService: NetworkService) {
+                networkService: NetworkService,
+                tokensService: TokensProcessingPipeline,
+                configuration: TransactionType.Configuration) {
 
+        self.configuration = configuration
+        self.tokensService = tokensService
         self.session = session
-        self.analytics = analytics
         self.transaction = transaction
         self.networkService = networkService
-        self.gasPriceEstimator = LegacyGasPriceEstimator(
-            blockchainProvider: session.blockchainProvider,
-            networkService: networkService)
 
-        let standardConfiguration = TransactionConfigurator.createConfiguration(server: session.server, gasPriceEstimator: gasPriceEstimator, transaction: transaction)
-        self.configurations = .init(standard: standardConfiguration)
+        if let gasPrice = transaction.gasPrice {
+            switch gasPrice {
+            case .legacy(let gasPrice):
+                gasPriceEstimator = LegacyGasPriceEstimator(
+                    blockchainProvider: session.blockchainProvider,
+                    networkService: networkService,
+                    initialGasPrice: gasPrice)
+            case .eip1559(let maxFeePerGas, let maxPriorityFeePerGas):
+                gasPriceEstimator = Eip1559GasPriceEstimator(
+                    blockchainProvider: session.blockchainProvider,
+                    initialMaxFeePerGas: maxFeePerGas,
+                    initialMaxPriorityFeePerGas: maxPriorityFeePerGas)
+            }
+        } else {
+            if session.blockchainProvider.server.supportsEip1559 && Features.default.isAvailable(.isEip1559Enabled) && !isRunningTests() {
+                gasPriceEstimator = Eip1559GasPriceEstimator(
+                    blockchainProvider: session.blockchainProvider,
+                    initialMaxFeePerGas: nil,
+                    initialMaxPriorityFeePerGas: nil)
+            } else {
+                gasPriceEstimator = LegacyGasPriceEstimator(
+                    blockchainProvider: session.blockchainProvider,
+                    networkService: networkService,
+                    initialGasPrice: nil)
+            }
+        }
+
+        self.data = transaction.data
+        self.gasLimit = TransactionConfigurator.defaultEstimatedGasLimit(transaction: transaction, server: session.server)
     }
 
-    public func updateTransaction(value: BigUInt) {
+    private static func defaultEstimatedGasLimit(transaction: UnconfirmedTransaction, server: RPCServer) -> EstimatedValue<BigUInt> {
+        if let gasLimit = transaction.gasLimit {
+            return .defined(gasLimit)
+        } else {
+            switch transaction.transactionType {
+            case .nativeCryptocurrency:
+                let gasLimit = GasLimitConfiguration.minGasLimit
+                return .estimated(gasLimit)
+            case .erc20Token, .erc875Token, .erc721Token, .erc721ForTicketToken, .erc1155Token, .prebuilt:
+                let gasLimit = GasLimitConfiguration.maxGasLimit(forServer: server)
+                return .estimated(gasLimit)
+            }
+        }
+    }
+
+    private func updateTransaction(value: BigUInt) {
         let tx = self.transaction
         self.transaction = .init(transactionType: tx.transactionType, value: value, recipient: tx.recipient, contract: tx.contract, data: tx.data, gasLimit: tx.gasLimit, gasPrice: tx.gasPrice, nonce: tx.nonce)
     }
 
     private func estimateGasLimit() {
-        session.blockchainProvider
-            .gasLimit(wallet: session.account.address, value: value, toAddress: toAddress, data: currentConfiguration.data)
-            .sink(receiveCompletion: { result in
-                guard case .failure(let e) = result else { return }
-                infoLog("[Transaction Confirmation] Error estimating gas limit: \(e)")
-                logError(e, rpcServer: self.session.server)
-            }, receiveValue: { gasLimit in
-                infoLog("[Transaction Confirmation] Using gas limit: \(gasLimit)")
-                var customConfig = self.configurations.custom
-                customConfig.setEstimated(gasLimit: gasLimit)
-                self.configurations.custom = customConfig
-                var defaultConfig = self.configurations.standard
-                defaultConfig.setEstimated(gasLimit: gasLimit)
-                self.configurations.standard = defaultConfig
-
-                //Careful to not create if they don't exist
-                for each: TransactionConfigurationType in [.slow, .fast, .rapid] {
-                    guard var config = self.configurations[each] else { continue }
-                    config.setEstimated(gasLimit: gasLimit)
-                    self.configurations[each] = config
-                }
-
-                self.delegate?.gasLimitEstimateUpdated(to: gasLimit, in: self)
-            }).store(in: &cancelable)
-    }
-
-    private func estimateGasPrice() {
-        gasPriceEstimator.estimateGasPrice()
-            .sink(receiveCompletion: { [session] result in
-                guard case .failure(let e) = result else { return }
-                logError(e, rpcServer: session.server)
-            }, receiveValue: { estimates in
-                let standard = estimates.standard
-                var customConfig = self.configurations.custom
-                customConfig.setEstimated(gasPrice: standard)
-                var defaultConfig = self.configurations.standard
-                defaultConfig.setEstimated(gasPrice: standard)
-
-                if self.shouldUseEstimatedGasPrice(standard) {
-                    self.configurations.custom = customConfig
-                    self.configurations.standard = defaultConfig
-                }
-
-                for each: TransactionConfigurationType in [.slow, .fast, .rapid] {
-                    guard let estimate = estimates[each] else { continue }
-                    //Since there's a price estimate, we want to add that config if it's missing
-                    var config = self.configurations[each] ?? defaultConfig
-                    config.setEstimated(gasPrice: estimate)
-                    self.configurations[each] = config
-                }
-
-                self.delegate?.gasPriceEstimateUpdated(to: standard, in: self)
-            }).store(in: &cancelable)
-    }
-
-    public func shouldUseEstimatedGasPrice(_ estimatedGasPrice: BigUInt) -> Bool {
-        //Gas price may be specified in the transaction object, and it will be if we are trying to speedup or cancel a transaction. The replacement transaction will be automatically assigned a slightly higher gas price. We don't want to override that with what we fetch back from gas price estimate if the estimate is lower
-        if let specifiedGasPrice = transaction.gasPrice, specifiedGasPrice > estimatedGasPrice {
-            return false
+        if let gasLimit = transaction.gasLimit {
+            //no-op
         } else {
-            return true
-        }
-    }
+            session.blockchainProvider
+                .gasLimit(wallet: session.account.address, value: value, toAddress: toAddress, data: data)
+                .retry(3)
+                .sink(receiveCompletion: { result in
+                    guard case .failure(let e) = result else { return }
+                    infoLog("[Transaction Confirmation] Error estimating gas limit: \(e)")
+                    logError(e, rpcServer: self.session.server)
+                }, receiveValue: { [weak self] gasLimit in
+                    guard let strongSelf = self else { return }
+                    guard case .estimated = strongSelf.gasLimit else { return }
+                    infoLog("[Transaction Confirmation] Using gas limit: \(gasLimit)")
 
-    public func gasLimitWarning(forConfiguration configuration: TransactionConfiguration) -> GasLimitWarning? {
-        if configuration.gasLimit > ConfigureTransaction.gasLimitMax {
-            return .tooHighCustomGasLimit
+                    strongSelf.gasLimit = .estimated(gasLimit)
+                }).store(in: &cancellable)
         }
-        return nil
-    }
-
-    public func gasFeeWarning(forConfiguration configuration: TransactionConfiguration) -> GasFeeWarning? {
-        if (configuration.gasPrice * configuration.gasLimit) > ConfigureTransaction.gasFeeMax {
-            return .tooHighGasFee
-        }
-        return nil
-    }
-
-    public func gasPriceWarning(forConfiguration configuration: TransactionConfiguration) -> GasPriceWarning? {
-        if let fastestConfig = configurations.fastestThirdPartyConfiguration, configuration.gasPrice > fastestConfig.gasPrice {
-            return .tooHighCustomGasPrice
-        }
-        //Conversion to gwei is needed so we that 17 (entered) is equal to 17.1 (fetched). Because 17.1 is displayed as "17" in the UI and might confuse the user if it's not treated as equal
-        if let slowestConfig = configurations.slowestThirdPartyConfiguration, (configuration.gasPrice / BigUInt(EthereumUnit.gwei.rawValue)) < (slowestConfig.gasPrice / BigUInt(EthereumUnit.gwei.rawValue)) {
-            return .tooLowCustomGasPrice
-        }
-        switch session.server.serverWithEnhancedSupport {
-        case .main:
-            if (configurations.standard.gasPrice / BigUInt(EthereumUnit.gwei.rawValue)) > Constants.highStandardEthereumMainnetGasThresholdGwei {
-                return .networkCongested
-            }
-        case .xDai, .polygon, .binance_smart_chain, .heco, .arbitrum, .klaytnCypress, .klaytnBaobabTestnet, .rinkeby, nil:
-            break
-        }
-        return nil
-    }
-
-    private static func createConfiguration(server: RPCServer, gasPriceEstimator: LegacyGasPriceEstimator, transaction: UnconfirmedTransaction) -> TransactionConfiguration {
-        let maxGasLimit = GasLimitConfiguration.maxGasLimit(forServer: server)
-        let gasPrice = server.defaultLegacyGasPrice(usingGasPrice: transaction.gasPrice)
-        let gasLimit: BigUInt
-
-        switch transaction.transactionType {
-        case .nativeCryptocurrency:
-            gasLimit = GasLimitConfiguration.minGasLimit
-        case .erc20Token, .erc875Token, .erc721Token, .erc721ForTicketToken, .erc1155Token, .prebuilt:
-            gasLimit = transaction.gasLimit ?? maxGasLimit
-        }
-
-        return TransactionConfiguration(gasPrice: gasPrice, gasLimit: gasLimit, data: transaction.data ?? .init())
     }
 
     public func start() {
-        estimateGasPrice()
-        if !isGasLimitSpecifiedByTransaction {
-            estimateGasLimit()
-        }
+        estimateGasLimit()
         computeNonce()
+        adjustTransactionValue()
     }
 
-    private func useNonce(_ nonce: Int) {
-        var customConfig = configurations.custom
-        if let existingNonce = customConfig.nonce, existingNonce > 0 {
-            //no-op
-        } else {
-            customConfig.set(nonce: nonce)
-            configurations.custom = customConfig
-            var defaultConfig = self.configurations.standard
-            defaultConfig.set(nonce: nonce)
-            configurations.standard = defaultConfig
+    public func set(customGasLimit: BigUInt) {
+        guard gasLimit.value != customGasLimit else { return }
+        gasLimit = .defined(customGasLimit)
+    }
 
-            for each: TransactionConfigurationType in [.slow, .fast, .rapid] {
-                //We don't want to add that config if it's missing (e.g. testnets don't have them)
-                if var config = configurations[each] {
-                    config.set(nonce: nonce)
-                    configurations[each] = config
-                }
-            }
-            delegate?.updateNonce(to: nonce, in: self)
-        }
+    public func set(customData: Data) {
+        guard data != customData else { return }
+        data = customData
+    }
+
+    public func set(customNonce: Int?) {
+        if let value = nonce, value == customNonce { return }
+        nonce = customNonce
     }
 
     private func computeNonce() {
         if let nonce = transaction.nonce, nonce > 0 {
-            useNonce(Int(nonce))
+            set(customNonce: Int(nonce))
         } else {
             session.blockchainProvider
                 .nextNonce(wallet: session.account.address)
+                .retry(3)
                 .sink(receiveCompletion: { [session] result in
                     guard case .failure(let e) = result else { return }
                     logError(e, rpcServer: session.server)
-                }, receiveValue: {
-                    self.useNonce($0)
-                }).store(in: &cancelable)
+                }, receiveValue: { [weak self] in
+                    guard let strongSelf = self else { return }
+
+                    if let existingNonce = strongSelf.nonce, existingNonce > 0 {
+                        //no-op
+                    } else {
+                        strongSelf.set(customNonce: $0)
+                    }
+                }).store(in: &cancellable)
         }
+    }
+
+    private func adjustTransactionValue() {
+        guard case .sendFungiblesTransaction = configuration else { return }
+        let transactionType = transaction.transactionType
+
+        Just(transactionType.tokenObject)
+            .flatMap { [tokensService] token -> AnyPublisher<TokenViewModel?, Never> in
+                switch token.type {
+                case .nativeCryptocurrency:
+                    let etherToken = MultipleChainsTokensDataStore.functional.etherToken(forServer: token.server)
+                    return tokensService.tokenViewModelPublisher(for: etherToken)
+                case .erc20, .erc1155, .erc721, .erc875, .erc721ForTickets:
+                    return tokensService.tokenViewModelPublisher(for: token)
+                }
+            }.compactMap { $0 }
+            .sink { [weak self] token in
+                guard let strongSelf = self else { return }
+
+                switch token.type {
+                case .nativeCryptocurrency:
+                    switch transactionType.amount {
+                    case .notSet, .none, .amount:
+                        break
+                    case .allFunds:
+                        //NOTE: ignore passed value of 'allFunds', as we recalculating it again
+                        if token.balance.value > strongSelf.gasFee {
+                            strongSelf.updateTransaction(value: token.balance.value - strongSelf.gasFee)
+                        } else {
+                            strongSelf.updateTransaction(value: .zero)
+                        }
+                    }
+                case .erc20, .erc1155, .erc721, .erc721ForTickets, .erc875:
+                    break
+                }
+            }.store(in: &cancellable)
     }
 
     public func formUnsignedTransaction() -> UnsignedTransaction {
@@ -264,22 +225,11 @@ public class TransactionConfigurator {
             value: value,
             account: session.account.address,
             to: toAddress,
-            nonce: currentConfiguration.nonce ?? -1,
-            data: currentConfiguration.data,
-            gasPrice: currentConfiguration.gasPrice,
-            gasLimit: currentConfiguration.gasLimit,
+            nonce: nonce ?? -1,
+            data: data,
+            gasPrice: gasPriceEstimator.gasPrice.value,
+            gasLimit: gasLimit.value,
             server: session.server,
             transactionType: transaction.transactionType)
-    }
-
-    public func chooseCustomConfiguration(_ configuration: TransactionConfiguration) {
-        configurations.custom = configuration
-        selectedConfigurationType = .custom
-        delegate?.configurationChanged(in: self)
-    }
-
-    public func chooseDefaultConfigurationType(_ configurationType: TransactionConfigurationType) {
-        selectedConfigurationType = configurationType
-        delegate?.configurationChanged(in: self)
     }
 }
