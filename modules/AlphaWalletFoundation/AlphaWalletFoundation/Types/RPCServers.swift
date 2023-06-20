@@ -67,6 +67,7 @@ public enum RPCServer: Hashable, CaseIterable {
         case unknown
     }
 
+
     //Using this property avoids direct reference to `.main`, which could be a sign of a possible crash — i.e. using `.main` when it is disabled by the user
     public static var forResolvingEns: RPCServer {
         .main
@@ -113,21 +114,21 @@ public enum RPCServer: Hashable, CaseIterable {
 
     public var name: String {
         switch self {
+        case .fantom: return "Fantom Opera"
+        case .binance_smart_chain: return "Binance (BSC)"
+        case .polygon: return "Polygon Mainnet"
         case .main: return "Ethereum"
         case .classic: return "Ethereum Classic"
         case .callisto: return "Callisto"
         case .xDai: return "Gnosis"
         case .goerli: return "Goerli"
-        case .binance_smart_chain: return "Binance (BSC)"
         case .binance_smart_chain_testnet: return "Binance (BSC) Testnet"
         case .heco: return "Heco"
         case .heco_testnet: return "Heco Testnet"
         case .custom(let custom): return custom.chainName
-        case .fantom: return "Fantom Opera"
         case .fantom_testnet: return "Fantom Testnet"
         case .avalanche: return "Avalanche Mainnet C-Chain"
         case .avalanche_testnet: return "Avalanche FUJI C-Chain"
-        case .polygon: return "Polygon Mainnet"
         case .mumbai_testnet: return "Mumbai Testnet"
         case .optimistic: return "Optimistic Ethereum"
         case .cronosMainnet: return "Cronos"
@@ -646,7 +647,7 @@ public enum RPCServer: Hashable, CaseIterable {
 
     //We'll have to manually new cases here
     //Cannot be `let` as the chains can change dynamically without the app being restarted (i.e. killed). The UI can be restarted though (when switching changes)
-    static public var allCases: [RPCServer] {
+    public static var allCases: [RPCServer] {
         return [
             .main,
             .classic,
@@ -676,7 +677,7 @@ public enum RPCServer: Hashable, CaseIterable {
             .optimismGoerli,
             .arbitrumGoerli,
             .okx,
-            .sepolia
+            .sepolia,
         ]
     }
 
