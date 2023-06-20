@@ -78,21 +78,21 @@ public enum RPCServer: Hashable, CaseIterable {
 
     public var chainID: Int {
         switch self {
+        case .fantom: return 250
+        case .binance_smart_chain: return 56
+        case .polygon: return 137
         case .main: return 1
         case .classic: return 61
         case .callisto: return 104729
         case .xDai: return 100
         case .goerli: return 5
-        case .binance_smart_chain: return 56
         case .binance_smart_chain_testnet: return 97
         case .heco: return 128
         case .heco_testnet: return 256
         case .custom(let custom): return custom.chainID
-        case .fantom: return 250
         case .fantom_testnet: return 0xfa2
         case .avalanche: return 0xa86a
         case .avalanche_testnet: return 0xa869
-        case .polygon: return 137
         case .mumbai_testnet: return 80001
         case .optimistic: return 10
         case .cronosTestnet: return 338
@@ -148,7 +148,7 @@ public enum RPCServer: Hashable, CaseIterable {
 
     public var isTestnet: Bool {
         switch self {
-        case .xDai, .classic, .main, .callisto, .binance_smart_chain, .heco, .fantom, .avalanche, .polygon, .optimistic, .arbitrum, .palm, .klaytnCypress, .ioTeX, .cronosMainnet, .okx:
+        case .fantom, .binance_smart_chain, .polygon, .xDai, .classic, .main, .callisto, .heco, .avalanche, .optimistic, .arbitrum, .palm, .klaytnCypress, .ioTeX, .cronosMainnet, .okx:
             return false
         case .goerli, .binance_smart_chain_testnet, .heco_testnet, .fantom_testnet, .avalanche_testnet, .mumbai_testnet, .cronosTestnet, .palmTestnet, .klaytnBaobabTestnet, .ioTeXTestnet, .optimismGoerli, .arbitrumGoerli, .sepolia:
             return true

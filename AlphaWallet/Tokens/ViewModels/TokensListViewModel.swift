@@ -15,7 +15,6 @@ import AlphaWalletFoundation
 class TokensListViewModel {
     var fromTokens: [TokenItem] = []
 
-  
     func fetchTokens(limit: Int, completion: @escaping ([TokenItem]) -> Void) {
         let urlString = "https://li.quest/v1/connections?fromChain=1&toChain=1"
 
@@ -38,8 +37,11 @@ class TokensListViewModel {
             }
 
             do {
-                let connectionResponse = try JSONDecoder().decode(ConnectionResponse.self, from: data)
-                
+                let decoder = JSONDecoder()
+                decoder.keyDecodingStrategy = .convertFromSnakeCase
+
+                let connectionResponse = try decoder.decode(ConnectionResponse.self, from: data)
+
                 if let connection = connectionResponse.connections.first {
                     let limitedTokens = Array(connection.fromTokens.prefix(limit))
                     self.fromTokens = limitedTokens
@@ -48,12 +50,10 @@ class TokensListViewModel {
                     print("No connections found")
                     completion([])
                 }
-            } catch {
+            } catch let error {
                 print("Error decoding JSON: \(error)")
                 completion([])
             }
         }.resume()
     }
-  
 }
-
