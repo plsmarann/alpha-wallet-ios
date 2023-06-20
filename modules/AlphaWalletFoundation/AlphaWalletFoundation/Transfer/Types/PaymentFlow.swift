@@ -20,6 +20,9 @@ public enum SwapTokenFlow {
     case swapToken(token: Token)
     case selectTokenToSwap
 }
+public enum FpFlow {
+    case FpOpen
+}
 
 public enum PaymentFlow {
     case swap(pair: SwapPair)

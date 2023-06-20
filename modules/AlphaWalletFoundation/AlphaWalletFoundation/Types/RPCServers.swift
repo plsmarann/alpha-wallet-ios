@@ -746,21 +746,21 @@ public enum RPCServer: Hashable, CaseIterable {
 
     public var displayOrderPriority: Int {
         switch self {
-        case .main: return 1
-        case .xDai: return 2
-        case .classic: return 3
+        case .main: return 16
+        case .xDai: return 12
+        case .classic: return 20
         case .callisto: return 9
         case .goerli: return 10
-        case .binance_smart_chain: return 12
+        case .binance_smart_chain: return 2
         case .binance_smart_chain_testnet: return 13
         case .custom(let custom): return 300000 + custom.chainID
         case .heco: return 14
         case .heco_testnet: return 15
-        case .fantom: return 16
+        case .fantom: return 1
         case .fantom_testnet: return 17
         case .avalanche: return 18
         case .avalanche_testnet: return 19
-        case .polygon: return 20
+        case .polygon: return 3
         case .mumbai_testnet: return 21
         case .optimistic: return 22
         case .cronosTestnet: return 24
@@ -778,6 +778,7 @@ public enum RPCServer: Hashable, CaseIterable {
         case .sepolia: return 40
         }
     }
+
 
     public var explorerName: String {
         switch self {

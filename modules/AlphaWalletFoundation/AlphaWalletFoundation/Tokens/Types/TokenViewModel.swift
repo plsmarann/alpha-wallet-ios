@@ -14,6 +14,7 @@ public protocol TokenIdentifiable {
     var type: TokenType { get }
 }
 
+
 public struct TokenViewModel {
     public let contractAddress: AlphaWallet.Address
     public let symbol: String

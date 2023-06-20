@@ -37,6 +37,8 @@ class FungibleTokenCoordinator: Coordinator {
     private let currencyService: CurrencyService
     private let tokenImageFetcher: TokenImageFetcher
     private let tokensService: TokensService
+    private var tokensListCoordinator: TokensListCoordinator?
+
     private lazy var rootViewController: FungibleTokenTabViewController = {
         let viewModel = FungibleTokenTabViewModel(
             token: token,
@@ -52,6 +54,9 @@ class FungibleTokenCoordinator: Coordinator {
         return viewController
     }()
 
+    // ...
+
+  
     var coordinators: [Coordinator] = []
     weak var delegate: FungibleTokenCoordinatorDelegate?
 
@@ -94,7 +99,7 @@ class FungibleTokenCoordinator: Coordinator {
 
         navigationController.pushViewController(rootViewController, animated: true)
     }
-    
+  
     private func buildViewController(tabBarItem: FungibleTokenTabViewModel.TabBarItem) -> UIViewController {
         switch tabBarItem {
         case .details:
@@ -158,6 +163,11 @@ class FungibleTokenCoordinator: Coordinator {
 }
 
 extension FungibleTokenCoordinator: FungibleTokenDetailsViewControllerDelegate {
+    func showTokenList() {
+        let tokensListCoordinator = TokensListCoordinator(navigationController: navigationController)
+        tokensListCoordinator.start()
+    }
+    
     func didTapSwap(swapTokenFlow: SwapTokenFlow, in viewController: FungibleTokenDetailsViewController) {
         delegate?.didTapSwap(swapTokenFlow: swapTokenFlow, in: self)
     }
@@ -258,3 +268,4 @@ extension FungibleTokenCoordinator: FungibleTokenTabViewControllerDelegate {
         delegate?.didPressOpenWebPage(url, in: rootViewController)
     }
 }
+

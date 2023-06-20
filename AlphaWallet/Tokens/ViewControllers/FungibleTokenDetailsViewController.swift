@@ -13,12 +13,19 @@ protocol FungibleTokenDetailsViewControllerDelegate: AnyObject, CanOpenURL {
     func didTapSwap(swapTokenFlow: SwapTokenFlow, in viewController: FungibleTokenDetailsViewController)
     func didTapBridge(for token: Token, service: TokenActionProvider, in viewController: FungibleTokenDetailsViewController)
     func didTapBuy(for token: Token, service: TokenActionProvider, in viewController: FungibleTokenDetailsViewController)
+    func showTokenList()
     func didTapSend(for token: Token, in viewController: FungibleTokenDetailsViewController)
     func didTapReceive(for token: Token, in viewController: FungibleTokenDetailsViewController)
     func didTap(action: TokenInstanceAction, token: Token, in viewController: FungibleTokenDetailsViewController)
+    
 }
+protocol ShowToken: AnyObject {
+    func token()
+}
+class FungibleTokenDetailsViewController: UIViewController, FloatingPanelControllerDelegate, ShowToken {
+    var fpc: FloatingPanelController!
 
-class FungibleTokenDetailsViewController: UIViewController {
+    
     private let containerView: ScrollableStackView = ScrollableStackView()
     private let buttonsBar = HorizontalButtonsBar(configuration: .combined(buttons: 2))
     private lazy var headerView: FungibleTokenHeaderView = {
@@ -32,6 +39,42 @@ class FungibleTokenDetailsViewController: UIViewController {
         return chartView
     }()
 
+//    private lazy var hostViewController: FloatingPanelController = {
+//        let panel = FloatingPanelController()
+//        let contentVc = TokensListViewController()
+//        panel.set(contentViewController: contentVc)
+//        panel.layout = SelfSizingPanelLayout(referenceGuide: .superview)
+//        panel.shouldDismissOnBackdrop = false
+//        panel.track(scrollView: contentVc.tableView)
+//        panel.delegate = self
+//        return panel
+//    }()
+    
+    func token() {
+        delegate?.showTokenList()
+        
+////        hostViewController.addPanel(toParent: self)
+//        let navigationController = NavigationController()
+//        navigationController.makePresentationFullScreenForiOS13Migration()
+//
+//        let coordinator = ServersCoordinator(
+//            navigationController: navigationController)
+//
+//        coordinator.serversViewController.navigationItem.rightBarButtonItem = .closeBarButton(self, selector: #selector(changeServersDidDismiss))
+//        coordinator.start(animated: false)
+//        coordinator.delegate = self
+//
+//        addCoordinator(coordinator)
+//
+//        hostViewController.present(navigationController, animated: true)
+//        switch hostViewController.state {
+//        case .hidden:
+//            hostViewController.move(to: .full, animated: true)
+//        default: break
+//        }
+        
+        
+    }
     private let viewModel: FungibleTokenDetailsViewModel
     private var cancelable = Set<AnyCancellable>()
     private let willAppear = PassthroughSubject<Void, Never>()
@@ -57,6 +100,8 @@ class FungibleTokenDetailsViewController: UIViewController {
         ])
 
         buttonsBar.viewController = self
+        buttonsBar.delegate = self
+        
     }
 
     override func viewDidLoad() {
@@ -65,6 +110,7 @@ class FungibleTokenDetailsViewController: UIViewController {
         view.backgroundColor = Configuration.Color.Semantic.defaultViewBackground
 
         bind(viewModel: viewModel)
+
     }
 
     override func viewWillAppear(_ animated: Bool) {
@@ -135,6 +181,8 @@ class FungibleTokenDetailsViewController: UIViewController {
     required init?(coder: NSCoder) {
         return nil
     }
+    
+   
 
     private func configureActionButtons(with buttons: [FungibleTokenDetailsViewModel.ActionButton]) {
         buttonsBar.configure(.combined(buttons: buttons.count))
@@ -158,7 +206,7 @@ class FungibleTokenDetailsViewController: UIViewController {
             }
         }
     }
-
+   
     private func perform(action: FungibleTokenDetailsViewModel.FungibleTokenAction) {
         switch action {
         case .swap(let flow):

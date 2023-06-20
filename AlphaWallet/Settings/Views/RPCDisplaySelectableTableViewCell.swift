@@ -7,6 +7,8 @@
 
 import UIKit
 import AlphaWalletFoundation
+import SVGKit
+import SDWebImageSVGKitPlugin
 
 class RPCDisplaySelectableTableViewCell: UITableViewCell {
 
@@ -126,7 +128,33 @@ class RPCDisplaySelectableTableViewCell: UITableViewCell {
         case .auto:
             chainIconView.image = R.image.launch_icon()!
         case .server(let server):
-            chainIconView.set(imageSource: server.walletConnectIconImage)
+            guard let url = URL(string: "https://assets.lif3.com/wallet/chains/\(server.chainID)-I.svg") else {
+                // Handle invalid URL
+                return
+            }
+
+            let svgImage = SVGKImage(contentsOf: url)
+
+            if let svgImage = svgImage {
+                // SVG image found, set it as the image
+                chainIconView.image = svgImage.uiImage
+            } else {
+                // SVG image not found, use fallback image URL
+                guard let fallbackURL = URL(string: "https://assets.lif3.com/wallet/chains/\(server.chainID).svg") else {
+                    // Handle invalid fallback URL
+                    return
+                }
+
+                let svgImage = SVGKImage(contentsOf: fallbackURL)
+                 if let svgImage = svgImage {
+                    // SVG image found, set it as the image
+                    chainIconView.image = svgImage.uiImage
+                 } else {
+                     
+                     chainIconView.image = R.image.tokenPlaceholderLarge()
+                 }
+            }
+            
         }
     }
 

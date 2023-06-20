@@ -15,6 +15,7 @@ extension TokenScript {
     ]
 }
 
+
 // swiftlint:disable type_body_length
 class AppCoordinator: NSObject, Coordinator {
     private let config = Config()
@@ -66,6 +67,7 @@ class AppCoordinator: NSObject, Coordinator {
     private lazy var walletBalanceService = MultiWalletBalanceService(currencyService: currencyService)
     private var pendingActiveWalletCoordinator: ActiveWalletCoordinator?
 
+    
     private lazy var accountsCoordinator: AccountsCoordinator = {
         let coordinator = AccountsCoordinator(
             config: config,
@@ -111,6 +113,8 @@ class AppCoordinator: NSObject, Coordinator {
         availableSwapProviders += Features.default.isAvailable(.isSwapEnabled) ? [SwapTokenNativeProvider(tokenSwapper: tokenSwapper)] : []
 
         service.register(service: SwapTokenProvider(subProviders: availableSwapProviders, action: R.string.localizable.aWalletTokenSwapButtonTitle()))
+    
+        
         service.register(service: ArbitrumBridge(action: R.string.localizable.aWalletTokenArbitrumBridgeButtonTitle()))
         service.register(service: xDaiBridge(action: R.string.localizable.aWalletTokenXDaiBridgeButtonTitle()))
 

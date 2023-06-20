@@ -39,6 +39,8 @@ extension ActiveWalletViewModel {
                 return String(describing: BrowserHomeViewController.self)
             case .swap:
                 return String(describing: UIViewController.self)
+
+
             }
         }
 

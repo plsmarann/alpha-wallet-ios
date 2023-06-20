@@ -4,7 +4,9 @@ import Foundation
 import UIKit
 import AlphaWalletFoundation
 import Combine
-
+protocol OpenToken {
+    func didSomething()
+}
 enum HorizontalButtonsBarConfiguration {
     case empty
     case combined(buttons: Int)
@@ -141,6 +143,7 @@ class HorizontalButtonsBar: UIView, ButtonsBarViewType {
     }
     var cancellable = Set<AnyCancellable>()
     weak var viewController: UIViewController?
+    var delegate: ShowToken?
 
     init(configuration: HorizontalButtonsBarConfiguration = .primary(buttons: 1)) {
         buttonsStackView = [UIView]().asStackView(axis: .horizontal, distribution: .fillEqually, spacing: 7)
@@ -322,12 +325,22 @@ class HorizontalButtonsBar: UIView, ButtonsBarViewType {
             alertController.addAction(action)
         }
 
+        let showTokens = UIAlertAction(title: R.string.localizable.aWalletTokenTokensButtonTitle(), style: .default) { [weak self] _ in
+            guard let strongSelf = self else { return }
+            
+            self?.delegate?.token()
+    
+            
+        }
+        alertController.addAction(showTokens)
         let cancelAction = UIAlertAction(title: R.string.localizable.cancel(), style: .cancel) { _ in }
         alertController.addAction(cancelAction)
 
         viewController?.present(alertController, animated: true)
     }
 
+    
+   
     private static func bar(numberOfButtons: Int) -> [ContainerViewWithShadow<BarButton>] {
          return (0..<numberOfButtons).map { _ in
              let button = BarButton()
