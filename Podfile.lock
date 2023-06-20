@@ -170,10 +170,16 @@ PODS:
     - Realm (= 10.36.0)
   - Result (3.2.4)
   - SAMKeychain (1.5.3)
+  - SDWebImage/Core (5.16.0)
+  - SDWebImageSVGKitPlugin (1.4.0):
+    - SDWebImage/Core (~> 5.10)
+    - SVGKit (~> 3.0)
   - secp256k1_ios (0.1.3)
   - SipHash (1.2.2)
   - Starscream (3.1.1)
   - StatefulViewController (3.0)
+  - SVGKit (3.0.0):
+    - CocoaLumberjack (~> 3.0)
   - SwiftAlgorithms (1.0.0)
   - SwiftFormat/CLI (0.50.3)
   - SwiftLint (0.50.3)
@@ -225,8 +231,10 @@ DEPENDENCIES:
   - QRCodeReaderViewController (from `https://github.com/AlphaWallet/QRCodeReaderViewController.git`, commit `09da2d4b835589972ecacd022a75bc27b2c1d1bd`)
   - R.swift
   - SAMKeychain
+  - SDWebImageSVGKitPlugin
   - Starscream (= 3.1.1)
   - StatefulViewController
+  - SVGKit
   - SwiftFormat/CLI (~> 0.49)
   - SwiftLint (= 0.50.3)
   - TrezorCrypto (from `https://github.com/AlphaWallet/trezor-crypto-ios.git`, commit `50c16ba5527e269bbc838e80aee5bac0fe304cc7`)
@@ -271,10 +279,13 @@ SPEC REPOS:
     - RealmSwift
     - Result
     - SAMKeychain
+    - SDWebImage
+    - SDWebImageSVGKitPlugin
     - secp256k1_ios
     - SipHash
     - Starscream
     - StatefulViewController
+    - SVGKit
     - SwiftAlgorithms
     - SwiftFormat
     - SwiftLint
@@ -378,7 +389,7 @@ SPEC CHECKSUMS:
   Apollo: 204819ea82022fbc59ad05056820df867f19bd02
   BigInt: 76b5dfdfa3e2e478d4ffdf161aeede5502e2742f
   BlockiesSwift: 22d8d56dd187e6bfd16cb8c8fbd4fd4896c3e65d
-  Charts: 354f86803d11d9c35de280587fef50d1af063978
+  Charts: ce0768268078eee0336f122c3c4ca248e4e204c5
   CocoaAsyncSocket: 065fd1e645c7abab64f7a6a2007a48038fdc6a99
   CocoaLumberjack: e8955b9d337ac307103b0a34fd141c32f27e53c5
   CombineExt: c4daa97ef75754d8ef319bd79edeef82652f3eea
@@ -412,10 +423,13 @@ SPEC CHECKSUMS:
   RealmSwift: 513d4dcbf5bfc4d573454088b592685fc48dd716
   Result: d2d07204ce72856f1fd9130bbe42c35a7b0fea10
   SAMKeychain: 483e1c9f32984d50ca961e26818a534283b4cd5c
+  SDWebImage: 2aea163b50bfcb569a2726b6a754c54a4506fcf6
+  SDWebImageSVGKitPlugin: 7542dd07c344ec3415ded0461a1161a6f087e0c9
   secp256k1_ios: ac9ef04e761f43c58012b28548afa91493761f17
   SipHash: fad90a4683e420c52ef28063063dbbce248ea6d4
   Starscream: 4bb2f9942274833f7b4d296a55504dcfc7edb7b0
   StatefulViewController: 4803bf900d44de26074344998e10e041113b5931
+  SVGKit: 1ad7513f8c74d9652f94ed64ddecda1a23864dea
   SwiftAlgorithms: 38dda4731d19027fdeee1125f973111bf3386b53
   SwiftFormat: 61cda3819dc3a7d69795ce0430e1e1d53c4a4fb2
   SwiftLint: 77f7cb2b9bb81ab4a12fcc86448ba3f11afa50c6
@@ -427,6 +441,6 @@ SPEC CHECKSUMS:
   WalletConnectSwift: 6309bf3011b0b30e3e9d1e7449535302a9240f71
   xcbeautify: b2c6b50c9cab6414296898e94cd153e4ea879662
 
-PODFILE CHECKSUM: cd1a058fd92101d519029a17b7cbf211eab037a8
+PODFILE CHECKSUM: 3399f28ce3dc0e852e3eab6ff0df6c1cb5841c36
 
 COCOAPODS: 1.11.3

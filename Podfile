@@ -43,7 +43,8 @@ target 'AlphaWallet' do
   pod 'FirebaseCrashlytics', '8.10.0'
   pod 'WalletConnectSwift', :git => 'https://github.com/AlphaWallet/WalletConnectSwift.git', :branch => 'alphaWallet'
   pod 'Starscream', '3.1.1'
-  
+  pod 'SVGKit'
+  pod 'SDWebImageSVGKitPlugin'
   target 'AlphaWalletTests' do
       inherit! :search_paths
       # Pods for testing
